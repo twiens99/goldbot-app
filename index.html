@@ -164,6 +164,11 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   word-break:break-all;line-height:1.45;
   display:flex;align-items:center;gap:7px;
 }
+.sv{display:flex;flex-direction:column;gap:1px;}
+.sv .spec{
+  color:var(--dim);font-size:.7rem;letter-spacing:.01em;
+  word-break:normal;
+}
 .v::before{
   content:"";width:3px;height:3px;border-radius:50%;
   background:var(--faint);flex:none;
@@ -318,6 +323,48 @@ function stripRegime(n){
    travels in the snapshot, so a tap-through can still look it up. */
 const spaceOut = n => String(n).replace(/_/g, " ");
 
+/* A step resolution and the bound it steps between do not share a sensible
+   width -- toFixed on either lies about the other. Trim instead of picking. */
+const num = x => (typeof x !== "number" || !isFinite(x)) ? ""
+  : String(Number(x.toFixed(6)));
+
+/* A SWEPT variable, unlike a round's, carries its own grid -- a sweep has no
+   group_id, so the catalog cannot answer for it and the spec travels on the
+   seed record itself. Trevor asked for three things here and they are all
+   derived from the file the tester is actually running: the NAMES, the STEP
+   COUNT, and the STEP RESOLUTION. */
+/* The third chip answers "what KIND of round is this", in the same vocabulary
+   the machine cards use for `phase` -- so a seed and a rotation round read the
+   same way on one screen.
+
+   `round_type` is the record's own answer and wins outright; `kind` is the
+   coarse fallback and cannot tell a second pass from a first. The trailing
+   digit is split off GENERICALLY (FOO2 -> "FOO 2") rather than from a lookup
+   table: a table here would be one more copy of a vocabulary that lives
+   upstream, and copies drift. A type added upstream renders correctly with no
+   edit to this page. */
+const roundType = sd => String(sd.round_type || sd.kind || "seed")
+  .toUpperCase().replace(/^([A-Z]+?)(\d+)$/, "$1 $2");
+
+function sweptList(vars, cells){
+  if(!Array.isArray(vars) || !vars.length) return "";
+  const n = vars.length;
+  return `<div class="vars">
+      <div class="vhead">${n} Variable${n === 1 ? "" : "s"}` +
+        (cells ? ` · ${cells}-cell grid` : "") + `</div>
+      ${vars.map(v => {
+        const bits = [];
+        if(v.min != null && v.max != null) bits.push(num(v.min) + " → " + num(v.max));
+        if(v.points != null) bits.push(v.points + " step" + (v.points === 1 ? "" : "s"));
+        if(v.step != null) bits.push("Δ " + num(v.step));
+        return `<div class="v"><span class="sv">` +
+          `<span>${esc(spaceOut(stripRegime(v.name || "")))}</span>` +
+          (bits.length ? `<span class="spec">${esc(bits.join(" · "))}</span>` : "") +
+          `</span></div>`;
+      }).join("")}
+    </div>`;
+}
+
 function varList(vars){
   if(!Array.isArray(vars) || !vars.length) return "";
   const n = vars.length;
@@ -387,23 +434,24 @@ function renderSeeds(){
   return '<div class="section-label">Seeded — cutting in line</div>' +
     SEEDS.map(sd => {
       const rc = RC[sd.regime] || "";
-      const who = sd.claimed_by ? esc(sd.claimed_by) : "unclaimed";
       const when = sd.claimed_at || sd.created_at;
       return `
       <article class="card">
         <div class="stripe ${rc || "warn"}"></div>
         <div class="card-in">
           <div class="top">
-            <span class="chip gold">SEED</span>
-            <span class="chip">${esc(String(sd.kind || "").toUpperCase())}</span>
             ${sd.regime ? `<span class="chip ${rc}">${esc(sd.regime)}</span>` : ""}
+            ${sd.claimed_by ? `<span class="chip gold">${esc(sd.claimed_by)}</span>` : ""}
+            <span class="chip">${esc(roundType(sd))}</span>
             <span class="sp"></span>
             <span class="when">${esc(String(sd.status || ""))}</span>
           </div>
           <div>
             <div class="title">${esc(sd.label || humanize(sd.group_id) || "Seeded work")}</div>
-            <div class="sub">${who}${when ? " · since " + esc(fmtWhen(when)) : ""}</div>
+            <div class="sub">${sd.claimed_by ? "" : "unclaimed"}` +
+              `${when ? (sd.claimed_by ? "since " : " · created ") + esc(fmtWhen(when)) : ""}</div>
           </div>
+          ${sweptList(sd.variables, sd.cells)}
           ${sd.note ? `<div class="noterow" data-toggle><span>Why it cut in line</span>` +
             `<span class="car">▾</span></div>` +
             `<div class="notebody" hidden>${esc(sd.note)}</div>` : ""}
@@ -439,8 +487,6 @@ function renderRounds(){
             ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " Round Running"
             : "Idle — no round"}</div>
           ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
-          ${f.group_id ? `<div class="sub" style="font-family:'Roboto Mono',monospace;` +
-            `font-size:.71rem;word-break:break-word">${esc(f.regime)} / ${f.bucket_id} / ${esc(spaceOut(f.group_id))}</div>` : ""}
         </div>
         ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
