@@ -305,6 +305,23 @@ function humanize(gid){
   }).join(" ");
 }
 
+const REGIME_SUFFIXES = ["_Bull", "_Bear", "_Range", "_Ranging"];
+function stripRegime(n){
+  for(const suf of REGIME_SUFFIXES){
+    if(String(n).endsWith(suf)) return String(n).slice(0, -suf.length);
+  }
+  return String(n);
+}
+
+function varList(vars){
+  if(!Array.isArray(vars) || !vars.length) return "";
+  const n = vars.length;
+  return `<div class="vars">
+      <div class="vhead">${n} Variable${n === 1 ? "" : "s"}</div>
+      ${vars.map(v => `<div class="v">${esc(stripRegime(v))}</div>`).join("")}
+    </div>`;
+}
+
 const titleCase = s => String(s).charAt(0) + String(s).slice(1).toLowerCase();
 
 function ago(sec){
@@ -427,6 +444,7 @@ function renderRounds(){
                    ["Rounds done", done[f.machine] ?? 0],
                    ["Tier", f.tier]])}
         ${progressBar(f, rc)}
+        ${varList(f.variables)}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
           `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
           `so this page cannot say what it is doing now.</span></div>` : ""}
