@@ -445,6 +445,58 @@ function jobsDone(regime, bucketId){
   return b.groups_total ? `${b.groups_done} of ${b.groups_total}` : String(b.groups_done);
 }
 
+/* ETA -- the LOCAL CLOCK TIME this job should finish at. The rate already on
+   this row answers the same question, but only after arithmetic: "64% at
+   9.4 %/h" is 3.8 hours, and what you want to know is whether that lands
+   before or after you go to bed.
+
+   THE ARITHMETIC IS UPSTREAM'S, RESTATED. mt5_progress.hours_remaining and
+   backtest_progress.hours_remaining are both `(100 - percent) / rate` behind
+   the same two guards used here, so this agrees with them by construction
+   rather than by luck. The figure itself does not ride the beacon --
+   _BEACON_PROGRESS_FIELDS forwards percent and pct_per_hour and drops
+   hours_remaining -- so the renderer re-derives it rather than the publisher
+   growing a field for a thing it already has the inputs for.
+
+   ANCHORED TO THE BEACON, NOT TO NOW. `percent` was true when the machine last
+   reported; adding the remaining hours to `now` would push every ETA later by
+   the beacon's own age. That is seconds on a live card -- and it is the whole
+   story on a stale one, which is why a STALE BEACON GETS NO ETA. Its percent is
+   fifteen-plus minutes old, and the card already carries a warning saying the
+   page cannot say what that machine is doing now; a confident finishing time
+   printed under that warning would contradict it. Same lesson the backtest
+   freshness guard was written for: "91% -- ~0h left" on a machine that has
+   moved on is worse than no number. */
+function etaAt(f){
+  if(stale(f)) return null;
+  if(f.percent == null || !f.pct_per_hour || f.percent >= 100) return null;
+  const beaconMs = Date.now() - (f.age_seconds || 0) * 1000;
+  return new Date(beaconMs + ((100 - f.percent) / f.pct_per_hour) * 3600e3);
+}
+
+/* A bare "03:12" is a lie by omission when it means tomorrow, and at 9 %/h a
+   round is ten hours long -- crossing midnight is the ordinary case here, not
+   the edge one. So the day is NAMED whenever it is not today. Local, for the
+   reason fmtWhen gives. Day distance is measured midnight-to-midnight and
+   rounded, so a 23- or 25-hour DST day still counts as one day. */
+const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function fmtEta(d){
+  if(!d) return null;
+  const p = n => String(n).padStart(2, "0");
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const now = new Date();
+  // A LIVE beacon can still sit behind a job that is nearly done: 99% at
+  // 60 %/h is one minute left, read four minutes ago. A finishing time in the
+  // past is not wrong, but printing it as a clock time reads as one.
+  if(d <= now) return "due now";
+  const days = Math.round(
+    (new Date(d.getFullYear(), d.getMonth(), d.getDate()) -
+     new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 864e5);
+  if(days === 0) return hm;
+  if(days < 7) return DAY_NAMES[d.getDay()] + " " + hm;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+}
+
 /* No cells means NO ROW. The .meta rule draws a border top and bottom, so an
    empty one is not invisible -- it is a 20px band of two stray rules. Idle
    machines hit this the moment a field is dropped from the row, which is
@@ -571,7 +623,8 @@ function renderRounds(){
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
                       ? f.pct_per_hour.toFixed(1) + " %/h" : null],
-                   ["Jobs done", jobsDone(f.regime, f.bucket_id)]])}
+                   ["Jobs done", jobsDone(f.regime, f.bucket_id)],
+                   ["ETA", fmtEta(etaAt(f))]])}
         ${progressBar(f, rc)}
         ${varList(f.variables)}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
