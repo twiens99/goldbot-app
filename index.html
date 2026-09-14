@@ -263,7 +263,10 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
   <header>
     <div class="h-row">
       <h1>GoldBot</h1>
-      <span class="h-sub" id="hsub">2 running · 17 of 95 groups</span>
+      <!-- Placeholder only, and deliberately NOT a plausible figure. The mockup
+     numbers that used to sit here were read back as a measurement and quoted
+     onward as one. The real figure is computed in paint(). -->
+      <span class="h-sub" id="hsub">…</span>
     </div>
     <div class="stamp" id="stamp"></div>
     <div class="baked" id="banner" hidden></div>
@@ -288,7 +291,7 @@ const EPOCH = "V3.0.0";
 // permanently -- deleting a file later does not remove it. Performance figures
 // and group/variable names are "how it is built", which is the half Trevor
 // wants private: people should copy the ACCOUNT, not rebuild the system.
-let FLEET = [], LEDGER = [], SEEDS = [];
+let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [];
 
 const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
@@ -412,6 +415,16 @@ function deltaEl(before, after){
 const RC = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
 const running = f => f.group_id && f.phase;
+const completed = r => !r.failed;
+
+/* "5 of 28" -- the groups this BUCKET has optimized, out of its own. null when
+   the machine is idle or the bucket is unknown, so metaRow drops the cell
+   rather than printing a confident zero. */
+function jobsDone(regime, bucketId){
+  const b = BUCKETS.find(x => x.regime === regime && x.bucket_id === bucketId);
+  if(!b || b.groups_done == null) return null;
+  return b.groups_total ? `${b.groups_done} of ${b.groups_total}` : String(b.groups_done);
+}
 
 function metaRow(pairs){
   return '<div class="meta">' + pairs.filter(x => x[1] != null && x[1] !== "")
@@ -460,9 +473,49 @@ function renderSeeds(){
     }).join("");
 }
 
+/* A FAILED ROUND WRITES NO LEDGER ROW -- the retry state machine is what
+   remembers it, and a success clears that entirely. So this is "what is failing
+   NOW", not a history, and it is the only place a failure is visible at all.
+
+   Parked (3 failures) is the one state that does not auto-revive: it is asking
+   for a decision, which is exactly what this page should not make someone go
+   looking for. */
+function renderFailures(){
+  if(!FAILURES.length) return "";
+  return '<div class="section-label">Failing — needs a look</div>' +
+    FAILURES.map(f => {
+      const rc = RC[f.regime] || "";
+      const n = f.failures || 0;
+      const why = f.parked ? "parked after 3 — waiting on you"
+        : f.awaiting_other_round ? "one other round runs first, then it retries"
+        : "retrying";
+      return `
+      <article class="card">
+        <div class="stripe warn"></div>
+        <div class="card-in">
+          <div class="top">
+            ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
+            ${f.released_by ? `<span class="chip gold">${esc(f.released_by)}</span>` : ""}
+            <span class="chip warn">${f.parked ? "PARKED" : "FAILED"}</span>
+            <span class="sp"></span>
+            <span class="when">${n} failure${n === 1 ? "" : "s"}</span>
+          </div>
+          <div>
+            <div class="title">${esc(humanize(f.group_id) || "Unknown group")}</div>
+            <div class="sub">${esc(why)}</div>
+          </div>
+        </div>
+      </article>`;
+    }).join("");
+}
+
 function renderRounds(){
   if(!FLEET.length) return '<div class="empty">No machines reporting.</div>';
-  const done = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
+  // Nothing per-machine here any more. "Rounds done by this box" counted a
+  // real thing, but not a thing anyone steers by: a ROUND is one group run
+  // once, and a group is deliberately re-run (2 consecutive middle wins before
+  // a variable can lock), so 26 rounds is 17 groups. The campaign's own unit is
+  // GROUPS PER BUCKET, and that belongs to the bucket, not to the box.
   // EVERY machine, not just the ones with a round. A machine that vanishes from
   // this page when it goes idle hides exactly the thing worth knowing -- that is
   // how a manually launched sweep read as a dead Laptop for three hours.
@@ -492,7 +545,7 @@ function renderRounds(){
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
                       ? f.pct_per_hour.toFixed(1) + " %/h" : null],
-                   ["Rounds done", done[f.machine] ?? 0],
+                   ["Jobs done", jobsDone(f.regime, f.bucket_id)],
                    ["Tier", f.tier]])}
         ${progressBar(f, rc)}
         ${varList(f.variables)}
@@ -516,10 +569,13 @@ function renderResults(){
     return `
     <article class="row">
       <div class="row-top">
-        <span class="chip ${rc}">${esc(r.regime)}</span>
+        <span class="chip ${r.failed ? "warn" : rc}">${
+          r.failed ? "FAILED" : esc(r.regime)}</span>
         <span class="row-grp">${esc(humanize(r.group_id))}</span>
         <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
       </div>
+      ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
+          esc(r.fail_reason || "no reason recorded")}</div>` : `
       <div class="row-pf">
         <div>
           <div class="lab">Bucket PF</div>
@@ -531,7 +587,7 @@ function renderResults(){
           <div class="pf"><b>${r.pf_before ?? "—"}</b>→<b>${r.pf_after ?? "—"}</b>
             ${deltaEl(r.pf_before, r.pf_after)}</div>
         </div>
-      </div>
+      </div>`}
       <div class="row-foot">
         <span>r${r.round_no}</span>
         <span>${esc(r.machine)}</span>
@@ -541,7 +597,12 @@ function renderResults(){
       </div>
     </article>`;
   }).join("");
-  return `<div class="section-label">${LEDGER.length} completed rounds · newest first</div>` + rows;
+  // "completed" has to mean completed. Counting every row here while the
+  // machine cards count only finished ones would put two different totals for
+  // the same thing on two tabs of one app.
+  const nf = LEDGER.length - LEDGER.filter(completed).length;
+  return `<div class="section-label">${LEDGER.filter(completed).length} completed` +
+    (nf ? ` · ${nf} failed` : "") + ` · newest first</div>` + rows;
 }
 
 /* ---------- shell ---------- */
@@ -563,12 +624,22 @@ function showState(msg){
   document.getElementById("page-results").innerHTML = "";
 }
 
+/* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
+   asking -- it counts attempts at groups, and a group is re-run on purpose. */
+function campaignProgress(){
+  const done = BUCKETS.reduce((a, b) => a + (b.groups_done || 0), 0);
+  const total = BUCKETS.reduce((a, b) => a + (b.groups_total || 0), 0);
+  if(!total) return LEDGER.filter(completed).length + " rounds this epoch";
+  return `${done} of ${total} groups this epoch`;
+}
+
 function paint(stamp){
-  document.getElementById("page-rounds").innerHTML = renderSeeds() + renderRounds();
+  document.getElementById("page-rounds").innerHTML =
+    renderSeeds() + renderFailures() + renderRounds();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("stamp").textContent = stamp;
   document.getElementById("hsub").textContent =
-    FLEET.length + " running · " + LEDGER.length + " rounds this epoch";
+    FLEET.length + " running · " + campaignProgress();
   document.getElementById("banner").hidden = true;
 }
 
@@ -577,6 +648,8 @@ function applySnapshot(d, source){
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = d.fleet;
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
+  FAILURES = Array.isArray(d.failures) ? d.failures : [];
+  BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   paint(source + " · " + fmtWhen(d.generated_at) + " · epoch " + EPOCH);
   return true;
