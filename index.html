@@ -336,18 +336,31 @@ const num = x => (typeof x !== "number" || !isFinite(x)) ? ""
    seed record itself. Trevor asked for three things here and they are all
    derived from the file the tester is actually running: the NAMES, the STEP
    COUNT, and the STEP RESOLUTION. */
-/* The third chip answers "what KIND of round is this", in the same vocabulary
-   the machine cards use for `phase` -- so a seed and a rotation round read the
-   same way on one screen.
+/* ONE SPELLING FOR AN OPERATION, wherever it appears -- machine chip, progress
+   bar, seed chip. The trailing digit is split off GENERICALLY (FOO2 -> "FOO 2")
+   rather than from a lookup table: the vocabulary lives upstream, and a copy
+   here would be the thing that drifts. It already did once on another surface,
+   where a numbered variant reached the screen raw and stayed wrong for days --
+   and this page was about to repeat it, rendering the raw value into a chip.
 
-   `round_type` is the record's own answer and wins outright; `kind` is the
-   coarse fallback and cannot tell a second pass from a first. The trailing
-   digit is split off GENERICALLY (FOO2 -> "FOO 2") rather than from a lookup
-   table: a table here would be one more copy of a vocabulary that lives
-   upstream, and copies drift. A type added upstream renders correctly with no
-   edit to this page. */
-const roundType = sd => String(sd.round_type || sd.kind || "seed")
-  .toUpperCase().replace(/^([A-Z]+?)(\d+)$/, "$1 $2");
+   The paused states share a prefix upstream rather than being spelled out one
+   by one, so the prefix is unfolded here rather than matched. */
+const PAUSED_PREFIX = "PAUSED_AFTER_";
+function phaseText(p){
+  let t = String(p || "").toUpperCase();
+  if(!t) return "";
+  const paused = t.startsWith(PAUSED_PREFIX);
+  if(paused) t = t.slice(PAUSED_PREFIX.length);
+  t = t.replace(/^([A-Z]+?)(\d+)$/, "$1 $2");
+  return paused ? "PAUSED · " + t : t;
+}
+
+/* The third chip on a seed answers "what KIND of round is this", in the same
+   vocabulary the machine cards use for `phase`, so a seed and a rotation round
+   read the same way on one screen. `round_type` is the record's own answer and
+   wins outright; `kind` is the coarse fallback and cannot tell a second pass
+   from a first. */
+const roundType = sd => phaseText(sd.round_type || sd.kind || "seed");
 
 function sweptList(vars, cells){
   if(!Array.isArray(vars) || !vars.length) return "";
@@ -436,7 +449,7 @@ function progressBar(f, rc){
   if(f.percent == null) return "";
   return `<div class="prog">
       <div class="prog-top"><span>${esc(f.mode === "real_ticks" ? "Real Ticks"
-        : f.mode === "ohlc" ? "OHLC" : (f.phase || "Progress"))}</span>
+        : f.mode === "ohlc" ? "OHLC" : (phaseText(f.phase) || "Progress"))}</span>
         <span class="pct">${f.percent}%</span></div>
       <div class="bar"><i class="${rc}" style="width:${Math.max(0, Math.min(100, f.percent))}%"></i></div>
     </div>`;
@@ -530,7 +543,7 @@ function renderRounds(){
         <div class="top">
           ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
           <span class="chip gold">${esc(f.machine)}</span>
-          ${f.phase ? `<span class="chip">${esc(f.phase)}</span>` : ""}
+          ${f.phase ? `<span class="chip">${esc(phaseText(f.phase))}</span>` : ""}
           <span class="sp"></span>
           <span class="when">${f.age_seconds != null
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
