@@ -428,6 +428,12 @@ function deltaEl(before, after){
 const RC = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
 const running = f => f.group_id && f.phase;
+/* A PHASE WITH NO GROUP IS NOT IDLE. SELECTING writes no detail upstream, so
+   regime, bucket, group and mode all arrive null and the phase is the only
+   true thing on the record. `running` is false for it, which titled the card
+   "Idle -- no round" while it wore a SELECTING chip -- the card contradicted
+   itself, and the fabricated preview data was hiding it. */
+const picking = f => f.phase && !f.group_id;
 const completed = r => !r.failed;
 
 /* "5 of 28" -- the groups this BUCKET has optimized, out of its own. null when
@@ -439,8 +445,14 @@ function jobsDone(regime, bucketId){
   return b.groups_total ? `${b.groups_done} of ${b.groups_total}` : String(b.groups_done);
 }
 
+/* No cells means NO ROW. The .meta rule draws a border top and bottom, so an
+   empty one is not invisible -- it is a 20px band of two stray rules. Idle
+   machines hit this the moment a field is dropped from the row, which is
+   exactly what happened when Tier came out. */
 function metaRow(pairs){
-  return '<div class="meta">' + pairs.filter(x => x[1] != null && x[1] !== "")
+  const cells = pairs.filter(x => x[1] != null && x[1] !== "");
+  if(!cells.length) return "";
+  return '<div class="meta">' + cells
     .map(([k, v, cls]) => `<div><span class="k">${esc(k)}</span>` +
       `<span class="v ${cls || ""}">${esc(v)}</span></div>`).join("") + '</div>';
 }
@@ -551,6 +563,7 @@ function renderRounds(){
         <div>
           <div class="title">${live
             ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " Round Running"
+            : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
           ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
         </div>
@@ -558,8 +571,7 @@ function renderRounds(){
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
                       ? f.pct_per_hour.toFixed(1) + " %/h" : null],
-                   ["Jobs done", jobsDone(f.regime, f.bucket_id)],
-                   ["Tier", f.tier]])}
+                   ["Jobs done", jobsDone(f.regime, f.bucket_id)]])}
         ${progressBar(f, rc)}
         ${varList(f.variables)}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
