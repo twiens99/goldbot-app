@@ -313,12 +313,17 @@ function stripRegime(n){
   return String(n);
 }
 
+/* Underscores are how the EA writes an identifier; they are not how a person
+   reads one. Display only -- the canonical name with its underscores still
+   travels in the snapshot, so a tap-through can still look it up. */
+const spaceOut = n => String(n).replace(/_/g, " ");
+
 function varList(vars){
   if(!Array.isArray(vars) || !vars.length) return "";
   const n = vars.length;
   return `<div class="vars">
       <div class="vhead">${n} Variable${n === 1 ? "" : "s"}</div>
-      ${vars.map(v => `<div class="v">${esc(stripRegime(v))}</div>`).join("")}
+      ${vars.map(v => `<div class="v">${esc(spaceOut(stripRegime(v)))}</div>`).join("")}
     </div>`;
 }
 
@@ -435,7 +440,7 @@ function renderRounds(){
             : "Idle — no round"}</div>
           ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
           ${f.group_id ? `<div class="sub" style="font-family:'Roboto Mono',monospace;` +
-            `font-size:.71rem;word-break:break-all">${esc(f.regime)}/${f.bucket_id}/${esc(f.group_id)}</div>` : ""}
+            `font-size:.71rem;word-break:break-word">${esc(f.regime)} / ${f.bucket_id} / ${esc(spaceOut(f.group_id))}</div>` : ""}
         </div>
         ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
