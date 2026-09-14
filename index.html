@@ -1,8 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Without the viewport tag a phone renders this at desktop width and scales
+     it down -- unreadable. Both of these were supplied by the artifact wrapper
+     during design; served raw from Pages there is no wrapper. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A1016">
+<meta name="color-scheme" content="dark">
+<!-- Add to Home Screen: launch without browser chrome. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GoldBot">
+<meta name="robots" content="noindex, nofollow">
 <title>GoldBot Fleet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap">
 
+</head>
+<body>
 <style>
 /* The app commits to one visual world -- a dark instrument panel -- rather than
    following the host theme, because that is what it will be as an APK. */
@@ -312,44 +330,56 @@ function deltaEl(before, after){
 }
 
 /* ---------- page: rounds ---------- */
+/* The publisher emits the RECORD shape, faithful to the beacons. Adapting it
+   for display is the renderer's job -- that split is the whole reason the app
+   can be rebuilt without touching the pipeline. */
+const RC = { BULL: "bull", BEAR: "bear", RANGING: "range" };
+const stale = f => f.age_seconds != null && f.age_seconds > 900;
+const running = f => f.group_id && f.phase;
+
+function metaRow(pairs){
+  return '<div class="meta">' + pairs.filter(x => x[1] != null && x[1] !== "")
+    .map(([k, v, cls]) => `<div><span class="k">${esc(k)}</span>` +
+      `<span class="v ${cls || ""}">${esc(v)}</span></div>`).join("") + '</div>';
+}
+
+function progressBar(f, rc){
+  if(f.percent == null) return "";
+  return `<div class="prog">
+      <div class="prog-top"><span>${esc(f.mode === "real_ticks" ? "Real Ticks"
+        : f.mode === "ohlc" ? "OHLC" : (f.phase || "Progress"))}</span>
+        <span class="pct">${f.percent}%</span></div>
+      <div class="bar"><i class="${rc}" style="width:${Math.max(0, Math.min(100, f.percent))}%"></i></div>
+    </div>`;
+}
+
 function renderRounds(){
-  return FLEET.map(f => {
-    const rc = REGIME_CLASS[f.regime] || "";
-    const vars = f.vars.map(v => `<div class="v">${esc(v)}</div>`)
-      .concat(f.rider ? [`<div class="v rider">+ ${esc(f.rider)} · rider</div>`] : [])
-      .join("");
-    const nVar = f.vars.length;
-    const label = `${nVar} Variable${nVar === 1 ? "" : "s"}${f.rider ? " + Rider" : ""}`;
+  const live = FLEET.filter(running);
+  if(!live.length) return '<div class="empty">No round is running.</div>';
+  return live.map(f => {
+    const rc = RC[f.regime] || "";
     return `
     <article class="card">
-      <div class="stripe ${f.warn ? "warn" : rc}"></div>
+      <div class="stripe ${stale(f) ? "warn" : rc}"></div>
       <div class="card-in">
         <div class="top">
-          <span class="chip ${rc}">${esc(f.regime)}</span>
+          ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
           <span class="chip">${esc(f.machine)}</span>
           <span class="sp"></span>
-          <span class="when">bucket ${f.bucket}</span>
+          ${f.bucket_id != null ? `<span class="when">bucket ${f.bucket_id}</span>` : ""}
         </div>
         <div>
-          <div class="title">${esc(titleCase(f.regime))} ${f.bucket} Round Running</div>
-          <div class="sub">${esc(humanize(f.group))}</div>
+          <div class="title">${esc(titleCase(f.regime || ""))} ${f.bucket_id ?? ""} Round Running</div>
+          <div class="sub">${esc(humanize(f.group_id))}</div>
         </div>
-        <div class="meta">
-          <div><span class="k">Mode</span><span class="v">${esc(f.mode)}</span></div>
-          <div><span class="k">Passes</span><span class="v gold">~${f.passes.toLocaleString()}</span></div>
-          ${f.grid > f.passes ? `<div><span class="k">Grid</span><span class="v">${f.grid.toLocaleString()}</span></div>` : ""}
-          <div><span class="k">Est.</span><span class="v">${esc(f.eta)}</span></div>
-        </div>
-        <div class="prog">
-          <div class="prog-top"><span>Progress</span><span class="pct">${f.pct}%</span></div>
-          <div class="bar"><i class="${rc}" style="width:${f.pct}%"></i></div>
-        </div>
-        <div class="vars">
-          <div class="vhead">${esc(label)}</div>
-          ${vars}
-        </div>
-        ${f.riderDetail ? `<div class="sub" style="font-size:.75rem">${esc(f.riderDetail)}</div>` : ""}
-        ${f.warn ? `<div class="warnrow"><span>⚠️</span><span>${esc(f.warn)}</span></div>` : ""}
+        ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
+                      : f.mode === "ohlc" ? "OHLC" : null, "gold"],
+                   ["Phase", f.phase],
+                   ["Rate", f.pct_per_hour != null
+                      ? f.pct_per_hour.toFixed(1) + " %/h" : null]])}
+        ${progressBar(f, rc)}
+        ${stale(f) ? `<div class="warnrow"><span>⚠️</span><span>` +
+          `This machine last reported ${esc(ago(f.age_seconds))}.</span></div>` : ""}
         <div class="acts">
           <button type="button" class="primary">Skip</button>
           <button type="button">To OHLC</button>
@@ -362,38 +392,33 @@ function renderRounds(){
 
 /* ---------- page: fleet ---------- */
 function renderFleet(){
-  const counts = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
+  if(!FLEET.length) return '<div class="empty">No machines reporting.</div>';
+  const done = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
   return FLEET.map(f => {
-    const rc = REGIME_CLASS[f.regime] || "";
-    const stale = f.hbSeconds != null && f.hbSeconds > 900;
+    const rc = RC[f.regime] || "";
     return `
     <article class="card">
-      <div class="stripe ${stale ? "warn" : rc}"></div>
+      <div class="stripe ${stale(f) ? "warn" : rc || "bull"}"></div>
       <div class="card-in">
         <div class="top">
           <span class="chip gold">${esc(f.machine)}</span>
-          <span class="chip ${rc}">${esc(f.state)}</span>
+          ${f.phase ? `<span class="chip ${rc}">${esc(f.phase)}</span>` : ""}
           <span class="sp"></span>
-          ${f.hbSeconds != null
-            ? `<span class="when">♥ ${esc(ago(f.hbSeconds))}</span>`
-            : `<span class="when">no lease file</span>`}
+          <span class="when">${f.age_seconds != null
+            ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div>
-          <div class="title">${esc(humanize(f.group))}</div>
-          <div class="sub" style="font-family:'Roboto Mono',monospace;font-size:.73rem">${esc(f.regime)}/${f.bucket}/${esc(f.group)}</div>
+          <div class="title">${f.group_id ? esc(humanize(f.group_id)) : "Idle"}</div>
+          ${f.group_id ? `<div class="sub" style="font-family:'Roboto Mono',monospace;` +
+            `font-size:.73rem">${esc(f.regime)}/${f.bucket_id}/${esc(f.group_id)}</div>` : ""}
         </div>
-        <div class="prog">
-          <div class="prog-top"><span>${esc(f.mode)}</span><span class="pct">${f.pct}%</span></div>
-          <div class="bar"><i class="${rc}" style="width:${f.pct}%"></i></div>
-        </div>
-        <div class="meta">
-          <div><span class="k">Rounds done</span><span class="v">${counts[f.machine] || 0}</span></div>
-          ${f.heldHours != null ? `<div><span class="k">Lease held</span><span class="v">${f.heldHours}h</span></div>` : ""}
-          <div><span class="k">Est. left</span><span class="v">${esc(f.eta)}</span></div>
-        </div>
-        ${f.warn ? `<div class="warnrow"><span>⚠️</span><span>${esc(f.warn)}</span></div>` : ""}
-        <div class="noterow" data-toggle><span>About this machine</span><span class="car">▾</span></div>
-        <div class="notebody" hidden>${esc(f.note)}</div>
+        ${progressBar(f, rc)}
+        ${metaRow([["Rounds done", done[f.machine] ?? 0],
+                   ["Tier", f.tier],
+                   ["Source", f.source]])}
+        ${stale(f) ? `<div class="warnrow"><span>⚠️</span><span>` +
+          `Last reported ${esc(ago(f.age_seconds))} — the beacon is ` +
+          `stale, so this page cannot say what it is doing now.</span></div>` : ""}
       </div>
     </article>`;
   }).join("");
@@ -513,3 +538,5 @@ document.addEventListener("click", e => {
   t.querySelector(".car").textContent = body.hidden ? "▾" : "▴";
 });
 </script>
+</body>
+</html>
