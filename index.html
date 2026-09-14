@@ -128,7 +128,10 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .chip.range{background:rgba(111,168,212,.14);color:var(--range);}
 .when{font-size:.69rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
 
-.title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;}
+.title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;
+  /* A seed label is an identifier, not prose -- EMA_AB_TICKS_BEAR_EMA_PERIODS_MID
+     has no spaces to break at and ran off the card. */
+  overflow-wrap:anywhere;}
 .sub{font-size:.83rem;color:var(--dim);margin-top:1px;}
 
 .meta{
@@ -226,6 +229,20 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .hcount{color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums;}
 .hcount.quiet{color:var(--faint);font-weight:600;}
 .hcount.warn{color:var(--warn);}
+
+/* ---------- job selector ---------- */
+.jrow .hstripe{background:var(--faint);}
+.jrow .hstripe.bull{background:var(--bull);}
+.jrow .hstripe.bear{background:var(--bear);}
+.jrow .hstripe.range{background:var(--range);}
+.jrow .hstripe.warn{background:var(--warn);}
+.jtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.backbtn{
+  background:transparent;border:0;cursor:pointer;
+  font-family:inherit;font-size:.82rem;font-weight:600;
+  color:var(--dim);padding:2px 0;text-align:left;align-self:flex-start;
+}
+.backbtn:active{transform:translateY(1px);}
 
 /* ---------- results rows ---------- */
 .row{
@@ -563,8 +580,13 @@ const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
 
 function renderSeeds(list, label){
   if(!list || !list.length) return "";
-  return '<div class="section-label">' + esc(label) + '</div>' +
-    list.map(sd => {
+  return (label ? '<div class="section-label">' + esc(label) + '</div>' : "")
+    + list.map(seedCard).join("");
+}
+
+/* ONE SEED, ONE CARD, wherever it is shown -- the list and the job detail call
+   the same function, so a seed cannot read two ways on two screens. */
+function seedCard(sd){
       const rc = RC[sd.regime] || "";
       const when = sd.claimed_at || sd.created_at;
       return `
@@ -589,7 +611,6 @@ function renderSeeds(list, label){
             `<div class="notebody" hidden>${esc(sd.note)}</div>` : ""}
         </div>
       </article>`;
-    }).join("");
 }
 
 /* A FAILED ROUND WRITES NO LEDGER ROW -- the retry state machine is what
@@ -638,7 +659,11 @@ function renderRounds(){
   // EVERY machine, not just the ones with a round. A machine that vanishes from
   // this page when it goes idle hides exactly the thing worth knowing -- that is
   // how a manually launched sweep read as a dead Laptop for three hours.
-  return FLEET.map(f => {
+  return FLEET.map(machineCard).join("");
+}
+
+/* ONE MACHINE, ONE CARD. Same reason as seedCard. */
+function machineCard(f){
     const rc = RC[f.regime] || "";
     const live = running(f);
     const st = stale(f);
@@ -679,7 +704,6 @@ function renderRounds(){
         </div>` : ""}
       </div>
     </article>`;
-  }).join("");
 }
 
 /* ---------- page: results ---------- */
@@ -771,18 +795,132 @@ function campaignProgress(){
    belong above the things that are -- but dropping it entirely would hide work
    that is owed, which is the failure this app keeps being rebuilt to avoid. It
    gets its own muted heading rather than being mixed in. */
+/* THE JOB SELECTOR. Trevor, 2026-09-14: *"I want a JOB selector. Each Job is
+   labeled here, The Desktop will have one, the laptop will have one, and then
+   there will be Queued up next job, and Unfinished Jobs. Click on that job,
+   and it'll show you everything associated with that job."*
+
+   ONE JOB, ONE ROW. This page used to list machines and seeds as separate
+   sections, so the sweep running on the Laptop appeared TWICE -- once as the
+   machine's card, once as the seed it was holding -- and read as two jobs. A
+   job here is the PAIRING: the machine, and whatever seed it holds. That is
+   also what makes a detail view possible at all: there is one thing to open. */
+let ACTIVE_JOB = null;
+
+const seedOnMachine = m =>
+  SEEDS.find(sd => sd.claimed_by === m && startedSeed(sd)) || null;
+
+/* Ordered the way the questions are asked: what is running now, what runs
+   next, and what is owed. */
+function jobsModel(){
+  const jobs = [];
+  FLEET.forEach(f => {
+    const sd = seedOnMachine(f.machine);
+    jobs.push({
+      id: "m:" + f.machine, section: "Running now", fleet: f, seed: sd,
+      title: f.machine,
+      // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
+      // a sweep is not one -- so a machine part-way through a seeded sweep can
+      // truthfully report SELECTING with no group while it is plainly busy.
+      // Measured 2026-09-14: the Laptop read "choosing a group" for 90 minutes
+      // while it held and ran the TICKS arm of an A/B. The seed record is the
+      // stronger evidence: something claimed it, and nothing else can hold it.
+      line: stale(f) ? "not reporting - last seen " + ago(f.age_seconds)
+          : sd ? (sd.label || humanize(sd.group_id) || "seeded work")
+          : running(f) ? humanize(f.group_id)
+          : picking(f) ? "choosing a group"
+          : "idle - no round",
+      chip: f.phase ? phaseText(f.phase) : null,
+      cls: stale(f) ? "warn" : (RC[f.regime] || ""),
+    });
+  });
+
+  // Seeds not already shown as a machine's job, so nothing appears twice.
+  const shown = new Set(FLEET.map(f => seedOnMachine(f.machine))
+                             .filter(Boolean).map(sd => sd.seed_id));
+  const loose = SEEDS.filter(sd => !shown.has(sd.seed_id));
+  const queued = loose.filter(queuedSeed).sort((a, b) =>
+    (Number(b.priority) || 0) - (Number(a.priority) || 0) ||
+    (a.created_at || 0) - (b.created_at || 0));
+  const owed = loose.filter(sd => !queuedSeed(sd));
+
+  queued.forEach((sd, i) => jobs.push({
+    id: "s:" + sd.seed_id,
+    section: i === 0 ? "Queued up next" : "Queued after that",
+    seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
+    line: (sd.regime ? sd.regime + " · " : "") + roundType(sd),
+    chip: null, cls: RC[sd.regime] || "",
+  }));
+  owed.forEach(sd => jobs.push({
+    id: "s:" + sd.seed_id, section: "Unfinished",
+    seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
+    line: needsDecision(sd) ? "measured - waiting on you" : String(sd.status || ""),
+    chip: needsDecision(sd) ? "DECIDE" : null,
+    cls: needsDecision(sd) ? "warn" : (RC[sd.regime] || ""),
+  }));
+  return jobs;
+}
+
+function jobRow(j){
+  return `<button type="button" class="hbtn jrow" data-job="${esc(j.id)}">
+      <div class="hstripe ${esc(j.cls || "")}"></div>
+      <div class="hrow">
+        <span class="hb">
+          <span class="jtop"><span class="hname">${esc(j.title)}</span>` +
+          (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") + `</span>
+          <span class="hsubline">${esc(j.line)}</span></span>
+        <span class="hcar">›</span>
+      </div>
+    </button>`;
+}
+
+function renderJobList(){
+  const jobs = jobsModel();
+  if(!jobs.length) return '<div class="empty">No jobs.</div>';
+  let out = "", section = null;
+  jobs.forEach(j => {
+    if(j.section !== section){
+      section = j.section;
+      out += '<div class="section-label">' + esc(section) + '</div>';
+    }
+    out += jobRow(j);
+  });
+  return out + renderFailures();
+}
+
+/* EVERYTHING ASSOCIATED WITH THAT JOB on one screen: the machine running it,
+   the seed it came from, its outcome, and any failure history for the same
+   group. Built from the SAME card renderers the list uses, so a job cannot
+   describe itself differently depending on which screen you reached it from. */
+function renderJobDetail(job){
+  const back = '<button type="button" class="backbtn" data-job="">' +
+               '‹ All jobs</button>';
+  if(!job) return back + '<div class="empty">That job is gone.</div>';
+  const gid = (job.fleet && job.fleet.group_id) || (job.seed && job.seed.group_id);
+  const fails = FAILURES.filter(f => gid && f.group_id === gid);
+  return back
+    + (job.fleet ? '<div class="section-label">Machine</div>' +
+         machineCard(job.fleet) : "")
+    + (job.seed ? '<div class="section-label">' +
+         (job.fleet ? "The seeded work it is running" : "Seeded work") +
+         '</div>' + seedCard(job.seed) : "")
+    + (job.seed && job.seed.outcome
+        ? '<div class="section-label">Outcome</div>' +
+          '<div class="notebody" style="border-left-color:var(--gold)">' +
+          esc(job.seed.outcome) + '</div>' : "")
+    + (fails.length ? '<div class="section-label">Failure history</div>' +
+         fails.map(f => `<article class="card"><div class="stripe warn"></div>` +
+           `<div class="card-in"><div class="title">` +
+           `${esc(humanize(f.group_id))}</div>` +
+           `<div class="sub">${f.failures || 0} failure` +
+           `${(f.failures || 0) === 1 ? "" : "s"}` +
+           `${f.parked ? " — parked, waiting on you" : ""}</div>` +
+           `</div></article>`).join("") : "");
+}
+
 function renderActive(){
-  const started = SEEDS.filter(startedSeed);
-  const queued = SEEDS.filter(queuedSeed);
-  // The machines get a heading like everything else on this page. They did not
-  // need one when they were the whole page; now that seeded and failing work
-  // sit under their own labels, an unlabelled block at the top reads as a
-  // preamble rather than as the first section.
-  return (FLEET.length ? '<div class="section-label">Machines</div>' : "")
-       + renderRounds()
-       + renderSeeds(started, "Started — not finished")
-       + renderFailures()
-       + renderSeeds(queued, "Queued — not started yet");
+  if(!ACTIVE_JOB) return renderJobList();
+  return renderJobDetail(jobsModel().find(j => j.id === ACTIVE_JOB));
 }
 
 /* ---------- page: home ---------- */
@@ -938,6 +1076,14 @@ function go(page){
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-go]");
   if(b) go(b.dataset.go);
+  const j = e.target.closest("[data-job]");
+  if(j){
+    // "" is the back button. Repaints ONLY the Active page: opening a job is
+    // navigation, not new data, so nothing else should flicker.
+    ACTIVE_JOB = j.dataset.job || null;
+    document.getElementById("page-active").innerHTML = renderActive();
+    window.scrollTo(0, 0);
+  }
 });
 
 document.addEventListener("click", e => {
