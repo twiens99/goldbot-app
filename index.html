@@ -201,6 +201,32 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .acts button.primary{background:var(--gold);color:#121A22;border-color:transparent;}
 .acts button:active{transform:translateY(1px);}
 
+/* ---------- home ---------- */
+.home{display:flex;flex-direction:column;gap:9px;}
+.hbtn{
+  background:var(--card);
+  border:0;border-radius:14px;
+  padding:0;cursor:pointer;width:100%;
+  font-family:inherit;color:var(--text);
+  overflow:hidden;display:flex;flex-direction:column;
+  text-align:left;
+}
+.hbtn .hstripe{height:3px;background:var(--gold);}
+.hbtn .hrow{display:flex;align-items:center;gap:13px;padding:15px 15px 16px;}
+.hic{font-size:1.45rem;line-height:1;width:30px;text-align:center;flex:none;}
+.hb{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.hname{
+  font-size:1rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+}
+.hsubline{font-size:.79rem;color:var(--dim);line-height:1.35;}
+.hcar{color:var(--faint);font-size:1.1rem;flex:none;}
+.hbtn:active{transform:translateY(1px);}
+.hbtn:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
+/* The count that decides whether you need to open it at all. */
+.hcount{color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums;}
+.hcount.quiet{color:var(--faint);font-weight:600;}
+.hcount.warn{color:var(--warn);}
+
 /* ---------- results rows ---------- */
 .row{
   background:var(--card);
@@ -273,12 +299,14 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
   </header>
 
   <main>
-    <section class="page" id="page-rounds"></section>
+    <section class="page" id="page-home"></section>
+    <section class="page" id="page-active" hidden></section>
     <section class="page" id="page-results" hidden></section>
   </main>
 
   <nav role="tablist">
-    <button role="tab" aria-selected="true" data-p="rounds"><span class="ic">▶</span>Rounds</button>
+    <button role="tab" aria-selected="true" data-p="home"><span class="ic">⌂</span>Home</button>
+    <button role="tab" aria-selected="false" data-p="active"><span class="ic">▶</span>Active</button>
     <button role="tab" aria-selected="false" data-p="results"><span class="ic">✓</span>Results</button>
   </nav>
 </div>
@@ -519,10 +547,24 @@ function progressBar(f, rc){
     </div>`;
 }
 
-function renderSeeds(){
-  if(!SEEDS.length) return "";
-  return '<div class="section-label">Seeded — cutting in line</div>' +
-    SEEDS.map(sd => {
+/* STARTED, AND NOT FINISHED WITH. `running`/`claimed` is work in flight;
+   `consult` is a sweep that produced its measurement and is waiting on a
+   person, which is open work too -- it is the one state that cannot clear
+   itself. `pending` is NOT here: nothing has picked it up, so it has not
+   started, and the Active page is about what IS happening.
+
+   Read off the seed's own status rather than from a count of leases: the lease
+   is the mechanism, the status is the record, and every other surface reads
+   the record. */
+const STARTED_STATUSES = new Set(["running", "claimed", "consult"]);
+const startedSeed = sd => STARTED_STATUSES.has(String(sd.status || "").toLowerCase());
+const queuedSeed = sd => String(sd.status || "").toLowerCase() === "pending";
+const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
+
+function renderSeeds(list, label){
+  if(!list || !list.length) return "";
+  return '<div class="section-label">' + esc(label) + '</div>' +
+    list.map(sd => {
       const rc = RC[sd.regime] || "";
       const when = sd.claimed_at || sd.created_at;
       return `
@@ -697,8 +739,12 @@ const GIST_URL = GIST_ID
   : null;
 
 function showState(msg){
-  document.getElementById("page-rounds").innerHTML =
+  // The HOME page carries it too: it is the page that opens first, and an app
+  // whose first screen shows two confident buttons over a snapshot it could
+  // not load is lying on the one screen everything else is reached from.
+  document.getElementById("page-home").innerHTML =
     '<div class="empty">' + msg + '</div>';
+  document.getElementById("page-active").innerHTML = "";
   document.getElementById("page-results").innerHTML = "";
 }
 
@@ -711,9 +757,91 @@ function campaignProgress(){
   return `${done} of ${total} groups this epoch`;
 }
 
+/* ---------- page: active (current jobs) ---------- */
+/* Trevor, 2026-09-14: *"That current jobs page will bring up all current jobs
+   that are active. It'll have the Desktop job it's working on, the laptop job
+   it's currently working on, along with any job that's been started, and isn't
+   fully complete."*
+
+   MACHINES FIRST, in that order, because that is the question the page is
+   opened to answer. The seeded work underneath is the rest of "started and not
+   complete".
+
+   QUEUED WORK IS STILL SHOWN, last and quietly. It is not active and does not
+   belong above the things that are -- but dropping it entirely would hide work
+   that is owed, which is the failure this app keeps being rebuilt to avoid. It
+   gets its own muted heading rather than being mixed in. */
+function renderActive(){
+  const started = SEEDS.filter(startedSeed);
+  const queued = SEEDS.filter(queuedSeed);
+  // The machines get a heading like everything else on this page. They did not
+  // need one when they were the whole page; now that seeded and failing work
+  // sit under their own labels, an unlabelled block at the top reads as a
+  // preamble rather than as the first section.
+  return (FLEET.length ? '<div class="section-label">Machines</div>' : "")
+       + renderRounds()
+       + renderSeeds(started, "Started — not finished")
+       + renderFailures()
+       + renderSeeds(queued, "Queued — not started yet");
+}
+
+/* ---------- page: home ---------- */
+/* A button that only says ACTIVE makes you open it to find out whether
+   anything is. The COUNT is the point of the screen, so each button carries
+   the one number that decides whether you need to go there at all. */
+function activeSummary(){
+  /* A STALE MACHINE IS NOT A WORKING ONE. `running` only asks whether the
+     record carries a group and a phase, and a beacon that stopped mid-round
+     keeps both forever -- so a box that died three hours ago still counts as
+     working by that test. Measured 2026-09-14: the home screen read "1 machine
+     working" while that machine's own card carried "last reported 3.5h ago --
+     the beacon is stale, so this page cannot say what it is doing now". The
+     button and the card were describing the same machine and disagreeing.
+
+     Same rule as the ETA guard one screen down: past the staleness window this
+     page does not get to say what a machine is doing, so it says how many have
+     gone quiet instead. */
+  const busy = FLEET.filter(f => running(f) && !stale(f)).length;
+  const gone = FLEET.filter(stale).length;
+  const started = SEEDS.filter(startedSeed).length;
+  const decide = SEEDS.filter(needsDecision).length;
+  const bits = [];
+  bits.push(busy
+    ? `<span class="hcount">${busy}</span> machine${busy === 1 ? "" : "s"} working`
+    : `<span class="hcount quiet">no machine</span> is running a round`);
+  if(gone) bits.push(`<span class="hcount warn">${gone}</span> not reporting`);
+  if(started) bits.push(`<span class="hcount">${started}</span> seeded job` +
+    (started === 1 ? "" : "s") + " open");
+  if(decide) bits.push(`<span class="hcount warn">${decide}</span> waiting on you`);
+  if(FAILURES.length) bits.push(
+    `<span class="hcount warn">${FAILURES.length}</span> failing`);
+  return bits.join(" · ");
+}
+
+function homeButton(page, icon, name, subline, stripe){
+  return `<button type="button" class="hbtn" data-go="${esc(page)}">
+      <div class="hstripe" style="${stripe ? `background:${stripe}` : ""}"></div>
+      <div class="hrow">
+        <span class="hic">${icon}</span>
+        <span class="hb"><span class="hname">${esc(name)}</span>
+          <span class="hsubline">${subline}</span></span>
+        <span class="hcar">›</span>
+      </div>
+    </button>`;
+}
+
+function renderHome(){
+  return '<div class="home">'
+    + homeButton("active", "▶", "Active", activeSummary())
+    + homeButton("results", "✓", "Results",
+        `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
+        `completed · ${campaignProgress()}`, "var(--good)")
+    + '</div>';
+}
+
 function paint(stamp){
-  document.getElementById("page-rounds").innerHTML =
-    renderSeeds() + renderFailures() + renderRounds();
+  document.getElementById("page-home").innerHTML = renderHome();
+  document.getElementById("page-active").innerHTML = renderActive();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("stamp").textContent = stamp;
   document.getElementById("hsub").textContent =
@@ -788,14 +916,28 @@ async function fromArtifactDb(){
   }
 })();
 
+const PAGES = ["home", "active", "results"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
       b.setAttribute("aria-selected", String(b === btn)));
-    ["rounds","results"].forEach(p =>
+    PAGES.forEach(p =>
       document.getElementById("page-" + p).hidden = (p !== btn.dataset.p));
     window.scrollTo(0, 0);
   });
+});
+
+/* A HOME BUTTON IS THE TAB IT NAMES. Routing it through `go()` rather than
+   duplicating the show/hide means the tab bar's selected state follows a home
+   tap -- otherwise the app would be on Active with Home still lit. */
+function go(page){
+  const btn = document.querySelector(`nav button[data-p="${page}"]`);
+  if(btn) btn.click();
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-go]");
+  if(b) go(b.dataset.go);
 });
 
 document.addEventListener("click", e => {
