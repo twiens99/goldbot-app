@@ -314,9 +314,18 @@ function ago(sec){
   return (sec/3600).toFixed(1) + "h ago";
 }
 
-function fmtWhen(iso){
-  const d = new Date(iso);
-  return d.toISOString().slice(5,16).replace("T", " ");
+/* LOCAL time, deliberately. Everything upstream is UTC -- `recorded_at` carries
+   +00:00 and the beacons are unix seconds -- and rendering that raw meant a
+   sweep started at 15:00 displayed as 22:00. The stored values stay UTC; only
+   the display converts, so the phone and the desktop each read in their own
+   zone without the records ever changing.
+
+   Accepts an ISO string OR unix SECONDS, because seeds carry the latter. */
+function fmtWhen(v){
+  const d = (typeof v === "number") ? new Date(v * 1000) : new Date(v);
+  if(isNaN(d.getTime())) return "";
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function deltaEl(before, after){
@@ -371,8 +380,7 @@ function renderSeeds(){
           </div>
           <div>
             <div class="title">${esc(sd.label || humanize(sd.group_id) || "Seeded work")}</div>
-            <div class="sub">${who}${when ? " · since " + esc(fmtWhen(
-              new Date(when * 1000).toISOString())) : ""}</div>
+            <div class="sub">${who}${when ? " · since " + esc(fmtWhen(when)) : ""}</div>
           </div>
           ${sd.note ? `<div class="noterow" data-toggle><span>Why it cut in line</span>` +
             `<span class="car">▾</span></div>` +
@@ -501,8 +509,7 @@ function applySnapshot(d, source){
   FLEET = d.fleet;
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
-  paint(source + " · " + String(d.generated_at || "").replace("T", " ").slice(0, 16) +
-        " · epoch " + EPOCH);
+  paint(source + " · " + fmtWhen(d.generated_at) + " · epoch " + EPOCH);
   return true;
 }
 
