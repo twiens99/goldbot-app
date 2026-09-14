@@ -266,13 +266,11 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 
   <main>
     <section class="page" id="page-rounds"></section>
-    <section class="page" id="page-fleet" hidden></section>
     <section class="page" id="page-results" hidden></section>
   </main>
 
   <nav role="tablist">
     <button role="tab" aria-selected="true" data-p="rounds"><span class="ic">▶</span>Rounds</button>
-    <button role="tab" aria-selected="false" data-p="fleet"><span class="ic">▤</span>Fleet</button>
     <button role="tab" aria-selected="false" data-p="results"><span class="ic">✓</span>Results</button>
   </nav>
 </div>
@@ -354,71 +352,50 @@ function progressBar(f, rc){
 }
 
 function renderRounds(){
-  const live = FLEET.filter(running);
-  if(!live.length) return '<div class="empty">No round is running.</div>';
-  return live.map(f => {
+  if(!FLEET.length) return '<div class="empty">No machines reporting.</div>';
+  const done = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
+  // EVERY machine, not just the ones with a round. A machine that vanishes from
+  // this page when it goes idle hides exactly the thing worth knowing -- that is
+  // how a manually launched sweep read as a dead Laptop for three hours.
+  return FLEET.map(f => {
     const rc = RC[f.regime] || "";
+    const live = running(f);
+    const st = stale(f);
     return `
     <article class="card">
-      <div class="stripe ${stale(f) ? "warn" : rc}"></div>
+      <div class="stripe ${st ? "warn" : (live ? rc : "")}"></div>
       <div class="card-in">
         <div class="top">
           ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
-          <span class="chip">${esc(f.machine)}</span>
-          <span class="sp"></span>
-          ${f.bucket_id != null ? `<span class="when">bucket ${f.bucket_id}</span>` : ""}
-        </div>
-        <div>
-          <div class="title">${esc(titleCase(f.regime || ""))} ${f.bucket_id ?? ""} Round Running</div>
-          <div class="sub">${esc(humanize(f.group_id))}</div>
-        </div>
-        ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
-                      : f.mode === "ohlc" ? "OHLC" : null, "gold"],
-                   ["Phase", f.phase],
-                   ["Rate", f.pct_per_hour != null
-                      ? f.pct_per_hour.toFixed(1) + " %/h" : null]])}
-        ${progressBar(f, rc)}
-        ${stale(f) ? `<div class="warnrow"><span>⚠️</span><span>` +
-          `This machine last reported ${esc(ago(f.age_seconds))}.</span></div>` : ""}
-        <div class="acts">
-          <button type="button" class="primary">Skip</button>
-          <button type="button">To OHLC</button>
-          <button type="button">To Ticks</button>
-        </div>
-      </div>
-    </article>`;
-  }).join("");
-}
-
-/* ---------- page: fleet ---------- */
-function renderFleet(){
-  if(!FLEET.length) return '<div class="empty">No machines reporting.</div>';
-  const done = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
-  return FLEET.map(f => {
-    const rc = RC[f.regime] || "";
-    return `
-    <article class="card">
-      <div class="stripe ${stale(f) ? "warn" : rc || "bull"}"></div>
-      <div class="card-in">
-        <div class="top">
           <span class="chip gold">${esc(f.machine)}</span>
-          ${f.phase ? `<span class="chip ${rc}">${esc(f.phase)}</span>` : ""}
+          ${f.phase ? `<span class="chip">${esc(f.phase)}</span>` : ""}
           <span class="sp"></span>
           <span class="when">${f.age_seconds != null
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div>
-          <div class="title">${f.group_id ? esc(humanize(f.group_id)) : "Idle"}</div>
+          <div class="title">${live
+            ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " Round Running"
+            : "Idle — no round"}</div>
+          ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
           ${f.group_id ? `<div class="sub" style="font-family:'Roboto Mono',monospace;` +
-            `font-size:.73rem">${esc(f.regime)}/${f.bucket_id}/${esc(f.group_id)}</div>` : ""}
+            `font-size:.71rem;word-break:break-all">${esc(f.regime)}/${f.bucket_id}/${esc(f.group_id)}</div>` : ""}
         </div>
+        ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
+                      : f.mode === "ohlc" ? "OHLC" : null, "gold"],
+                   ["Rate", f.pct_per_hour != null
+                      ? f.pct_per_hour.toFixed(1) + " %/h" : null],
+                   ["Rounds done", done[f.machine] ?? 0],
+                   ["Tier", f.tier]])}
         ${progressBar(f, rc)}
-        ${metaRow([["Rounds done", done[f.machine] ?? 0],
-                   ["Tier", f.tier],
-                   ["Source", f.source]])}
-        ${stale(f) ? `<div class="warnrow"><span>⚠️</span><span>` +
-          `Last reported ${esc(ago(f.age_seconds))} — the beacon is ` +
-          `stale, so this page cannot say what it is doing now.</span></div>` : ""}
+        ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
+          `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
+          `so this page cannot say what it is doing now.</span></div>` : ""}
+        ${live ? `<div class="acts">
+          <button type="button" class="primary">Skip</button>
+          <button type="button">To OHLC</button>
+          <button type="button">To Ticks</button>
+        </div>` : ""}
       </div>
     </article>`;
   }).join("");
@@ -475,13 +452,11 @@ const GIST_URL = GIST_ID
 function showState(msg){
   document.getElementById("page-rounds").innerHTML =
     '<div class="empty">' + msg + '</div>';
-  document.getElementById("page-fleet").innerHTML = "";
   document.getElementById("page-results").innerHTML = "";
 }
 
 function paint(stamp){
   document.getElementById("page-rounds").innerHTML = renderRounds();
-  document.getElementById("page-fleet").innerHTML = renderFleet();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("stamp").textContent = stamp;
   document.getElementById("hsub").textContent =
@@ -489,31 +464,65 @@ function paint(stamp){
   document.getElementById("banner").hidden = true;
 }
 
+function applySnapshot(d, source){
+  if(!d || d.kind !== "goldbot.app.snapshot") return false;
+  if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
+  FLEET = d.fleet;
+  LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
+  paint(source + " · " + String(d.generated_at || "").replace("T", " ").slice(0, 16) +
+        " · epoch " + EPOCH);
+  return true;
+}
+
+/* TWO HOSTS, ONE PAGE.
+   - As an ARTIFACT: read the runtime `db` store. An artifact's CSP blocks
+     cross-origin fetch, so it can never reach the gist -- the snapshot is
+     seeded into db from the Claude session instead, and onSnapshot repaints
+     live when a new one is written.
+   - On GITHUB PAGES: window.claude does not exist, so fall through and fetch
+     the gist, which is the live path the phone uses.
+   Trying db FIRST matters: on the artifact the gist fetch would fail silently
+   and leave the page looking broken. */
+async function fromArtifactDb(){
+  try{
+    if(!(window.claude && typeof window.claude.use === "function")) return false;
+    const db = await window.claude.use("db");   // null = not granted/served
+    if(!db) return false;
+    const ref = db.doc("snapshot/current");
+    const snap = await ref.get();
+    let painted = snap.exists && applySnapshot(snap.data(), "artifact");
+    if(!painted){
+      showState("No snapshot in this artifact's store yet.<br><br>" +
+                "Ask Claude to push one.");
+      document.getElementById("stamp").textContent = "artifact · empty";
+    }
+    // Live: repaint whenever a new snapshot is written.
+    ref.onSnapshot(s => { if(s.exists) applySnapshot(s.data(), "artifact"); },
+                   () => {});
+    return true;
+  }catch(e){ return false; }
+}
+
 (async () => {
+  showState("Loading…");
+  if(await fromArtifactDb()) return;
+
   if(!GIST_URL){
     showState("This page has no data source.<br><br>It needs the snapshot id in " +
               "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
     document.getElementById("stamp").textContent = "no source";
     return;
   }
-  showState("Loading…");
   try{
     // ?t= defeats the raw URL's 5-minute CDN cache (verified 200).
     const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache: "no-store"});
     if(!r.ok){ showState("Snapshot unreachable — HTTP " + r.status + "."); return; }
     const d = await r.json();
-    // The placeholder gist parses fine but carries no fleet. Say "not written
-    // yet" rather than rendering an empty app that looks broken.
-    if(d.kind !== "goldbot.app.snapshot" || !Array.isArray(d.fleet) || !Array.isArray(d.ledger)){
+    if(!applySnapshot(d, "live")){
       showState("The publisher has not written a snapshot yet.<br><br>" +
                 "This page goes live on its own once it does.");
       document.getElementById("stamp").textContent = "waiting for first publish";
-      return;
     }
-    FLEET = d.fleet;
-    LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
-    paint("live · " + String(d.generated_at || "").replace("T", " ").slice(0, 16) +
-          " · epoch " + EPOCH);
   } catch(e){
     showState("Could not load the snapshot.<br><br>Offline, or the id in the " +
               "link is wrong.");
@@ -524,7 +533,7 @@ document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
       b.setAttribute("aria-selected", String(b === btn)));
-    ["rounds","fleet","results"].forEach(p =>
+    ["rounds","results"].forEach(p =>
       document.getElementById("page-" + p).hidden = (p !== btn.dataset.p));
     window.scrollTo(0, 0);
   });
