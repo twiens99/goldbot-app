@@ -220,6 +220,8 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .hb{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
 .hname{
   font-size:1rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  /* Same reason .title wraps: a seed label is an identifier with no spaces. */
+  overflow-wrap:anywhere;min-width:0;
 }
 .hsubline{font-size:.79rem;color:var(--dim);line-height:1.35;}
 .hcar{color:var(--faint);font-size:1.1rem;flex:none;}
@@ -586,7 +588,11 @@ function renderSeeds(list, label){
 
 /* ONE SEED, ONE CARD, wherever it is shown -- the list and the job detail call
    the same function, so a seed cannot read two ways on two screens. */
-function seedCard(sd){
+function seedCard(sd, opts){
+      // `compact` is the job DETAIL, where the machine card directly above has
+      // already listed the variables. Printing them twice on one screen is not
+      // extra information, it is the same information competing with itself.
+      const compact = !!(opts && opts.compact);
       const rc = RC[sd.regime] || "";
       const when = sd.claimed_at || sd.created_at;
       return `
@@ -605,7 +611,7 @@ function seedCard(sd){
             <div class="sub">${sd.claimed_by ? "" : "unclaimed"}` +
               `${when ? (sd.claimed_by ? "since " : " · created ") + esc(fmtWhen(when)) : ""}</div>
           </div>
-          ${sweptList(sd.variables, sd.cells)}
+          ${compact ? "" : sweptList(sd.variables, sd.cells)}
           ${sd.note ? `<div class="noterow" data-toggle><span>Why it cut in line</span>` +
             `<span class="car">▾</span></div>` +
             `<div class="notebody" hidden>${esc(sd.note)}</div>` : ""}
@@ -659,7 +665,8 @@ function renderRounds(){
   // EVERY machine, not just the ones with a round. A machine that vanishes from
   // this page when it goes idle hides exactly the thing worth knowing -- that is
   // how a manually launched sweep read as a dead Laptop for three hours.
-  return FLEET.map(machineCard).join("");
+  return FLEET.map(f => machineCard(fleetWithSeed(f, seedOnMachine(f.machine))))
+              .join("");
 }
 
 /* ONE MACHINE, ONE CARD. Same reason as seedCard. */
@@ -674,14 +681,17 @@ function machineCard(f){
         <div class="top">
           ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
           <span class="chip gold">${esc(f.machine)}</span>
-          ${f.phase ? `<span class="chip">${esc(phaseText(f.phase))}</span>` : ""}
+          ${(f.seed || f.phase)
+            ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
+                                               : phaseText(f.phase))}</span>` : ""}
           <span class="sp"></span>
           <span class="when">${f.age_seconds != null
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div>
           <div class="title">${live
-            ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " Round Running"
+            ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " " +
+              esc(titleCase(f.seed ? roundType(f.seed) : "round")) + " Running"
             : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
           ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
@@ -693,7 +703,9 @@ function machineCard(f){
                    ["Jobs done", jobsDone(f.regime, f.bucket_id)],
                    ["ETA", fmtEta(etaAt(f))]])}
         ${progressBar(f, rc)}
-        ${varList(f.variables)}
+        ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
+            ? sweptList(f.seed.variables, f.seed.cells)
+            : varList(f.variables)}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
           `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
           `so this page cannot say what it is doing now.</span></div>` : ""}
@@ -810,6 +822,32 @@ let ACTIVE_JOB = null;
 const seedOnMachine = m =>
   SEEDS.find(sd => sd.claimed_by === m && startedSeed(sd)) || null;
 
+/* THE CARD IS THE JOB, NOT JUST THE BEACON. A beacon describes a ROUND, and a
+   seeded sweep is not one: it carries no regime, no bucket, no group and no
+   mode, because `SELECTING writes nothing` upstream. So a machine running a
+   named sweep against four variables rendered as "No group picked yet" with an
+   empty card -- true about the beacon, useless about the job.
+
+   All of it is on the SEED. Fill the gaps from there, and never overwrite a
+   value the beacon actually reported: a live round's own regime and mode are
+   the better source, and a seed that has been superseded must not repaint a
+   card that has moved on. */
+function fleetWithSeed(f, sd){
+  if(!sd) return f;
+  const seedMode = sd.real_ticks == null ? null
+                 : (sd.real_ticks ? "real_ticks" : "ohlc");
+  const seedVars = (sd.variables || [])
+    .map(v => (typeof v === "string" ? v : v && v.name)).filter(Boolean);
+  return Object.assign({}, f, {
+    regime: f.regime || sd.regime || null,
+    bucket_id: f.bucket_id != null ? f.bucket_id : (sd.bucket_id ?? null),
+    group_id: f.group_id || sd.group_id || null,
+    mode: f.mode || seedMode,
+    variables: (f.variables && f.variables.length) ? f.variables : seedVars,
+    seed: sd,
+  });
+}
+
 /* Ordered the way the questions are asked: what is running now, what runs
    next, and what is owed. */
 function jobsModel(){
@@ -817,7 +855,8 @@ function jobsModel(){
   FLEET.forEach(f => {
     const sd = seedOnMachine(f.machine);
     jobs.push({
-      id: "m:" + f.machine, section: "Running now", fleet: f, seed: sd,
+      id: "m:" + f.machine, section: "Running now",
+      fleet: fleetWithSeed(f, sd), seed: sd,
       title: f.machine,
       // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
       // a sweep is not one -- so a machine part-way through a seeded sweep can
@@ -830,7 +869,9 @@ function jobsModel(){
           : running(f) ? humanize(f.group_id)
           : picking(f) ? "choosing a group"
           : "idle - no round",
-      chip: f.phase ? phaseText(f.phase) : null,
+      // Same rule as the card's chip: a claimed seed names the work
+      // better than a beacon that is describing a round it is not running.
+      chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
       cls: stale(f) ? "warn" : (RC[f.regime] || ""),
     });
   });
@@ -903,7 +944,7 @@ function renderJobDetail(job){
          machineCard(job.fleet) : "")
     + (job.seed ? '<div class="section-label">' +
          (job.fleet ? "The seeded work it is running" : "Seeded work") +
-         '</div>' + seedCard(job.seed) : "")
+         '</div>' + seedCard(job.seed, {compact: !!job.fleet}) : "")
     + (job.seed && job.seed.outcome
         ? '<div class="section-label">Outcome</div>' +
           '<div class="notebody" style="border-left-color:var(--gold)">' +
