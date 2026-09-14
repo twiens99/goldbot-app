@@ -1,0 +1,516 @@
+<title>GoldBot Fleet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap">
+
+<style>
+/* The app commits to one visual world -- a dark instrument panel -- rather than
+   following the host theme, because that is what it will be as an APK. */
+:root{
+  --bg:#0A1016;
+  --card:#141E26;
+  --card-2:#1B2933;
+  --line:#22313C;
+  --text:#E8EFF3;
+  --dim:#8CA0AC;
+  --faint:#5F727E;
+  --gold:#E0B457;
+  --tonal:#1D3244;
+  --warn:#E08B4A;
+  --bad:#E0685A;
+  --good:#5FBE95;
+  --bull:#5FBE95;
+  --bear:#E0685A;
+  --range:#6FA8D4;
+}
+
+*{box-sizing:border-box;}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+.app{
+  max-width:460px;
+  margin:0 auto;
+  min-height:100vh;
+  background:var(--bg);
+  display:flex;
+  flex-direction:column;
+  border-left:1px solid var(--line);
+  border-right:1px solid var(--line);
+}
+
+/* ---------- header ---------- */
+header{
+  padding:16px 16px 12px;
+  border-bottom:1px solid var(--line);
+  display:flex;flex-direction:column;gap:3px;
+  position:sticky;top:0;background:var(--bg);z-index:5;
+}
+.h-row{display:flex;align-items:baseline;gap:9px;}
+h1{
+  margin:0;font-size:1.2rem;font-weight:700;letter-spacing:-.02em;
+}
+.h-sub{font-size:.76rem;color:var(--dim);}
+.stamp{
+  font-size:.68rem;color:var(--faint);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+}
+.baked{
+  margin-top:7px;
+  font-size:.7rem;color:var(--warn);
+  background:rgba(224,139,74,.1);
+  border:1px solid rgba(224,139,74,.25);
+  border-radius:6px;padding:5px 8px;
+  line-height:1.4;
+}
+
+/* ---------- pages ---------- */
+main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
+.page[hidden]{display:none;}
+.page{display:flex;flex-direction:column;gap:12px;}
+
+.section-label{
+  font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:700;color:var(--faint);
+  margin:4px 0 -4px 2px;
+}
+
+/* ---------- card ---------- */
+.card{
+  background:var(--card);
+  border-radius:14px;
+  overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.stripe{height:3px;background:var(--gold);}
+.stripe.bull{background:var(--bull);}
+.stripe.bear{background:var(--bear);}
+.stripe.range{background:var(--range);}
+.stripe.warn{background:var(--warn);}
+.card-in{padding:13px 14px 14px;display:flex;flex-direction:column;gap:11px;}
+
+.top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.sp{flex:1;}
+.chip{
+  font-size:.65rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:3px 7px;border-radius:5px;
+  background:var(--tonal);color:#9CC6E8;white-space:nowrap;
+}
+.chip.gold{background:rgba(224,180,87,.15);color:var(--gold);}
+.chip.warn{background:rgba(224,139,74,.16);color:var(--warn);}
+.chip.bull{background:rgba(95,190,149,.14);color:var(--bull);}
+.chip.bear{background:rgba(224,104,90,.14);color:var(--bear);}
+.chip.range{background:rgba(111,168,212,.14);color:var(--range);}
+.when{font-size:.69rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
+
+.title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;}
+.sub{font-size:.83rem;color:var(--dim);margin-top:1px;}
+
+.meta{
+  display:flex;gap:13px;flex-wrap:wrap;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:9px 0;font-size:.775rem;
+  font-variant-numeric:tabular-nums;
+}
+.meta .k{color:var(--faint);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;}
+.meta .v{color:var(--text);font-weight:600;}
+.meta .v.gold{color:var(--gold);}
+.meta div{display:flex;flex-direction:column;gap:1px;}
+
+/* progress */
+.prog{display:flex;flex-direction:column;gap:6px;}
+.prog-top{display:flex;justify-content:space-between;font-size:.76rem;}
+.prog-top .pct{font-weight:700;font-variant-numeric:tabular-nums;}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--gold);}
+.bar i.bull{background:var(--bull);}
+.bar i.bear{background:var(--bear);}
+.bar i.range{background:var(--range);}
+
+/* variable list */
+.vars{display:flex;flex-direction:column;gap:3px;}
+.vhead{
+  font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:700;margin-bottom:3px;
+}
+.v{
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  font-size:.755rem;color:var(--text);
+  word-break:break-all;line-height:1.45;
+  display:flex;align-items:center;gap:7px;
+}
+.v::before{
+  content:"";width:3px;height:3px;border-radius:50%;
+  background:var(--faint);flex:none;
+}
+.v.rider{color:var(--gold);}
+.v.rider::before{background:var(--gold);}
+
+.warnrow{
+  font-size:.78rem;color:var(--warn);line-height:1.42;font-weight:500;
+  display:flex;gap:7px;align-items:flex-start;
+}
+.noterow{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:.75rem;color:var(--dim);cursor:pointer;
+  border-top:1px solid var(--line);padding-top:9px;
+}
+.noterow .car{color:var(--faint);font-size:.7rem;}
+.notebody{
+  font-size:.755rem;color:var(--dim);line-height:1.5;
+  border-left:2px solid var(--line);padding-left:10px;
+}
+.notebody[hidden]{display:none;}
+
+.acts{display:flex;gap:7px;flex-wrap:wrap;}
+.acts button{
+  font-family:inherit;font-size:.775rem;font-weight:600;
+  border-radius:18px;padding:8px 14px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--text);
+}
+.acts button.primary{background:var(--gold);color:#121A22;border-color:transparent;}
+.acts button:active{transform:translateY(1px);}
+
+/* ---------- results rows ---------- */
+.row{
+  background:var(--card);
+  border-radius:11px;
+  padding:11px 12px;
+  display:flex;flex-direction:column;gap:7px;
+}
+.row-top{display:flex;align-items:center;gap:7px;}
+.row-grp{
+  font-size:.85rem;font-weight:600;letter-spacing:-.005em;
+  flex:1;min-width:0;line-height:1.3;
+}
+.row-when{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;white-space:nowrap;}
+.row-pf{
+  display:flex;gap:16px;font-size:.75rem;
+  font-variant-numeric:tabular-nums;
+}
+.row-pf .lab{color:var(--faint);font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;}
+.pf{display:flex;align-items:baseline;gap:5px;}
+.pf b{font-weight:600;}
+.delta{font-weight:700;font-size:.73rem;}
+.delta.up{color:var(--good);}
+.delta.dn{color:var(--bad);}
+.delta.flat{color:var(--faint);}
+.row-foot{
+  display:flex;gap:12px;font-size:.68rem;color:var(--faint);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+}
+
+.empty{
+  color:var(--faint);font-size:.85rem;text-align:center;
+  padding:40px 20px;line-height:1.6;
+}
+
+/* ---------- tab bar ---------- */
+nav{
+  position:fixed;bottom:0;left:0;right:0;
+  background:rgba(10,16,22,.96);
+  border-top:1px solid var(--line);
+  display:flex;
+  max-width:460px;margin:0 auto;
+  padding-bottom:env(safe-area-inset-bottom);
+  backdrop-filter:blur(8px);
+}
+nav button{
+  flex:1;background:transparent;border:0;cursor:pointer;
+  padding:10px 4px 12px;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-family:inherit;font-size:.68rem;font-weight:600;
+  color:var(--faint);letter-spacing:.01em;
+}
+nav button .ic{font-size:1.05rem;line-height:1;}
+nav button[aria-selected="true"]{color:var(--gold);}
+nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+
+<div class="app">
+  <header>
+    <div class="h-row">
+      <h1>GoldBot</h1>
+      <span class="h-sub" id="hsub">2 running · 17 of 95 groups</span>
+    </div>
+    <div class="stamp" id="stamp"></div>
+    <div class="baked" id="banner" hidden></div>
+  </header>
+
+  <main>
+    <section class="page" id="page-rounds"></section>
+    <section class="page" id="page-fleet" hidden></section>
+    <section class="page" id="page-results" hidden></section>
+  </main>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-p="rounds"><span class="ic">▶</span>Rounds</button>
+    <button role="tab" aria-selected="false" data-p="fleet"><span class="ic">▤</span>Fleet</button>
+    <button role="tab" aria-selected="false" data-p="results"><span class="ic">✓</span>Results</button>
+  </nav>
+</div>
+
+<script>
+const EPOCH = "V3.0.0";
+
+// NO DATA IS BAKED INTO THIS REPO. The repo is public (GitHub Pages requires
+// that on a free account), and anything committed here is in the git history
+// permanently -- deleting a file later does not remove it. Performance figures
+// and group/variable names are "how it is built", which is the half Trevor
+// wants private: people should copy the ACCOUNT, not rebuild the system.
+let FLEET = [], LEDGER = [];
+
+const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
+const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
+const TIMEFRAMES = new Set(["M1","M5","M15","M30","H1","H4","D1","W1","MN1"]);
+
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* Mirrors message_doc.humanize_group -- one implementation per renderer is the
+   cost of the split; the canonical id always travels alongside so a tap can
+   still look the group up. */
+function humanize(gid){
+  if(!gid) return "";
+  let n = String(gid).replace(/^(BULL|BEAR|RANGING|GLOBALS)_/, "");
+  return n.split("_").filter(Boolean).map(t => {
+    const u = t.toUpperCase();
+    if(ACRONYMS.has(u) || TIMEFRAMES.has(u)) return u;
+    if(/^G\d+$/.test(u)) return u;
+    return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+  }).join(" ");
+}
+
+const titleCase = s => String(s).charAt(0) + String(s).slice(1).toLowerCase();
+
+function ago(sec){
+  if(sec == null) return "";
+  if(sec < 90) return sec + "s ago";
+  if(sec < 5400) return Math.round(sec/60) + "m ago";
+  return (sec/3600).toFixed(1) + "h ago";
+}
+
+function fmtWhen(iso){
+  const d = new Date(iso);
+  return d.toISOString().slice(5,16).replace("T", " ");
+}
+
+function deltaEl(before, after){
+  if(before == null || after == null) return '<span class="delta flat">—</span>';
+  const d = after - before;
+  if(Math.abs(d) < 0.005) return '<span class="delta flat">±0.00</span>';
+  const cls = d > 0 ? "up" : "dn";
+  return `<span class="delta ${cls}">${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(2)}</span>`;
+}
+
+/* ---------- page: rounds ---------- */
+function renderRounds(){
+  return FLEET.map(f => {
+    const rc = REGIME_CLASS[f.regime] || "";
+    const vars = f.vars.map(v => `<div class="v">${esc(v)}</div>`)
+      .concat(f.rider ? [`<div class="v rider">+ ${esc(f.rider)} · rider</div>`] : [])
+      .join("");
+    const nVar = f.vars.length;
+    const label = `${nVar} Variable${nVar === 1 ? "" : "s"}${f.rider ? " + Rider" : ""}`;
+    return `
+    <article class="card">
+      <div class="stripe ${f.warn ? "warn" : rc}"></div>
+      <div class="card-in">
+        <div class="top">
+          <span class="chip ${rc}">${esc(f.regime)}</span>
+          <span class="chip">${esc(f.machine)}</span>
+          <span class="sp"></span>
+          <span class="when">bucket ${f.bucket}</span>
+        </div>
+        <div>
+          <div class="title">${esc(titleCase(f.regime))} ${f.bucket} Round Running</div>
+          <div class="sub">${esc(humanize(f.group))}</div>
+        </div>
+        <div class="meta">
+          <div><span class="k">Mode</span><span class="v">${esc(f.mode)}</span></div>
+          <div><span class="k">Passes</span><span class="v gold">~${f.passes.toLocaleString()}</span></div>
+          ${f.grid > f.passes ? `<div><span class="k">Grid</span><span class="v">${f.grid.toLocaleString()}</span></div>` : ""}
+          <div><span class="k">Est.</span><span class="v">${esc(f.eta)}</span></div>
+        </div>
+        <div class="prog">
+          <div class="prog-top"><span>Progress</span><span class="pct">${f.pct}%</span></div>
+          <div class="bar"><i class="${rc}" style="width:${f.pct}%"></i></div>
+        </div>
+        <div class="vars">
+          <div class="vhead">${esc(label)}</div>
+          ${vars}
+        </div>
+        ${f.riderDetail ? `<div class="sub" style="font-size:.75rem">${esc(f.riderDetail)}</div>` : ""}
+        ${f.warn ? `<div class="warnrow"><span>⚠️</span><span>${esc(f.warn)}</span></div>` : ""}
+        <div class="acts">
+          <button type="button" class="primary">Skip</button>
+          <button type="button">To OHLC</button>
+          <button type="button">To Ticks</button>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+/* ---------- page: fleet ---------- */
+function renderFleet(){
+  const counts = LEDGER.reduce((a, r) => (a[r.machine] = (a[r.machine] || 0) + 1, a), {});
+  return FLEET.map(f => {
+    const rc = REGIME_CLASS[f.regime] || "";
+    const stale = f.hbSeconds != null && f.hbSeconds > 900;
+    return `
+    <article class="card">
+      <div class="stripe ${stale ? "warn" : rc}"></div>
+      <div class="card-in">
+        <div class="top">
+          <span class="chip gold">${esc(f.machine)}</span>
+          <span class="chip ${rc}">${esc(f.state)}</span>
+          <span class="sp"></span>
+          ${f.hbSeconds != null
+            ? `<span class="when">♥ ${esc(ago(f.hbSeconds))}</span>`
+            : `<span class="when">no lease file</span>`}
+        </div>
+        <div>
+          <div class="title">${esc(humanize(f.group))}</div>
+          <div class="sub" style="font-family:'Roboto Mono',monospace;font-size:.73rem">${esc(f.regime)}/${f.bucket}/${esc(f.group)}</div>
+        </div>
+        <div class="prog">
+          <div class="prog-top"><span>${esc(f.mode)}</span><span class="pct">${f.pct}%</span></div>
+          <div class="bar"><i class="${rc}" style="width:${f.pct}%"></i></div>
+        </div>
+        <div class="meta">
+          <div><span class="k">Rounds done</span><span class="v">${counts[f.machine] || 0}</span></div>
+          ${f.heldHours != null ? `<div><span class="k">Lease held</span><span class="v">${f.heldHours}h</span></div>` : ""}
+          <div><span class="k">Est. left</span><span class="v">${esc(f.eta)}</span></div>
+        </div>
+        ${f.warn ? `<div class="warnrow"><span>⚠️</span><span>${esc(f.warn)}</span></div>` : ""}
+        <div class="noterow" data-toggle><span>About this machine</span><span class="car">▾</span></div>
+        <div class="notebody" hidden>${esc(f.note)}</div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+/* ---------- page: results ---------- */
+function renderResults(){
+  const rows = LEDGER.map(r => {
+    const rc = REGIME_CLASS[r.regime] || "";
+    return `
+    <article class="row">
+      <div class="row-top">
+        <span class="chip ${rc}">${esc(r.regime)}</span>
+        <span class="row-grp">${esc(humanize(r.group_id))}</span>
+        <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
+      </div>
+      <div class="row-pf">
+        <div>
+          <div class="lab">Bucket PF</div>
+          <div class="pf"><b>${r.bucket_pf_before ?? "—"}</b>→<b>${r.bucket_pf_after ?? "—"}</b>
+            ${deltaEl(r.bucket_pf_before, r.bucket_pf_after)}</div>
+        </div>
+        <div>
+          <div class="lab">Portfolio PF</div>
+          <div class="pf"><b>${r.pf_before ?? "—"}</b>→<b>${r.pf_after ?? "—"}</b>
+            ${deltaEl(r.pf_before, r.pf_after)}</div>
+        </div>
+      </div>
+      <div class="row-foot">
+        <span>r${r.round_no}</span>
+        <span>${esc(r.machine)}</span>
+        <span>${r.ticks_mode === "real_ticks" ? "ticks" : "ohlc"}</span>
+        <span>pass ${r.picked_pass ?? "—"}</span>
+        ${r.heavy ? "<span>heavy</span>" : ""}
+      </div>
+    </article>`;
+  }).join("");
+  return `<div class="section-label">${LEDGER.length} completed rounds · newest first</div>` + rows;
+}
+
+/* ---------- shell ---------- */
+let FLEET = FLEET_BAKED, LEDGER = LEDGER_BAKED;
+
+// The gist id is deliberately NOT in this repo. It arrives in the URL
+// fragment -- https://twiens99.github.io/goldbot-app/#g=<id> -- and browsers
+// never send a fragment to a server, so it appears in no request log and no
+// commit. Without it this page is an empty shell. Obscurity, not security: a
+// random 32-hex id is a meaningful lock, not a real one.
+const GIST_ID = new URLSearchParams(location.hash.slice(1)).get("g");
+const GIST_URL = GIST_ID
+  ? "https://gist.githubusercontent.com/twiens99/" + encodeURIComponent(GIST_ID) +
+    "/raw/goldbot_snapshot.json"
+  : null;
+
+function showState(msg){
+  document.getElementById("page-rounds").innerHTML =
+    '<div class="empty">' + msg + '</div>';
+  document.getElementById("page-fleet").innerHTML = "";
+  document.getElementById("page-results").innerHTML = "";
+}
+
+function paint(stamp){
+  document.getElementById("page-rounds").innerHTML = renderRounds();
+  document.getElementById("page-fleet").innerHTML = renderFleet();
+  document.getElementById("page-results").innerHTML = renderResults();
+  document.getElementById("stamp").textContent = stamp;
+  document.getElementById("hsub").textContent =
+    FLEET.length + " running · " + LEDGER.length + " rounds this epoch";
+  document.getElementById("banner").hidden = true;
+}
+
+(async () => {
+  if(!GIST_URL){
+    showState("This page has no data source.<br><br>It needs the snapshot id in " +
+              "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
+    document.getElementById("stamp").textContent = "no source";
+    return;
+  }
+  showState("Loading…");
+  try{
+    // ?t= defeats the raw URL's 5-minute CDN cache (verified 200).
+    const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache: "no-store"});
+    if(!r.ok){ showState("Snapshot unreachable — HTTP " + r.status + "."); return; }
+    const d = await r.json();
+    // The placeholder gist parses fine but carries no fleet. Say "not written
+    // yet" rather than rendering an empty app that looks broken.
+    if(d.kind !== "goldbot.app.snapshot" || !Array.isArray(d.fleet) || !Array.isArray(d.ledger)){
+      showState("The publisher has not written a snapshot yet.<br><br>" +
+                "This page goes live on its own once it does.");
+      document.getElementById("stamp").textContent = "waiting for first publish";
+      return;
+    }
+    FLEET = d.fleet;
+    LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
+    paint("live · " + String(d.generated_at || "").replace("T", " ").slice(0, 16) +
+          " · epoch " + EPOCH);
+  } catch(e){
+    showState("Could not load the snapshot.<br><br>Offline, or the id in the " +
+              "link is wrong.");
+  }
+})();
+
+document.querySelectorAll("nav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(b =>
+      b.setAttribute("aria-selected", String(b === btn)));
+    ["rounds","fleet","results"].forEach(p =>
+      document.getElementById("page-" + p).hidden = (p !== btn.dataset.p));
+    window.scrollTo(0, 0);
+  });
+});
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-toggle]");
+  if(!t) return;
+  const body = t.nextElementSibling;
+  body.hidden = !body.hidden;
+  t.querySelector(".car").textContent = body.hidden ? "▾" : "▴";
+});
+</script>
