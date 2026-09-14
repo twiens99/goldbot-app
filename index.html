@@ -283,7 +283,7 @@ const EPOCH = "V3.0.0";
 // permanently -- deleting a file later does not remove it. Performance figures
 // and group/variable names are "how it is built", which is the half Trevor
 // wants private: people should copy the ACCOUNT, not rebuild the system.
-let FLEET = [], LEDGER = [];
+let FLEET = [], LEDGER = [], SEEDS = [];
 
 const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
@@ -349,6 +349,37 @@ function progressBar(f, rc){
         <span class="pct">${f.percent}%</span></div>
       <div class="bar"><i class="${rc}" style="width:${Math.max(0, Math.min(100, f.percent))}%"></i></div>
     </div>`;
+}
+
+function renderSeeds(){
+  if(!SEEDS.length) return "";
+  return '<div class="section-label">Seeded — cutting in line</div>' +
+    SEEDS.map(sd => {
+      const rc = RC[sd.regime] || "";
+      const who = sd.claimed_by ? esc(sd.claimed_by) : "unclaimed";
+      const when = sd.claimed_at || sd.created_at;
+      return `
+      <article class="card">
+        <div class="stripe ${rc || "warn"}"></div>
+        <div class="card-in">
+          <div class="top">
+            <span class="chip gold">SEED</span>
+            <span class="chip">${esc(String(sd.kind || "").toUpperCase())}</span>
+            ${sd.regime ? `<span class="chip ${rc}">${esc(sd.regime)}</span>` : ""}
+            <span class="sp"></span>
+            <span class="when">${esc(String(sd.status || ""))}</span>
+          </div>
+          <div>
+            <div class="title">${esc(sd.label || humanize(sd.group_id) || "Seeded work")}</div>
+            <div class="sub">${who}${when ? " · since " + esc(fmtWhen(
+              new Date(when * 1000).toISOString())) : ""}</div>
+          </div>
+          ${sd.note ? `<div class="noterow" data-toggle><span>Why it cut in line</span>` +
+            `<span class="car">▾</span></div>` +
+            `<div class="notebody" hidden>${esc(sd.note)}</div>` : ""}
+        </div>
+      </article>`;
+    }).join("");
 }
 
 function renderRounds(){
@@ -456,7 +487,7 @@ function showState(msg){
 }
 
 function paint(stamp){
-  document.getElementById("page-rounds").innerHTML = renderRounds();
+  document.getElementById("page-rounds").innerHTML = renderSeeds() + renderRounds();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("stamp").textContent = stamp;
   document.getElementById("hsub").textContent =
@@ -468,6 +499,7 @@ function applySnapshot(d, source){
   if(!d || d.kind !== "goldbot.app.snapshot") return false;
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = d.fleet;
+  SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   paint(source + " · " + String(d.generated_at || "").replace("T", " ").slice(0, 16) +
         " · epoch " + EPOCH);
