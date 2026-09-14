@@ -880,9 +880,16 @@ function jobsModel(){
   const shown = new Set(FLEET.map(f => seedOnMachine(f.machine))
                              .filter(Boolean).map(sd => sd.seed_id));
   const loose = SEEDS.filter(sd => !shown.has(sd.seed_id));
+  // LOWER RUNS SOONER: 1 inserted, 2 unfinished, 3 new. Mirrors
+  // seeds.normalize_priority so a record from an older machine -- the old
+  // scale ran the other way -- still sorts where it belongs.
+  const prio = sd => {
+    const n = Number(sd.priority);
+    if(n === 1 || n === 2 || n === 3) return n;
+    return (!isFinite(n) || n <= 0) ? 3 : 1;
+  };
   const queued = loose.filter(queuedSeed).sort((a, b) =>
-    (Number(b.priority) || 0) - (Number(a.priority) || 0) ||
-    (a.created_at || 0) - (b.created_at || 0));
+    prio(a) - prio(b) || (a.created_at || 0) - (b.created_at || 0));
   const owed = loose.filter(sd => !queuedSeed(sd));
 
   queued.forEach((sd, i) => jobs.push({
