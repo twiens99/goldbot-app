@@ -593,11 +593,9 @@ function renderSeeds(list, label){
 
 /* ONE SEED, ONE CARD, wherever it is shown -- the list and the job detail call
    the same function, so a seed cannot read two ways on two screens. */
-function seedCard(sd, opts){
-      // `compact` is the job DETAIL, where the machine card directly above has
-      // already listed the variables. Printing them twice on one screen is not
-      // extra information, it is the same information competing with itself.
-      const compact = !!(opts && opts.compact);
+function seedCard(sd){
+      // No `compact` variant any more: this card is only ever drawn for a seed
+      // with NO machine card above it, so there is nothing to avoid repeating.
       const rc = RC[sd.regime] || "";
       const when = sd.claimed_at || sd.created_at;
       return `
@@ -606,7 +604,13 @@ function seedCard(sd, opts){
         <div class="card-in">
           <div class="top">
             ${sd.regime ? `<span class="chip ${rc}">${esc(sd.regime)}</span>` : ""}
-            ${sd.claimed_by ? `<span class="chip gold">${esc(sd.claimed_by)}</span>` : ""}
+            ${sd.claimed_by ? `<span class="chip gold">${esc(sd.claimed_by)}</span>`
+              /* PINNED AND UNCLAIMED. Once a machine has taken it the gold chip
+                 says which, and repeating the pin beside it answers a question
+                 nobody is still asking. Before that it is the difference
+                 between "waiting for a machine" and "waiting for THAT one". */
+              : sd.only_machine
+                ? `<span class="chip">${esc(sd.only_machine)} only</span>` : ""}
             <span class="chip">${esc(roundType(sd))}</span>
             <span class="sp"></span>
             <span class="when">${esc(String(sd.status || ""))}</span>
@@ -616,7 +620,7 @@ function seedCard(sd, opts){
             <div class="sub">${sd.claimed_by ? "" : "unclaimed"}` +
               `${when ? (sd.claimed_by ? "since " : " · created ") + esc(fmtWhen(when)) : ""}</div>
           </div>
-          ${compact ? "" : sweptList(sd.variables, sd.cells)}
+          ${sweptList(sd.variables, sd.cells)}
           ${sd.note ? `<div class="noterow" data-toggle><span>Why it cut in line</span>` +
             `<span class="car">▾</span></div>` +
             `<div class="notebody" hidden>${esc(sd.note)}</div>` : ""}
@@ -699,7 +703,13 @@ function machineCard(f){
               esc(titleCase(f.seed ? roundType(f.seed) : "round")) + " Running"
             : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
-          ${f.group_id ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
+          ${/* A SWEEP'S OWN NAME WINS. Folding the seed card away would
+                otherwise reduce EMA_AB_TICKS_BULL_EMA_PERIODS_MID to the group
+                it sweeps, and on an A/B the arm is the whole point -- two arms
+                over one group are two jobs that differ only in their label. */
+            (f.seed && f.seed.label) || f.group_id
+              ? `<div class="sub">${esc((f.seed && f.seed.label)
+                  || humanize(f.group_id))}</div>` : ""}
         </div>
         ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
@@ -909,7 +919,8 @@ function jobsModel(){
     id: "s:" + sd.seed_id,
     section: i === 0 ? "Queued up next" : "Queued after that",
     seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
-    line: roundType(sd),
+    line: roundType(sd) + (sd.only_machine ? " · " + sd.only_machine
+                                              + " only" : ""),
     chip: null, regime: sd.regime || null, cls: RC[sd.regime] || "",
   }));
   owed.forEach(sd => jobs.push({
@@ -964,9 +975,24 @@ function renderJobDetail(job){
   return back
     + (job.fleet ? '<div class="section-label">Machine</div>' +
          machineCard(job.fleet) : "")
-    + (job.seed ? '<div class="section-label">' +
-         (job.fleet ? "The seeded work it is running" : "Seeded work") +
-         '</div>' + seedCard(job.seed, {compact: !!job.fleet}) : "")
+    /* ONE MACHINE, ONE JOB, ONE CARD. This used to print the machine card and
+       then the seed card underneath it, which read as two jobs on one box --
+       Trevor: *"a machine can't have two jobs on the go in the app page."* They
+       were never two. `fleetWithSeed` has already folded every fact the seed
+       carries into the card above, so the second card restated it with a
+       different title and a different timestamp and invited you to reconcile
+       them. A loose seed -- queued, or owed with no machine -- still gets its
+       own card, because there is no machine card for it to fold into.
+
+       The NOTE does not fold in, and it is the one thing a seed has that a
+       beacon never will: why this work cut the line. It is shown open rather
+       than behind the disclosure the card used, because by this point it is
+       the only thing left on the screen that has not already been said. */
+    + (job.seed && !job.fleet
+        ? '<div class="section-label">Seeded work</div>' + seedCard(job.seed) : "")
+    + (job.seed && job.fleet && job.seed.note
+        ? '<div class="section-label">Why it cut in line</div>' +
+          '<div class="notebody">' + esc(job.seed.note) + '</div>' : "")
     + (job.seed && job.seed.outcome
         ? '<div class="section-label">Outcome</div>' +
           '<div class="notebody" style="border-left-color:var(--gold)">' +
