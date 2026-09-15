@@ -251,6 +251,46 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .backbtn:active{transform:translateY(1px);}
 
+/* ---------- the job's rounds ---------- */
+.tl{display:flex;flex-direction:column;gap:0;}
+.tlr{
+  display:flex;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--line);
+}
+.tlr:last-child{border-bottom:0;}
+.tlm{
+  width:16px;flex:none;text-align:center;line-height:1.5;
+  font-size:.8rem;color:var(--faint);
+}
+.tlr.passed .tlm{color:var(--good);}
+.tlr.running .tlm{color:var(--gold);}
+.tlb{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.tlh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.tlk{
+  font-size:.82rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+}
+.tlr.queued .tlk,.tlr.skipped .tlk{color:var(--faint);font-weight:600;}
+.tlw{
+  font-size:.68rem;color:var(--faint);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+}
+.tlnote{font-size:.73rem;color:var(--faint);line-height:1.4;}
+.rbtns{display:flex;gap:6px;flex-wrap:wrap;}
+.rbtn{
+  font-family:inherit;font-size:.71rem;font-weight:600;
+  border-radius:14px;padding:4px 10px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--text);
+  text-decoration:none;display:inline-block;
+}
+.rbtn:active{transform:translateY(1px);}
+/* A button with nowhere to go says so rather than looking broken when tapped. */
+.rbtn.pending{color:var(--faint);}
+.rfile{
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  font-size:.67rem;color:var(--dim);word-break:break-all;line-height:1.45;
+}
+.rfile[hidden]{display:none;}
+
 /* ---------- results rows ---------- */
 .row{
   background:var(--card);
@@ -343,7 +383,11 @@ const EPOCH = "V3.0.0";
 // permanently -- deleting a file later does not remove it. Performance figures
 // and group/variable names are "how it is built", which is the half Trevor
 // wants private: people should copy the ACCOUNT, not rebuild the system.
-let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [];
+let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
+/* Where the report files can be fetched, when something is serving them. null
+   is the normal resting state -- the machine that ran the round has to be on
+   for its files to exist anywhere at all. */
+let REPORTS_BASE = null;
 
 const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
@@ -962,6 +1006,91 @@ function renderJobList(){
   return out + renderFailures();
 }
 
+/* THE WHOLE JOB, not just the round in flight. Trevor, 2026-09-14: *"I want the
+   whole job. The runs that are passed and the runs that are queued. The ones
+   that are passed are going to have buttons that lead to reports of that
+   particular task."*
+
+   The card above this says what is happening RIGHT NOW. It cannot say whether
+   that is the first of four rounds or the last, which is the difference between
+   a job that needs two more hours and one that needs ten. */
+const ROUND_MARK = { passed: "✓", running: "▶", queued: "○",
+                     skipped: "—" };
+/* Ordered by what you would actually open on a phone: the summary first, MT5's
+   own report after it, the raw rows last. */
+const PART_ORDER = ["Deepdive", "MAIN", "Excel", "CLOSED", "TRADELEDGER"];
+const PART_LABEL = { Deepdive: "Summary", MAIN: "Report", Excel: "Excel",
+                     CLOSED: "Closed trades", TRADELEDGER: "Trade ledger" };
+
+function timelineFor(regime, bucketId, groupId){
+  if(!groupId) return null;
+  return TIMELINES.find(t => t.regime === regime && t.group_id === groupId &&
+    (t.bucket_id == null || bucketId == null || t.bucket_id === bucketId)) || null;
+}
+
+/* A REPORT BUTTON WITH NO URL IS NOT A DEAD BUTTON. The reports are files on
+   the machine that ran them and the phone cannot reach them, so until they are
+   published the button reveals the FILENAME -- which is what you need to find
+   it on the desktop. `urls` is read first so that the day a publisher fills it
+   in, these become real links with no change here. */
+function reportButtons(r, relDir){
+  const files = r.files || {};
+  /* A URL the record carries wins; otherwise build one from the base the
+     snapshot published. Each segment is encoded separately so a slash in a
+     group name could never climb out of the directory it names. */
+  const urls = Object.assign({}, r.urls || {});
+  if(REPORTS_BASE && relDir){
+    const dir = String(relDir).split("/").map(encodeURIComponent).join("/");
+    PART_ORDER.forEach(p => {
+      if(files[p] && !urls[p]){
+        urls[p] = REPORTS_BASE.replace(/\/+$/, "") + "/" + dir + "/" +
+                  encodeURIComponent(files[p]);
+      }
+    });
+  }
+  const parts = PART_ORDER.filter(p => files[p]);
+  if(!parts.length) return "";
+  return '<div class="rbtns">' + parts.map(p => urls[p]
+      ? `<a class="rbtn" href="${esc(urls[p])}" target="_blank" ` +
+        `rel="noopener">${esc(PART_LABEL[p] || p)}</a>`
+      : `<button type="button" class="rbtn pending" data-toggle>` +
+        `${esc(PART_LABEL[p] || p)}</button>` +
+        `<span class="rfile" hidden>${esc(files[p])}</span>`).join("") + '</div>';
+}
+
+function renderTimeline(tl){
+  if(!tl || !tl.rounds || !tl.rounds.length) return "";
+  const rows = tl.rounds.map(r => {
+    /* The conditional is a CONDITION PHRASE from job_plan ("the first pass
+       edge-pins"), so it reads correctly after "only if" and nowhere else.
+       Negating it inline produced "the job moved past it without the first
+       pass edge-pins"; naming it as an unmet condition keeps job_plan's
+       wording intact without trying to inflect it. */
+    const note = r.status === "skipped"
+        ? (r.conditional ? "not needed — condition not met: " + r.conditional
+                         : "not needed this pass")
+      : r.status === "queued" && r.conditional ? "only if " + r.conditional
+      : r.status === "running" ? "running now" : "";
+    return `<div class="tlr ${esc(r.status)}">
+        <div class="tlm">${ROUND_MARK[r.status] || ""}</div>
+        <div class="tlb">
+          <div class="tlh"><span class="tlk">${esc(phaseText(r.kind))}</span>` +
+          (r.at ? `<span class="tlw">${esc(fmtWhen(r.at))}</span>` : "") + `</div>` +
+          (note ? `<div class="tlnote">${esc(note)}</div>` : "") +
+          reportButtons(r, tl.rel_dir) + `</div>
+      </div>`;
+  }).join("");
+  /* WHICH PASS, because a group is deliberately re-run and "OPTIMIZE passed"
+     means nothing without saying which attempt it belonged to. A job on a NEW
+     pass has no folder yet; naming the one before it is what stops the empty
+     timeline reading as "nothing has ever run here". */
+  const which = tl.pass ? esc(tl.pass)
+    : tl.previous_pass ? "new pass · last was " + esc(tl.previous_pass)
+    : "first pass";
+  return '<div class="section-label">Rounds in this job · ' + which +
+         '</div><div class="tl">' + rows + '</div>';
+}
+
 /* EVERYTHING ASSOCIATED WITH THAT JOB on one screen: the machine running it,
    the seed it came from, its outcome, and any failure history for the same
    group. Built from the SAME card renderers the list uses, so a job cannot
@@ -990,6 +1119,11 @@ function renderJobDetail(job){
        the only thing left on the screen that has not already been said. */
     + (job.seed && !job.fleet
         ? '<div class="section-label">Seeded work</div>' + seedCard(job.seed) : "")
+    + renderTimeline(timelineFor(
+        (job.fleet && job.fleet.regime) || (job.seed && job.seed.regime),
+        (job.fleet && job.fleet.bucket_id) != null
+          ? job.fleet.bucket_id : (job.seed && job.seed.bucket_id),
+        gid))
     + (job.seed && job.fleet && job.seed.note
         ? '<div class="section-label">Why it cut in line</div>' +
           '<div class="notebody">' + esc(job.seed.note) + '</div>' : "")
@@ -1083,6 +1217,8 @@ function applySnapshot(d, source){
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
+  TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
+  REPORTS_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   paint(source + " · " + fmtWhen(d.generated_at) + " · epoch " + EPOCH);
   return true;
@@ -1179,8 +1315,11 @@ document.addEventListener("click", e => {
   const t = e.target.closest("[data-toggle]");
   if(!t) return;
   const body = t.nextElementSibling;
+  if(!body) return;
   body.hidden = !body.hidden;
-  t.querySelector(".car").textContent = body.hidden ? "▾" : "▴";
+  // The report buttons carry no caret -- they are the disclosure themselves.
+  const car = t.querySelector(".car");
+  if(car) car.textContent = body.hidden ? "▾" : "▴";
 });
 </script>
 </body>
