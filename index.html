@@ -135,7 +135,12 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .sub{font-size:.83rem;color:var(--dim);margin-top:1px;}
 
 .meta{
-  display:flex;gap:13px;flex-wrap:wrap;
+  /* 11px, not 13px. Mode/Rate/Jobs done/ETA needs 306px at 375px wide and the
+     card gives it 302 -- four pixels short, so the ETA wrapped alone onto a
+     second line and the row grew a ragged half-empty tier. Three gaps at 2px
+     less buys 6px and lands it. The longer ETA forms ("Wed 13:38") still wrap,
+     which is correct: that is a genuinely wider row, not a near miss. */
+  display:flex;gap:11px;flex-wrap:wrap;
   border-top:1px solid var(--line);border-bottom:1px solid var(--line);
   padding:9px 0;font-size:.775rem;
   font-variant-numeric:tabular-nums;
@@ -854,6 +859,13 @@ function jobsModel(){
   const jobs = [];
   FLEET.forEach(f => {
     const sd = seedOnMachine(f.machine);
+    // THE REGIME, IN WORDS. It used to be carried by the stripe colour alone,
+    // and on 2026-09-14 both machines ran a group called ENTRY_G3_COMPOSITE_
+    // BLEND_SCORE_GATES -- one BULL, one RANGING. Two rows, same title, same
+    // chip, differing only in a 3px band of colour. Same source as the chip on
+    // the detail card, and for the reason `line` gives: a claimed seed outranks
+    // a beacon that is describing a round it is not running.
+    const rg = (sd && sd.regime) || f.regime || null;
     jobs.push({
       id: "m:" + f.machine, section: "Running now",
       fleet: fleetWithSeed(f, sd), seed: sd,
@@ -872,7 +884,8 @@ function jobsModel(){
       // Same rule as the card's chip: a claimed seed names the work
       // better than a beacon that is describing a round it is not running.
       chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
-      cls: stale(f) ? "warn" : (RC[f.regime] || ""),
+      regime: rg,
+      cls: stale(f) ? "warn" : (RC[rg] || ""),
     });
   });
 
@@ -896,14 +909,14 @@ function jobsModel(){
     id: "s:" + sd.seed_id,
     section: i === 0 ? "Queued up next" : "Queued after that",
     seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
-    line: (sd.regime ? sd.regime + " · " : "") + roundType(sd),
-    chip: null, cls: RC[sd.regime] || "",
+    line: roundType(sd),
+    chip: null, regime: sd.regime || null, cls: RC[sd.regime] || "",
   }));
   owed.forEach(sd => jobs.push({
     id: "s:" + sd.seed_id, section: "Unfinished",
     seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
     line: needsDecision(sd) ? "measured - waiting on you" : String(sd.status || ""),
-    chip: needsDecision(sd) ? "DECIDE" : null,
+    chip: needsDecision(sd) ? "DECIDE" : null, regime: sd.regime || null,
     cls: needsDecision(sd) ? "warn" : (RC[sd.regime] || ""),
   }));
   return jobs;
@@ -915,6 +928,8 @@ function jobRow(j){
       <div class="hrow">
         <span class="hb">
           <span class="jtop"><span class="hname">${esc(j.title)}</span>` +
+          (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
+            `${esc(j.regime)}</span>` : "") +
           (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") + `</span>
           <span class="hsubline">${esc(j.line)}</span></span>
         <span class="hcar">›</span>
