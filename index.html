@@ -729,13 +729,45 @@ function sweptList(vars, cells){
     </div>`;
 }
 
-function varList(vars){
+/* THE LIVE TILE'S VARIABLES, with where each one is up to. Trevor,
+   2026-09-16: *"Beside the 3 Variables that are listed there. Lets put their
+   resolution and status chips on the right."*
+
+   `vars` is a list of NAMES on the beacon. The states come from the running
+   job's own task detail, which the publisher has already built against the same
+   bucket -- looked up by name rather than re-derived, so the tile and the task
+   card cannot disagree about a variable.
+
+   A name with no state still renders: an older publisher sends no detail at
+   all, and a tile that dropped its variable list in that case would look broken
+   rather than plain. */
+function varList(vars, states){
   if(!Array.isArray(vars) || !vars.length) return "";
+  const by = {};
+  (states || []).forEach(s => { if(s && s.name) by[s.name] = s; });
   const n = vars.length;
   return `<div class="vars">
       <div class="vhead">${n} Variable${n === 1 ? "" : "s"}</div>
-      ${vars.map(v => `<div class="v">${esc(spaceOut(stripRegime(v)))}</div>`).join("")}
+      ${vars.map(v => {
+        const st = by[v];
+        return `<div class="tvar">
+          <span class="tvn">${esc(spaceOut(stripRegime(v)))}</span>` +
+          (st && st.state
+            ? `<span class="tst ${stateClass(st.state)}">${esc(st.state)}</span>` +
+              `<span class="tvr">${st.resolution ? esc(st.resolution) : "—"}</span>`
+            : "") + `</div>`;
+      }).join("")}
     </div>`;
+}
+
+/* The states for the job running on ONE machine, from its own timeline's
+   running task. Null when the publisher sent no detail. */
+function liveStates(f){
+  const tl = timelineFor(f.regime, f.bucket_id, f.group_id);
+  if(!tl) return null;
+  const run = (tl.rounds || []).find(r => r.status === "running") ||
+              (tl.rounds || [])[0];
+  return run && run.detail ? run.detail.variables : null;
 }
 
 const titleCase = s => String(s).charAt(0) + String(s).slice(1).toLowerCase();
@@ -1248,7 +1280,7 @@ function machineCard(f){
         ${passPick(f)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
             ? sweptList(f.seed.variables, f.seed.cells)
-            : varList(f.variables)}
+            : varList(f.variables, liveStates(f))}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
           `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
           `so this page cannot say what it is doing now.</span></div>` : ""}
@@ -1701,6 +1733,18 @@ function taskSwept(list){
 const BAND_WORD = { IN_BAND: "In band", UNDER: "Under", OVER: "Over",
                     UNKNOWN: "Not measured here" };
 
+/* WHERE THE VARIABLE LIST CAME FROM, said out loud. The three answers are not
+   equally strong and the card should not pretend they are: `set` is what MT5 is
+   sweeping this second, `applied` is what the last confirmed round put under
+   test, `group` is every variable tagged to the group -- which a BACKTEST shows
+   deliberately, because it measures where they all ended up. */
+const SWEPT_LABEL = {
+  set: "Sweeping now",
+  applied: "Swept last round",
+  group: "Variables",
+  undecided: "Variables",
+};
+
 function taskBand(c){
   if(!c) return "";
   const v = String(c.verdict || "UNKNOWN");
@@ -1789,9 +1833,19 @@ function taskCard(r, relDir){
                 taskBand(d.cadence) + `</div>` : "",
     (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
                              taskSwept(d.swept) + `</div>` : "",
-    (d.variables || []).length ? `<div class="tsec"><div class="tlab">Variables</div>` +
-                                 taskVars(d.variables) +
-                                 taskStateKey(d.variables) + `</div>` : "",
+    (d.variables || []).length
+      ? `<div class="tsec"><div class="tlab">${esc(SWEPT_LABEL[d.swept_source]
+            || "Variables")}</div>` +
+        taskVars(d.variables) + taskStateKey(d.variables) + `</div>`
+      /* NOT DECIDED YET is a real answer and the only honest one for a queued
+         sweep: a second pass takes whatever the first leaves PINNED, so its
+         variable list does not exist until the first one finishes. */
+      : d.swept_source === "undecided"
+        ? `<div class="tsec"><div class="tlab">Variables</div>
+             <div class="tnote">Not chosen yet — a second pass sweeps whatever
+             the pass before it leaves pinned, so this list does not exist
+             until that one finishes.</div></div>`
+        : "",
     taskGraphs(d.files, d.rel_dir || relDir, d.urls),
   ].filter(Boolean);
   /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
