@@ -496,11 +496,37 @@ function varList(vars){
 
 const titleCase = s => String(s).charAt(0) + String(s).slice(1).toLowerCase();
 
+/* A LENGTH OF TIME, not a moment. `ago` is this plus the word, and they are
+   one function so a heartbeat and a phase duration can never round differently
+   on the same screen. */
+function dur(sec){
+  if(sec == null) return "";
+  if(sec < 90) return Math.round(sec) + "s";
+  if(sec < 5400) return Math.round(sec/60) + "m";
+  return (sec/3600).toFixed(1) + "h";
+}
+
 function ago(sec){
   if(sec == null) return "";
-  if(sec < 90) return sec + "s ago";
-  if(sec < 5400) return Math.round(sec/60) + "m ago";
-  return (sec/3600).toFixed(1) + "h ago";
+  return dur(sec) + " ago";
+}
+
+/* HOW LONG THIS MACHINE HAS BEEN IN THIS PHASE. Trevor, 2026-09-16: *"I'd like
+   to see the time portion that it is in the SELECTING phase -- the moment the
+   last task finished (or upon tray start) and the start of the next."*
+
+   `phase_since` is job_control's own `updated` stamp, written as the phase is
+   written, so it IS that moment. Measured against the BEACON, not against now:
+   the snapshot was built when the machine last reported, and adding the time
+   since would quietly inflate every duration by the beacon's age -- the same
+   correction the ETA makes, for the same reason. */
+function phaseFor(f){
+  if(!f || !f.phase_since) return null;
+  const began = new Date(f.phase_since);
+  if(isNaN(began.getTime())) return null;
+  const beaconMs = Date.now() - (f.age_seconds || 0) * 1000;
+  const secs = (beaconMs - began.getTime()) / 1000;
+  return secs >= 0 ? dur(secs) : null;
 }
 
 /* LOCAL time, deliberately. Everything upstream is UTC -- `recorded_at` carries
@@ -798,12 +824,18 @@ function machineCard(f){
             live && f.seed && f.seed.label && f.group_id
               ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
         </div>
-        ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
+        ${picking(f)
+            /* SELECTING writes no group, no mode and no percent, so this row is
+               otherwise empty and the card has nothing to say at all. How long
+               it has been choosing is the one fact that exists. */
+            ? metaRow([["Selecting for", phaseFor(f)]])
+            : metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
                       ? f.pct_per_hour.toFixed(1) + " %/h" : null],
                    ["Jobs done", jobsDone(f.regime, f.bucket_id)],
-                   ["ETA", fmtEta(etaAt(f))]])}
+                   ["ETA", fmtEta(etaAt(f))],
+                   ["In phase", phaseFor(f)]])}
         ${progressBar(f, rc)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
             ? sweptList(f.seed.variables, f.seed.cells)
@@ -1269,6 +1301,17 @@ function paint(stamp){
   document.getElementById("banner").hidden = true;
 }
 
+let LAST_SNAPSHOT = null;
+
+function snapAge(d){
+  try{
+    const t = new Date(d.generated_at).getTime();
+    if(isNaN(t)) return "";
+    const secs = (Date.now() - t) / 1000;
+    return secs < 0 ? "" : " · " + dur(secs) + " old";
+  }catch(e){ return ""; }
+}
+
 function applySnapshot(d, source){
   if(!d || d.kind !== "goldbot.app.snapshot") return false;
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
@@ -1279,7 +1322,12 @@ function applySnapshot(d, source){
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   REPORTS_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
-  paint(source + " · " + fmtWhen(d.generated_at) + " · epoch " + EPOCH);
+  /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
+     nine-minute-old snapshot looking exactly like a live one -- which is what
+     it did. Recomputed on every repaint, so the poll below keeps it honest. */
+  LAST_SNAPSHOT = d;
+  paint(source + " · " + fmtWhen(d.generated_at) + snapAge(d) +
+        " · epoch " + EPOCH);
   return true;
 }
 
@@ -1312,30 +1360,73 @@ async function fromArtifactDb(){
   }catch(e){ return false; }
 }
 
-(async () => {
-  showState("Loading…");
-  if(await fromArtifactDb()) return;
+/* ONE FETCH WAS THE WHOLE PROBLEM. This ran once, at load, and nothing ever
+   re-read the gist -- so an open page was frozen at whatever the snapshot said
+   when you opened it. Telegram announced a round instantly while the app still
+   read "idle", and refreshing by hand was the only cure. `?t=` made that single
+   fetch cache-proof, which is exactly what made it look like it should refresh
+   on its own.
 
+   `first` keeps the failure text for the OPENING load only: once a snapshot has
+   painted, a dropped poll (a phone that slept, a moment of no signal) must not
+   wipe the screen -- the stamp is already saying how old the data is, and stale
+   numbers beat an error page over the top of them. */
+async function loadLive(first){
   if(!GIST_URL){
-    showState("This page has no data source.<br><br>It needs the snapshot id in " +
-              "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
-    document.getElementById("stamp").textContent = "no source";
+    if(first){
+      showState("This page has no data source.<br><br>It needs the snapshot id in " +
+                "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
+      document.getElementById("stamp").textContent = "no source";
+    }
     return;
   }
   try{
     // ?t= defeats the raw URL's 5-minute CDN cache (verified 200).
     const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache: "no-store"});
-    if(!r.ok){ showState("Snapshot unreachable — HTTP " + r.status + "."); return; }
+    if(!r.ok){
+      if(first) showState("Snapshot unreachable — HTTP " + r.status + ".");
+      return;
+    }
     const d = await r.json();
-    if(!applySnapshot(d, "live")){
+    if(!applySnapshot(d, "live") && first){
       showState("The publisher has not written a snapshot yet.<br><br>" +
                 "This page goes live on its own once it does.");
       document.getElementById("stamp").textContent = "waiting for first publish";
     }
   } catch(e){
-    showState("Could not load the snapshot.<br><br>Offline, or the id in the " +
-              "link is wrong.");
+    if(first){
+      showState("Could not load the snapshot.<br><br>Offline, or the id in the " +
+                "link is wrong.");
+    }
   }
+}
+
+/* 20s, matching the publisher's own wake interval -- polling faster than the
+   fleet can publish only spends battery. */
+const POLL_MS = 20000;
+
+(async () => {
+  showState("Loading…");
+  if(await fromArtifactDb()) return;
+  await loadLive(true);
+
+  setInterval(() => { if(!document.hidden) loadLive(false); }, POLL_MS);
+
+  /* THE ONE THAT MATTERS ON A PHONE. A backgrounded tab is throttled hard and
+     may not have polled for minutes, so the moment you look at it again is
+     exactly when it is most likely to be wrong -- and exactly when you care. */
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden) loadLive(false);
+  });
+
+  /* The stamp ages between fetches, so it has to tick on its own or a page
+     sitting open would keep claiming the data is as fresh as its last poll. */
+  setInterval(() => {
+    if(document.hidden || !LAST_SNAPSHOT) return;
+    const el = document.getElementById("stamp");
+    if(el) el.textContent = "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) +
+                            snapAge(LAST_SNAPSHOT) + " · epoch " + EPOCH;
+  }, 5000);
 })();
 
 const PAGES = ["home", "active", "results"];
