@@ -306,11 +306,50 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   font-size:.85rem;font-weight:600;letter-spacing:-.005em;
   flex:1;min-width:0;line-height:1.3;
 }
-/* Tabular so a column of bucket ids lines up down the list, and dimmer than
-   the name beside it: a bucket qualifies the thing it sits next to rather than
-   competing with it. One class, used by the results row and the machine card,
-   so the two cannot drift apart. */
-.bkt{color:var(--dim);font-variant-numeric:tabular-nums;font-weight:600;}
+/* THE DATE SITS UNDER THE ROW, NOT IN IT. Trevor, 2026-09-16: *"the date can go
+   where the red horizontal line. It'll allow longer group names on one line."*
+   It was the last thing on the title row, so a long group name wrapped to a
+   second line to make room for a timestamp nobody scans first. Down here it
+   costs no width at all, and it joins the mono meta line that already carries
+   the round number and the machine -- which is where a reader looking for
+   "when" was going to end up anyway. */
+.row-foot .row-when{margin-left:auto;}
+/* THE BUCKET ID WEARS THE CHIP SCHEMA. Trevor, 2026-09-16: its font and
+   schema did not match the three chips it sits between, and it was *"too
+   close to the background."* It sat in the same row as three chips as a bare
+   grey number in the body font -- a different size, a different weight, no
+   tracking, no plate -- so it read as something that had leaked into the row
+   rather than as one of its parts. Same metrics as .chip now; tabular on top,
+   so a column of ids still lines up down the results list.
+
+   THE COLOUR IS THE ONE THING IT DOES NOT SHARE with .chip, and it is not
+   decoration -- see bktEl() for what the gradient means.
+
+   One class, used by the results row and the machine card, so the two cannot
+   drift apart. inline-block because in the results row it sits inside wrapping
+   prose, where a padded inline box would otherwise bleed through the line. */
+.bkt{
+  display:inline-block;vertical-align:baseline;
+  font-size:.65rem;font-weight:700;letter-spacing:.05em;line-height:1.15;
+  padding:3px 7px;border-radius:5px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+  background:var(--tonal);
+}
+/* THE DIGITS ARE FILLED WITH THE GRADIENT, not coloured flat, which needs a
+   second box: the plate above carries its own background and background-clip
+   would eat it. <i> for brevity in a string that is built per row; the font
+   style it would normally imply is turned back off.
+
+   THE FALLBACK IS A REAL COLOUR, not transparent text. Everything that renders
+   this page supports background-clip:text, but "unsupported" here would mean an
+   INVISIBLE id rather than a plainer one, and that is not a failure worth
+   risking for a gradient. bktEl() sets the flat colour inline; the @supports
+   only takes it away where the clip will actually paint. */
+.bkt i{font-style:normal;}
+@supports ((-webkit-background-clip:text) or (background-clip:text)){
+  .bkt i{-webkit-background-clip:text;background-clip:text;
+         color:transparent;-webkit-text-fill-color:transparent;}
+}
 .row-when{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;white-space:nowrap;}
 .row-pf{
   display:flex;gap:16px;font-size:.75rem;
@@ -323,9 +362,12 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .delta.up{color:var(--good);}
 .delta.dn{color:var(--bad);}
 .delta.flat{color:var(--faint);}
+/* wrap, because the date moved in here and a narrow phone with `heavy` set
+   would otherwise push it off the edge rather than onto a second line. */
 .row-foot{
   display:flex;gap:12px;font-size:.68rem;color:var(--faint);
   font-family:"Roboto Mono",ui-monospace,monospace;
+  flex-wrap:wrap;align-items:baseline;
 }
 
 .empty{
@@ -556,6 +598,110 @@ function deltaEl(before, after){
    for display is the renderer's job -- that split is the whole reason the app
    can be rebuilt without touching the pipeline. */
 const RC = { BULL: "bull", BEAR: "bear", RANGING: "range" };
+
+/* ---------- the bucket id, coloured by where it sits on slope ---------- */
+/* A BUCKET ID IS A POSITION, NOT A NAME. Every regime's root is 1600 covering
+   the whole slope range, and a split makes two children at parent -/+ gap with
+   gap halving each generation (decision_engine.compute_child_bucket_ids). So
+   the number itself says where on the slope axis the bucket sits: BELOW 1600 is
+   the bearish end of that regime's range, ABOVE it the bullish end, and 1600
+   itself is dead centre. Nothing else on the page carries that, and it was
+   being spent on a grey number nobody could read.
+
+   HOW FAR THE SCALE RUNS -- i.e. what counts as "max bear". A split needs 100
+   trades in the parent (decision_engine.SPLIT_TRADE_VOLUME_MIN), so the
+   SMALLEST bucket that can ever exist holds about 50 over the 2yr window, and a
+   regime can hold at most (its trades / 50) leaves. Against the band ceilings
+   the EA compiles -- hi x target x years -- that is:
+
+       RANGING  1.30 x 500.00 x 2 = 1290 trades  ->  25 leaves
+       BULL     1.50 x 166.21 x 2 =  495 trades  ->   9 leaves
+       BEAR     1.50 x 108.74 x 2 =  324 trades  ->   6 leaves
+
+   ~40 buckets over the fleet, and the DEEPEST single regime is RANGING at 25,
+   which is generation 5 (32 leaves). Generation 5's gap is 1600/2**5 = 50, so
+   the outermost ids the campaign can reach are 50 and 3150 -- a reach of 1550
+   either side of the root. That is what the gradient is normalised over.
+
+   DEEPER SPLITS CLAMP RATHER THAN RESCALE. If a regime ever does go past
+   generation 5 the extra ids pin at full red or full blue, because the
+   alternative -- widening the scale -- would silently restain every bucket that
+   had not moved, and the colour is supposed to mean the same thing on Tuesday
+   as it did on Monday.
+
+   THE COLOURS. Green in the middle, because centre is where an unsplit bucket
+   lives and green is this page's "nothing wrong" everywhere else. Red toward
+   max bear, matching the BEAR chip beside it. BLUE toward max bull -- NOT the
+   app's --bull green, which is the middle of this axis and would make the two
+   ends of the scale the same colour.
+
+   WHERE THE ENDS LAND IS TREVOR'S CALL, NOT THE ARITHMETIC'S. First cut spread
+   the ramp evenly over the reach, which put full blue out at 3150 and left
+   2450 -- a bucket that actually exists -- reading cyan. Trevor, 2026-09-16:
+   *"the 2450 bucket would be almost fully blue while the 150 bucket was almost
+   Fully Red."* So the stops are placed to hit those two, per regime: **150 is
+   red, 2450 is blue, 1600 is green**, and the slack past each of them is a
+   short run to a slightly deeper shade rather than the bulk of the ramp.
+
+   THE REACH IS STILL 1550. Only the DISTRIBUTION inside it moved; the
+   generation-5 derivation below is untouched.
+
+   WHY STOPS AND NOT ONE MIX. Mixing straight from green to red goes THROUGH
+   MUD: the two are near-opposites, so the halfway point comes out a 17%
+   saturation tan that is exactly the unreadable grey this change was asked to
+   get rid of. Fixed stops keep every step of the ramp saturated, because no
+   single mix ever has to cross the whole distance.
+
+   THE BEAR HALF PASSES THROUGH AMBER and there is no way around it -- red and
+   green are far enough apart on the wheel that the only routes between them are
+   warm (yellow, orange) or through purple, and purple is where the BULL half
+   already goes. It is close to --warn, which is a real cost, but --warn never
+   appears as a number in this slot, and the alternative is the mud. */
+const BKT_ROOT = 1600;
+const BKT_REACH = 1550;              // 1600 - 1600/2**5: the generation-5 edge
+const BKT_STOPS = [                  // [position on the axis, colour]
+  [-1.00, [232,  86,  72]],          // id   50 -- deepest red there is
+  [-0.85, [224, 104,  90]],          // id  150 -- "almost fully red", --bear
+  [-0.55, [226, 140,  72]],          // id  750 -- orange
+  [-0.28, [222, 196,  86]],          // id 1166 -- gold; see THE BEAR HALF above
+  [ 0.00, [ 95, 190, 149]],          // id 1600 -- root, --bull/--good exactly
+  [ 0.25, [ 95, 198, 200]],          // id 1987 -- cyan
+  [ 0.55, [104, 158, 234]],          // id 2450 -- "almost fully blue"
+  [ 1.00, [122, 132, 244]],          // id 3150 -- deepest indigo there is
+];
+
+const bktMix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const bktRgb = (c, a) => a == null ? `rgb(${c[0]},${c[1]},${c[2]})`
+                                   : `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+/* Which pair of stops `t` falls between, mixed by how far along it is. */
+function bktTone(t){
+  for(let i = 1; i < BKT_STOPS.length; i++){
+    const [hi, cHi] = BKT_STOPS[i];
+    if(t <= hi){
+      const [lo, cLo] = BKT_STOPS[i - 1];
+      return bktMix(cLo, cHi, (t - lo) / (hi - lo));
+    }
+  }
+  return BKT_STOPS[BKT_STOPS.length - 1][1];
+}
+
+/* The whole element, so the two call sites cannot disagree about it. A
+   non-numeric id renders plain rather than being dropped: an id this cannot
+   place is still an id worth showing. */
+function bktEl(id, trail){
+  if(id == null) return "";
+  const tail = trail ? " " : "";
+  const n = Number(id);
+  if(!isFinite(n)) return `<span class="bkt">${esc(id)}</span>` + tail;
+  const t = Math.max(-1, Math.min(1, (n - BKT_ROOT) / BKT_REACH));
+  const tone = bktTone(t);
+  const lift = bktMix(tone, [255, 255, 255], .34);
+  return `<span class="bkt" style="background:${bktRgb(tone, .15)}">` +
+         `<i style="color:${bktRgb(lift)};background-image:linear-gradient(` +
+         `120deg,${bktRgb(lift)},${bktRgb(tone)})">${esc(id)}</i></span>` + tail;
+}
+
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
 const running = f => f.group_id && f.phase;
 /* A PHASE WITH NO GROUP IS NOT IDLE. SELECTING writes no detail upstream, so
@@ -788,8 +934,7 @@ function machineCard(f){
                 *"add that bucket id on the job tab to the right of BULL."* It
                 used to appear only inside the title sentence this card no
                 longer has. */
-            f.bucket_id != null ? `<span class="bkt">${esc(f.bucket_id)}</span>`
-                                : ""}
+            bktEl(f.bucket_id)}
           <span class="chip gold">${esc(f.machine)}</span>
           ${(f.seed || f.phase)
             ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
@@ -870,9 +1015,7 @@ function renderResults(){
           /* THE BUCKET, because a group name alone does not say which bucket
              earned the round -- and buckets are the campaign's own unit. Its
              own span so it stays legible when the name wraps beside it. */
-          r.bucket_id != null ? `<span class="bkt">${esc(r.bucket_id)}</span> `
-                              : ""}${esc(humanize(r.group_id))}</span>
-        <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
+          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>
       </div>
       ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
           esc(r.fail_reason || "no reason recorded")}</div>` : `
@@ -888,12 +1031,31 @@ function renderResults(){
             ${deltaEl(r.pf_before, r.pf_after)}</div>
         </div>
       </div>`}
+      ${/* THIS ROUND'S OWN REPORT FILES. Trevor, 2026-09-16, pointing between
+            the PF numbers and the meta line: *"I want the Report Buttons
+            inserted where the Green Line is."* The same buttons the timeline has
+            had, on the row for the round that produced them -- results is where
+            you are when you want to go and read one.
+
+            SAME FUNCTION, NOT A SECOND COPY. reportButtons() already handles
+            every case this needs: no files at all returns "" and the row closes
+            up, and a file with no URL yet reveals the FILENAME instead of
+            pretending to be a link. So a ledger row that carries nothing simply
+            has no button strip, which is what every row does today.
+
+            ⚠️ THE PUBLISHER DOES NOT FILL `files` ON LEDGER ROWS YET --
+            `_LEDGER_FIELDS` is a whitelist and reports are keyed by timestamp
+            under a PASS folder, not by round_no. Until app_snapshot attaches
+            them these stay empty on the live app; the format preview fills them
+            so the layout is real. */""}
+      ${reportButtons(r, r.rel_dir)}
       <div class="row-foot">
         <span>r${r.round_no}</span>
         <span>${esc(r.machine)}</span>
         <span>${r.ticks_mode === "real_ticks" ? "ticks" : "ohlc"}</span>
         <span>pass ${r.picked_pass ?? "—"}</span>
         ${r.heavy ? "<span>heavy</span>" : ""}
+        <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
       </div>
     </article>`;
   }).join("");
