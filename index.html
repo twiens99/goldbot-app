@@ -360,6 +360,10 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   background:var(--bg);display:block;
 }
 .tgcap{font-size:.65rem;color:var(--faint);margin-top:3px;}
+/* The state key. Indented under the list it explains, and quiet -- it is a
+   reminder for the reader who has forgotten the vocabulary, not a finding. */
+.tkey{display:flex;gap:8px;align-items:baseline;margin-top:6px;}
+.tkt{font-size:.68rem;color:var(--faint);line-height:1.45;flex:1;min-width:0;}
 
 /* THE ROW IS THE BUTTON. It was a div; making the whole thing tappable is what
    "clickable from any job card" means, and a small chevron on its own would be
@@ -583,6 +587,10 @@ const EPOCH = "V3.0.0";
 // and group/variable names are "how it is built", which is the half Trevor
 // wants private: people should copy the ACCOUNT, not rebuild the system.
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
+/* The four words for where a variable is up to, explained -- published once at
+   the top of the snapshot rather than repeated on every variable. {} until a
+   snapshot carrying it arrives, which is what an older publisher sends. */
+let STATE_TEXT = {};
 /* Where the report files can be fetched, when something is serving them. null
    is the normal resting state -- the machine that ran the round has to be on
    for its files to exist anywhere at all. */
@@ -1534,6 +1542,22 @@ function reportButtons(r, relDir){
    pick a CSS class; the label shown is the publisher's own. */
 function stateClass(s){ return String(s || "").toLowerCase(); }
 
+/* EXPLAIN ONLY THE STATES ON SCREEN. Printing all four every time is a
+   glossary; printing the ones this task actually has is an answer. Ordered
+   PINNED first, matching notify.py's own ordering and for the same reason --
+   it is the one worth eyeballing, because a variable stuck there is asking for
+   a wider band and is a park waiting to happen. */
+function taskStateKey(list){
+  const seen = [];
+  ["PINNED", "MIDDLE", "FLOATING", "LOCKED"].forEach(st => {
+    if((list || []).some(v => v.state === st) && STATE_TEXT[st]) seen.push(st);
+  });
+  if(!seen.length) return "";
+  return seen.map(st =>
+    `<div class="tkey"><span class="tst ${stateClass(st)}">${esc(st)}</span>` +
+    `<span class="tkt">${esc(STATE_TEXT[st])}</span></div>`).join("");
+}
+
 function taskVars(list){
   if(!(list || []).length) return "";
   return list.map(v => `<div class="tvar">
@@ -1577,10 +1601,33 @@ function taskBand(c){
     line = `<span class="tbm">${esc(c.trades)} trades · band ` +
            `${esc(c.floor_trades)}–${esc(c.ceiling_trades)}</span>` +
            (c.off_by ? `<span class="tbm">${esc(c.off_by)} ${
-              v === "UNDER" ? "short" : "over"}</span>` : "");
+              v === "UNDER" ? "short" : "over"}</span>` : "") +
+           /* THE RATIO IS WHAT THE EA ACTUALLY COMPARED. The trade counts above
+              are the readable form of it, and a reader checking this verdict
+              against a FITNESS log needs the number that log carries. */
+           (c.vol_ratio != null ? `<span class="tbm">ratio ${esc(c.vol_ratio)} ` +
+              `(${esc(c.band_lo)}–${esc(c.band_hi)})</span>` : "");
   }
   return `<div class="tband"><span class="tbv ${cls}">${
       esc(BAND_WORD[v] || v)}</span>${line}</div>`;
+}
+
+/* WHAT THE TASK PRODUCED. `pass_number`, `profit_factor` and `model` were all
+   on the record and none of them were drawn -- which meant the card could tell
+   you a round landed in band without telling you WHICH PASS it picked, the one
+   thing you would go to the report to look up. */
+function taskResult(c){
+  if(!c) return "";
+  const bits = [];
+  if(c.pass_number) bits.push(`pass ${esc(c.pass_number)}`);
+  if(c.profit_factor != null) bits.push(`PF ${esc(c.profit_factor)}`);
+  /* The same two words the rest of the page uses for the model. A third
+     spelling of "real_ticks" on one screen is a third thing to learn. */
+  if(c.model) bits.push(esc(c.model === "real_ticks" ? "real ticks"
+                           : c.model === "ohlc" ? "OHLC" : c.model));
+  if(!bits.length) return "";
+  return `<div class="tsec"><div class="tlab">Picked</div>
+      <div class="tband"><span class="tbm">${bits.join(" · ")}</span></div></div>`;
 }
 
 /* WHY IT CUT IN LINE. The tag is the category and the note is the sentence --
@@ -1623,12 +1670,14 @@ function taskCard(r, relDir){
   if(!d) return "";
   const parts = [
     taskSeed(d.seed),
+    taskResult(d.cadence),
     d.cadence ? `<div class="tsec"><div class="tlab">Trade band</div>` +
                 taskBand(d.cadence) + `</div>` : "",
     (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
                              taskSwept(d.swept) + `</div>` : "",
     (d.variables || []).length ? `<div class="tsec"><div class="tlab">Variables</div>` +
-                                 taskVars(d.variables) + `</div>` : "",
+                                 taskVars(d.variables) +
+                                 taskStateKey(d.variables) + `</div>` : "",
     taskGraphs(d.files, d.rel_dir || relDir, d.urls),
   ].filter(Boolean);
   /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
@@ -1819,6 +1868,7 @@ function applySnapshot(d, source){
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
+  STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
