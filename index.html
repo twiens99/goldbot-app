@@ -306,6 +306,11 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   font-size:.85rem;font-weight:600;letter-spacing:-.005em;
   flex:1;min-width:0;line-height:1.3;
 }
+/* Tabular so a column of bucket ids lines up down the list, and dimmer than
+   the name beside it: a bucket qualifies the thing it sits next to rather than
+   competing with it. One class, used by the results row and the machine card,
+   so the two cannot drift apart. */
+.bkt{color:var(--dim);font-variant-numeric:tabular-nums;font-weight:600;}
 .row-when{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;white-space:nowrap;}
 .row-pf{
   display:flex;gap:16px;font-size:.75rem;
@@ -753,6 +758,12 @@ function machineCard(f){
       <div class="card-in">
         <div class="top">
           ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
+          ${/* THE BUCKET, beside the regime it belongs to. Trevor, 2026-09-16:
+                *"add that bucket id on the job tab to the right of BULL."* It
+                used to appear only inside the title sentence this card no
+                longer has. */
+            f.bucket_id != null ? `<span class="bkt">${esc(f.bucket_id)}</span>`
+                                : ""}
           <span class="chip gold">${esc(f.machine)}</span>
           ${(f.seed || f.phase)
             ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
@@ -762,18 +773,30 @@ function machineCard(f){
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div>
+          ${/* THE JOB IS THE TITLE. Trevor, 2026-09-16: *"take the 'bull
+                1600 round running' line completely out. 'Entry G3 Composite
+                Blend Score Gates' takes its place."*
+
+                That line restated the three chips directly above it -- regime,
+                round type, and now the bucket -- and spent the card's biggest
+                type on them, leaving the one thing unique to this job in the
+                small grey sub-line underneath. The chips already say BULL, 1600
+                and OPTIMIZE; what they cannot say is WHICH GROUP.
+
+                A SWEEP'S OWN NAME STILL WINS over the group it sweeps: on an
+                A/B the arm is the whole point, and two arms over one group are
+                two jobs that differ only in their label. */""}
           <div class="title">${live
-            ? esc(titleCase(f.regime || "")) + " " + (f.bucket_id ?? "") + " " +
-              esc(titleCase(f.seed ? roundType(f.seed) : "round")) + " Running"
+            ? esc((f.seed && f.seed.label) || humanize(f.group_id))
             : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
-          ${/* A SWEEP'S OWN NAME WINS. Folding the seed card away would
-                otherwise reduce EMA_AB_TICKS_BULL_EMA_PERIODS_MID to the group
-                it sweeps, and on an A/B the arm is the whole point -- two arms
-                over one group are two jobs that differ only in their label. */
-            (f.seed && f.seed.label) || f.group_id
-              ? `<div class="sub">${esc((f.seed && f.seed.label)
-                  || humanize(f.group_id))}</div>` : ""}
+          ${/* ONLY WHAT THE TITLE DID NOT SAY. The group used to live here
+                and is now the title, so repeating it would be the same string
+                twice. A LABELLED SWEEP is the one case with something left
+                over: its label is the title, so the group it sweeps comes
+                here instead of being lost. */
+            live && f.seed && f.seed.label && f.group_id
+              ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
         </div>
         ${metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
@@ -805,8 +828,18 @@ function renderResults(){
     <article class="row">
       <div class="row-top">
         <span class="chip ${r.failed ? "warn" : rc}">${
-          r.failed ? "FAILED" : esc(r.regime)}</span>
-        <span class="row-grp">${esc(humanize(r.group_id))}</span>
+          r.failed ? "FAILED" : esc(r.regime)}</span>` +
+        /* WAS IT SEEDED. Trevor, 2026-09-16: *"I want to know if it was a
+           seed."* Derived upstream from the seed records, not from the ledger
+           row -- see app_snapshot._seeded_round_keys for why, and for the rule
+           that stops a group seeded once from marking every later round too. */
+        (r.seeded ? `<span class="chip gold">SEED</span>` : "") + `
+        <span class="row-grp">${
+          /* THE BUCKET, because a group name alone does not say which bucket
+             earned the round -- and buckets are the campaign's own unit. Its
+             own span so it stays legible when the name wraps beside it. */
+          r.bucket_id != null ? `<span class="bkt">${esc(r.bucket_id)}</span> `
+                              : ""}${esc(humanize(r.group_id))}</span>
         <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
       </div>
       ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
