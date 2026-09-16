@@ -40,6 +40,10 @@
   --bull:#5FBE95;
   --bear:#E0685A;
   --range:#6FA8D4;
+  /* 2026-09-16 -- the one hue this palette did not have, added for LOCKED.
+     Everything else here is earned by a regime or a severity; LOCKED is neither,
+     it is DONE, and it needed a colour that is not competing with either. */
+  --done:#A98BE0;
 }
 
 *{box-sizing:border-box;}
@@ -334,28 +338,47 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   padding:2px 6px;border-radius:4px;white-space:nowrap;
   font-family:"Archivo","Segoe UI",system-ui,sans-serif;
 }
-/* PINNED is the one worth eyeballing -- a variable stuck there is asking for a
-   wider band, and if it stays it is a park waiting to happen. So it gets the
-   warn colour and everything else stays quiet. */
-.tst.pinned{background:rgba(224,139,74,.16);color:var(--warn);}
-.tst.center{background:rgba(95,190,149,.14);color:var(--good);}
-.tst.floating{background:var(--tonal);color:#9CC6E8;}
-.tst.locked{background:rgba(140,160,172,.12);color:var(--dim);}
-/* DEFAULT is the absence of a result, not a result -- the EA's own compiled
-   value, which no round has moved. Dimmest of the five on purpose: it is the
-   state that means "nothing has happened here yet". */
-.tst.default{background:rgba(140,160,172,.10);color:var(--faint);}
-/* The resolution wears the same shell, one notch quieter -- it qualifies the
-   state beside it rather than competing with it. Fixed width so a column of
-   them lines up under each other down the list. */
+/* THE SCHEME IS THE LIFECYCLE, not five arbitrary colours. A variable travels
+   left to right, and the palette travels with it:
+
+     DEFAULT   slate    nothing has happened to this one yet
+     FLOATING  blue     active and moving
+     CENTER    green    the centre keeps winning -- converging
+     PINNED    amber    at the wall, and asking for something
+     LOCKED    violet   done
+
+   COOL TO WARM IS THE ATTENTION GRADIENT. Slate and blue are states you scroll
+   past; amber is the one that wants you. That ordering is the whole point --
+   PINNED has to win a glance down a column of twenty rows, and it only can if
+   everything quieter than it actually is quieter.
+
+   VIOLET FOR LOCKED because done is not a severity and not a regime. It used to
+   share grey with DEFAULT, which put the two OPPOSITE ends of the lifecycle --
+   never touched, and finished forever -- in the same colour. */
+.tst.default{background:rgba(140,160,172,.12);color:#8CA0AC;}
+.tst.floating{background:rgba(111,168,212,.16);color:#7FB6DE;}
+.tst.center{background:rgba(95,190,149,.16);color:var(--good);}
+.tst.pinned{background:rgba(224,139,74,.20);color:#F0A05E;}
+.tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+/* RESOLUTION IS OUTLINED, NOT FILLED -- deliberately a different KIND of chip
+   from the state beside it. Two filled chips in a row would read as two facts
+   of equal weight, and they are not: the state is where the variable is, the
+   resolution only says how finely the next sweep will look at it.
+
+   It still carries a signal, one notch down: FULL is the normal case and stays
+   neutral, COARSE is brighter because a COARSE variable is being looked at
+   roughly -- "PINNED at COARSE" may only need a finer pass, "PINNED at FULL" is
+   genuinely at the wall. Fixed width so a column of them lines up. */
 .tvr{
   font-size:.58rem;font-weight:700;letter-spacing:.06em;
   padding:2px 6px;border-radius:4px;white-space:nowrap;
   font-family:"Archivo","Segoe UI",system-ui,sans-serif;
-  background:var(--card);color:var(--dim);
+  background:transparent;color:var(--faint);
   border:1px solid var(--line);
   min-width:58px;text-align:center;
 }
+.tvr.coarse{color:#C8B78A;border-color:rgba(224,180,87,.30);}
+.tvr.full{color:var(--dim);}
 
 /* The trade-band verdict. IN BAND is the quiet one; both misses are loud,
    because a round outside the band is a round whose result the EA discounted. */
@@ -754,20 +777,27 @@ function varList(vars, states){
           <span class="tvn">${esc(spaceOut(stripRegime(v)))}</span>` +
           (st && st.state
             ? `<span class="tst ${stateClass(st.state)}">${esc(st.state)}</span>` +
-              `<span class="tvr">${st.resolution ? esc(st.resolution) : "—"}</span>`
+              `<span class="tvr ${stateClass(st.resolution)}">${
+                 st.resolution ? esc(st.resolution) : "—"}</span>`
             : "") + `</div>`;
       }).join("")}
     </div>`;
 }
 
-/* The states for the job running on ONE machine, from its own timeline's
-   running task. Null when the publisher sent no detail. */
+/* The states for the job on ONE machine, from the task that machine is ON.
+   Null when the publisher sent no detail.
+
+   MATCHED BY PHASE FIRST. A job's tasks do not sweep the same variables -- a
+   second pass takes only the pinned ones -- so "whichever round is running"
+   would show a machine midway through its second pass the FIRST pass's list.
+   The beacon already says which task it is on; that is the one to read. */
 function liveStates(f){
   const tl = timelineFor(f.regime, f.bucket_id, f.group_id);
   if(!tl) return null;
-  const run = (tl.rounds || []).find(r => r.status === "running") ||
-              (tl.rounds || [])[0];
-  return run && run.detail ? run.detail.variables : null;
+  const rounds = tl.rounds || [];
+  const mine = (f.phase && rounds.find(r => r.kind === f.phase)) ||
+               rounds.find(r => r.status === "running") || rounds[0];
+  return mine && mine.detail ? mine.detail.variables : null;
 }
 
 const titleCase = s => String(s).charAt(0) + String(s).slice(1).toLowerCase();
@@ -1709,7 +1739,8 @@ function taskVars(list){
                : "") +
       /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
          otherwise pull the state chip right and break the column. */
-      `<span class="tvr">${v.resolution ? esc(v.resolution) : "—"}</span>` +
+      `<span class="tvr ${stateClass(v.resolution)}">${
+         v.resolution ? esc(v.resolution) : "—"}</span>` +
       `</div>`).join("");
 }
 
