@@ -263,6 +263,9 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   font-size:.8rem;color:var(--faint);
 }
 .tlr.passed .tlm{color:var(--good);}
+/* Ran, but on inference rather than on a file -- dimmer than a tick backed by
+   a report you can open. */
+.tlr.inferred .tlm{color:var(--faint);}
 .tlr.running .tlm{color:var(--gold);}
 .tlb{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
 .tlh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
@@ -626,6 +629,23 @@ function progressBar(f, rc){
    the record. */
 const STARTED_STATUSES = new Set(["running", "claimed", "consult"]);
 const startedSeed = sd => STARTED_STATUSES.has(String(sd.status || "").toLowerCase());
+/* EXECUTING IS NOT THE SAME QUESTION AS OPEN, and one set answering both is
+   what put the wrong label on a running machine.
+
+   `consult` is a sweep that FINISHED and is waiting on a person. It is open
+   work -- it belongs in the counts and in Unfinished -- but nothing is running
+   it, and `claimed_by` stays behind as the record of who ran it, not as a claim
+   on the machine now.
+
+   Measured 2026-09-16: the Laptop was 69% through a FULLTEST on
+   BEAR_EMA_PERIODS_LOW while its card read SWEEP and named an EMA A/B arm that
+   had finished two days earlier. Three seeds sat at consult with
+   claimed_by=Laptop, `seedOnMachine` matched the first of them, and the rule
+   that a claimed seed outranks the beacon then did exactly what it says --
+   against a seed that was not being executed at all. */
+const EXECUTING_STATUSES = new Set(["running", "claimed"]);
+const executingSeed = sd =>
+  EXECUTING_STATUSES.has(String(sd.status || "").toLowerCase());
 const queuedSeed = sd => String(sd.status || "").toLowerCase() === "pending";
 const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
 
@@ -878,8 +898,9 @@ function campaignProgress(){
    also what makes a detail view possible at all: there is one thing to open. */
 let ACTIVE_JOB = null;
 
+/* The seed this machine is RUNNING, not merely the last one it touched. */
 const seedOnMachine = m =>
-  SEEDS.find(sd => sd.claimed_by === m && startedSeed(sd)) || null;
+  SEEDS.find(sd => sd.claimed_by === m && executingSeed(sd)) || null;
 
 /* THE CARD IS THE JOB, NOT JUST THE BEACON. A beacon describes a ROUND, and a
    seeded sweep is not one: it carries no regime, no bucket, no group and no
@@ -1069,9 +1090,14 @@ function renderTimeline(tl){
     const note = r.status === "skipped"
         ? (r.conditional ? "not needed — condition not met: " + r.conditional
                          : "not needed this pass")
+      /* INFERRED, and it says so. This round is mandatory and something after
+         it is under way, so it ran -- but no report reached the tree, so there
+         is nothing to open and no minute to name. Claiming it silently would
+         break the rule the rest of this view rests on: a file is the evidence. */
+      : r.inferred ? "ran — no report filed"
       : r.status === "queued" && r.conditional ? "only if " + r.conditional
       : r.status === "running" ? "running now" : "";
-    return `<div class="tlr ${esc(r.status)}">
+    return `<div class="tlr ${esc(r.status)}${r.inferred ? " inferred" : ""}">
         <div class="tlm">${ROUND_MARK[r.status] || ""}</div>
         <div class="tlb">
           <div class="tlh"><span class="tlk">${esc(phaseText(r.kind))}</span>` +
