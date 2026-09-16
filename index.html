@@ -481,6 +481,22 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
    One class, used by the results row and the machine card, so the two cannot
    drift apart. inline-block because in the results row it sits inside wrapping
    prose, where a padded inline box would otherwise bleed through the line. */
+/* A results row is a BUTTON now, not a card: the whole row opens the job. */
+.row.jrowbtn{
+  width:100%;text-align:left;font-family:inherit;color:var(--text);
+  border:0;cursor:pointer;
+}
+.row.jrowbtn:active{transform:translateY(1px);}
+.row-car{color:var(--faint);font-size:.95rem;line-height:1;padding-left:4px;}
+/* MATCHED BY ORDER, NOT BY KEY. Rows written before round_id was recorded are
+   placed positionally -- a sound guess, and still a guess. It is said on the
+   job it qualifies rather than in a footnote, because the reader is about to
+   open these exact reports. */
+.inexact{
+  font-size:.7rem;color:var(--warn);line-height:1.45;
+  background:rgba(224,139,74,.09);border-radius:7px;padding:8px 10px;
+  margin-bottom:10px;
+}
 .bkt{
   display:inline-block;vertical-align:baseline;
   font-size:.65rem;font-weight:700;letter-spacing:.05em;line-height:1.15;
@@ -1228,11 +1244,73 @@ function machineCard(f){
 }
 
 /* ---------- page: results ---------- */
-function renderResults(){
+/* ONE FINISHED JOB: its tasks, its reports, its graphs. Built by handing the
+   ledger row's own `reports` block to renderTimeline -- the SAME renderer the
+   running job uses, so a task looks and behaves identically whether the job
+   finished five minutes ago or five days ago, and the task card comes along
+   with it for free. */
+function renderResultsJob(r){
+  if(!r) { RESULTS_JOB = null; return renderResultsList(); }
+  const rc = REGIME_CLASS[r.regime] || "";
+  const rep = r.reports || {};
+  const back = '<button type="button" class="backbtn" data-rjob="">' +
+               '\u2039 All jobs</button>';
+  /* The pass number comes off the folder, which is the only place it exists for
+     a finished job -- `round_no` is a fleet-wide counter, not this. */
+  const pass = String(rep.rel_dir || "").split("/").filter(Boolean).pop() || null;
+  return back + `
+    <article class="card">
+      <div class="stripe ${esc(rc)}"></div>
+      <div class="card-in">
+        <div class="top">
+          ${r.regime ? `<span class="chip ${esc(rc)}">${esc(r.regime)}</span>` : ""}
+          ${bktEl(r.bucket_id)}
+          <span class="chip gold">${esc(r.machine)}</span>
+          ${r.seeded ? `<span class="chip gold">SEED</span>` : ""}
+          <span class="sp"></span>
+          <span class="when">${esc(fmtWhen(r.recorded_at))}</span>
+        </div>
+        <div><div class="title">${esc(humanize(r.group_id))}</div></div>
+        ${metaRow([["Round", "r" + r.round_no],
+                   ["Pass picked", r.picked_pass ?? null],
+                   ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
+                          : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
+                   ["Passes", r.passes ?? null]])}
+        <div class="row-pf">
+          <div>
+            <div class="lab">Bucket PF</div>
+            <div class="pf"><b>${r.bucket_pf_before ?? "—"}</b>→<b>${r.bucket_pf_after ?? "—"}</b>
+              ${deltaEl(r.bucket_pf_before, r.bucket_pf_after)}</div>
+          </div>
+          <div>
+            <div class="lab">Portfolio PF</div>
+            <div class="pf"><b>${r.pf_before ?? "—"}</b>→<b>${r.pf_after ?? "—"}</b>
+              ${deltaEl(r.pf_before, r.pf_after)}</div>
+          </div>
+        </div>
+      </div>
+    </article>` +
+    (rep.exact === false
+      ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
+           order</b>, not by key — it ran before the pass number was recorded on
+           the row. They are almost certainly this round's, and this page will
+           not claim more than that.</div>`
+      : "") +
+    renderTimeline({regime: r.regime, bucket_id: r.bucket_id,
+                    group_id: r.group_id, rel_dir: rep.rel_dir,
+                    pass: pass, rounds: rep.tasks || []});
+}
+
+function renderResultsList(){
   const rows = LEDGER.map(r => {
     const rc = REGIME_CLASS[r.regime] || "";
+    /* THE WHOLE ROW OPENS THE JOB, and only when there is a job to open. A
+       row whose reports never resolved has no tasks behind it, so it stays an
+       inert card rather than a button that does nothing. */
+    const hasJob = !!(r.reports && (r.reports.tasks || []).length);
     return `
-    <article class="row">
+    <${hasJob ? "button type=\"button\"" : "article"} class="row${
+        hasJob ? " jrowbtn" : ""}"${hasJob ? ` data-rjob="${esc(r.round_no)}"` : ""}>
       <div class="row-top">
         <span class="chip ${r.failed ? "warn" : rc}">${
           r.failed ? "FAILED" : esc(r.regime)}</span>` +
@@ -1245,7 +1323,8 @@ function renderResults(){
           /* THE BUCKET, because a group name alone does not say which bucket
              earned the round -- and buckets are the campaign's own unit. Its
              own span so it stays legible when the name wraps beside it. */
-          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>
+          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>` +
+        (hasJob ? `<span class="row-car">›</span>` : "") + `
       </div>
       ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
           esc(r.fail_reason || "no reason recorded")}</div>` : `
@@ -1287,7 +1366,7 @@ function renderResults(){
         ${r.heavy ? "<span>heavy</span>" : ""}
         <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
       </div>
-    </article>`;
+    </${hasJob ? "button" : "article"}>`;
   }).join("");
   // "completed" has to mean completed. Counting every row here while the
   // machine cards count only finished ones would put two different totals for
@@ -1295,6 +1374,13 @@ function renderResults(){
   const nf = LEDGER.length - LEDGER.filter(completed).length;
   return `<div class="section-label">${LEDGER.filter(completed).length} completed` +
     (nf ? ` · ${nf} failed` : "") + ` · newest first</div>` + rows;
+}
+
+/* The tab itself: the list, or the one job that is open. */
+function renderResults(){
+  if(RESULTS_JOB == null) return renderResultsList();
+  const r = LEDGER.find(x => String(x.round_no) === String(RESULTS_JOB));
+  return renderResultsJob(r);
 }
 
 /* ---------- shell ---------- */
@@ -1354,6 +1440,13 @@ function campaignProgress(){
    job here is the PAIRING: the machine, and whatever seed it holds. That is
    also what makes a detail view possible at all: there is one thing to open. */
 let ACTIVE_JOB = null;
+/* WHICH FINISHED JOB IS OPEN, by round_no. Trevor, 2026-09-16: *"the results
+   tab I want it to list all the JOB's. Then we'll Click on the job to see all
+   the tasks on the Job Card. Then we can click on the Task to get to the Task
+   Card."* Three levels, and this is the middle one's cursor. Separate from
+   ACTIVE_JOB because the two tabs navigate independently -- opening a finished
+   job must not close the running one you were watching. */
+let RESULTS_JOB = null;
 
 /* The seed this machine is RUNNING, not merely the last one it touched. */
 const seedOnMachine = m =>
@@ -1997,6 +2090,17 @@ function go(page){
   const btn = document.querySelector(`nav button[data-p="${page}"]`);
   if(btn) btn.click();
 }
+
+/* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
+   the ACTIVE tab, and reusing it here would have opening a finished job also
+   change what the Active tab was showing. */
+document.addEventListener("click", e => {
+  const j = e.target.closest("[data-rjob]");
+  if(!j) return;
+  RESULTS_JOB = j.dataset.rjob || null;
+  document.getElementById("page-results").innerHTML = renderResults();
+  window.scrollTo(0, 0);
+});
 
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-go]");
