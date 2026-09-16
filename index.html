@@ -529,6 +529,34 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .row.jrowbtn:active{transform:translateY(1px);}
 .row-car{color:var(--faint);font-size:.95rem;line-height:1;padding-left:4px;}
+/* THE CONTROL ROW. The same chips as a results row, doing the other job: these
+   say what the list is showing, and tapping one moves it on. Kept beside the
+   count so the state of the list and the size of it are read together. */
+.rctl{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:0 2px 9px;
+}
+.rctl .rlab{
+  font-size:.62rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin-right:2px;
+}
+/* A CHIP THAT DOES SOMETHING looks like it does: the inert ones on a row are
+   flat, these carry a hairline. Without it the only difference between a label
+   and a control is that one of them moves when you tap it. */
+.cchip{
+  font-family:inherit;border:1px solid var(--line);cursor:pointer;
+  font-size:.62rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:3px 8px;border-radius:5px;white-space:nowrap;
+  background:var(--card-2);color:var(--dim);
+}
+.cchip:active{transform:translateY(1px);}
+/* ON means the list is narrowed -- the one state you must not have to hunt for
+   when rows are missing. */
+.cchip.on{background:rgba(224,180,87,.15);color:var(--gold);border-color:rgba(224,180,87,.35);}
+.cchip .car{opacity:.55;font-weight:400;}
+/* A row's own chips are controls too. They keep the regime colours -- the chip
+   IS the regime -- and only gain the pointer. */
+.row .chip[data-rfilter],.row .bkt[data-rfilter]{cursor:pointer;}
 /* MATCHED BY ORDER, NOT BY KEY. Rows written before round_id was recorded are
    placed positionally -- a sound guess, and still a guess. It is said on the
    job it qualifies rather than in a footnote, because the reader is about to
@@ -953,15 +981,18 @@ function bktTone(t){
 /* The whole element, so the two call sites cannot disagree about it. A
    non-numeric id renders plain rather than being dropped: an id this cannot
    place is still an id worth showing. */
-function bktEl(id, trail){
+function bktEl(id, trail, filterId){
   if(id == null) return "";
   const tail = trail ? " " : "";
+  /* On a results row the bucket is a control as well as a label -- see the
+     results chips. Everywhere else it is just the id. */
+  const fil = filterId != null ? ` data-rfilter="bucket:${esc(filterId)}"` : "";
   const n = Number(id);
-  if(!isFinite(n)) return `<span class="bkt">${esc(id)}</span>` + tail;
+  if(!isFinite(n)) return `<span class="bkt"${fil}>${esc(id)}</span>` + tail;
   const t = Math.max(-1, Math.min(1, (n - BKT_ROOT) / BKT_REACH));
   const tone = bktTone(t);
   const lift = bktMix(tone, [255, 255, 255], .34);
-  return `<span class="bkt" style="background:${bktRgb(tone, .15)}">` +
+  return `<span class="bkt"${fil} style="background:${bktRgb(tone, .15)}">` +
          `<i style="color:${bktRgb(lift)};background-image:linear-gradient(` +
          `120deg,${bktRgb(lift)},${bktRgb(tone)})">${esc(id)}</i></span>` + tail;
 }
@@ -1329,6 +1360,20 @@ function machineCard(f){
    running job uses, so a task looks and behaves identically whether the job
    finished five minutes ago or five days ago, and the task card comes along
    with it for free. */
+/* The variable states a finished job left behind. "" when no task carried
+   any, which is every job whose reports never resolved. */
+function jobVariables(tasks){
+  let vars = null;
+  (tasks || []).forEach(t => {
+    const v = (t.detail || {}).variables;
+    if(v && v.length) vars = v;
+  });
+  if(!vars) return "";
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">Variables — where they stand</div>` +
+      taskVars(vars) + taskStateKey(vars) + `</div></div>`;
+}
+
 function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
   const rc = REGIME_CLASS[r.regime] || "";
@@ -1370,6 +1415,16 @@ function renderResultsJob(r){
         </div>
       </div>
     </article>` +
+    /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
+       *"I want the Variables and their status info in here right below the PF
+       numbers, above the Reports."*
+
+       TAKEN FROM THE LAST TASK THAT HAS ANY. A job's tasks narrow as it runs --
+       the second pass sweeps fewer than the first -- and the LAST one to carry a
+       list is the backtest, which carries the group entire with every state as
+       it stands once the job is done. That is the right thing on a card about a
+       FINISHED job: not what was swept, but where everything ended up. */
+    jobVariables(rep.tasks) +
     (rep.exact === false
       ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
            order</b>, not by key — it ran before the pass number was recorded on
@@ -1382,7 +1437,7 @@ function renderResultsJob(r){
 }
 
 function renderResultsList(){
-  const rows = LEDGER.map(r => {
+  const rows = resultsRows().map(r => {
     const rc = REGIME_CLASS[r.regime] || "";
     /* THE WHOLE ROW OPENS THE JOB, and only when there is a job to open. A
        row whose reports never resolved has no tasks behind it, so it stays an
@@ -1392,7 +1447,8 @@ function renderResultsList(){
     <${hasJob ? "button type=\"button\"" : "article"} class="row${
         hasJob ? " jrowbtn" : ""}"${hasJob ? ` data-rjob="${esc(r.round_no)}"` : ""}>
       <div class="row-top">
-        <span class="chip ${r.failed ? "warn" : rc}">${
+        <span class="chip ${r.failed ? "warn" : rc}"${
+          r.failed ? "" : ` data-rfilter="regime:${esc(r.regime)}"`}>${
           r.failed ? "FAILED" : esc(r.regime)}</span>` +
         /* WAS IT SEEDED. Trevor, 2026-09-16: *"I want to know if it was a
            seed."* Derived upstream from the seed records, not from the ledger
@@ -1403,7 +1459,7 @@ function renderResultsList(){
           /* THE BUCKET, because a group name alone does not say which bucket
              earned the round -- and buckets are the campaign's own unit. Its
              own span so it stays legible when the name wraps beside it. */
-          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>` +
+          bktEl(r.bucket_id, true, r.bucket_id)}${esc(humanize(r.group_id))}</span>` +
         (hasJob ? `<span class="row-car">›</span>` : "") + `
       </div>
       ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
@@ -1447,13 +1503,37 @@ function renderResultsList(){
         <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
       </div>
     </${hasJob ? "button" : "article"}>`;
-  }).join("");
+  }).join("") ||
+    /* NARROWED TO NOTHING is not the same as having no results, and the
+       difference is one tap away. */
+    `<div class="empty">No rounds match this filter.<br><br>` +
+    `Tap a chip above to widen it.</div>`;
   // "completed" has to mean completed. Counting every row here while the
   // machine cards count only finished ones would put two different totals for
   // the same thing on two tabs of one app.
-  const nf = LEDGER.length - LEDGER.filter(completed).length;
-  return `<div class="section-label">${LEDGER.filter(completed).length} completed` +
-    (nf ? ` · ${nf} failed` : "") + ` · newest first</div>` + rows;
+  const shown = resultsRows();
+  const nf = shown.length - shown.filter(completed).length;
+  const buckets = resultsBuckets();
+  /* "newest first" WAS TEXT AND IS NOW A CONTROL. Trevor: *"Where it currently
+     says NEWEST FIRST, i want that to be a button chip also."* Same words, same
+     place -- it simply does something now. */
+  return `<div class="section-label">${shown.filter(completed).length} completed` +
+    (nf ? ` · ${nf} failed` : "") + `</div>
+    <div class="rctl">
+      <span class="rlab">Show</span>
+      <button type="button" class="cchip${RESULTS_SORT === "oldest" ? " on" : ""}"
+        data-rfilter="sort">${RESULTS_SORT === "oldest" ? "Oldest first"
+                                                        : "Newest first"}</button>
+      <button type="button" class="cchip${RESULTS_REGIME ? " on" : ""}"
+        data-rfilter="regime">${esc(RESULTS_REGIME || "All regimes")}</button>` +
+    (buckets.length > 1 || RESULTS_BUCKET != null
+      ? `<button type="button" class="cchip${RESULTS_BUCKET != null ? " on" : ""}"
+           data-rfilter="bucket">${RESULTS_BUCKET != null
+             ? "Bucket " + esc(RESULTS_BUCKET) : "All buckets"}</button>`
+      /* ONE BUCKET IS NOT A CHOICE. Hiding the control until a split gives it
+         something to cycle through keeps a dead button off the screen. */
+      : "") + `
+    </div>` + rows;
 }
 
 /* The tab itself: the list, or the one job that is open. */
@@ -1527,6 +1607,45 @@ let ACTIVE_JOB = null;
    ACTIVE_JOB because the two tabs navigate independently -- opening a finished
    job must not close the running one you were watching. */
 let RESULTS_JOB = null;
+/* HOW THE RESULTS LIST IS ORDERED AND NARROWED. Trevor, 2026-09-16: the chips
+   on a row *"are going to sort the order of the list ... Regime cycles between
+   the three and the bucket id will also cycle between all the bucket numbers
+   available."*
+
+   ⚠️ EVERY CYCLE PASSES THROUGH null, WHICH MEANS "ALL". Three regimes and
+   nothing else would be a filter you cannot turn off: tap BEAR once and the
+   only way back to the whole list is to guess how many more taps it takes.
+   null is the resting state and the one the list starts in. */
+let RESULTS_SORT = "newest";       // or "oldest"
+let RESULTS_REGIME = null;         // null = every regime
+let RESULTS_BUCKET = null;         // null = every bucket
+
+/* The buckets that actually have rounds, in a stable order -- derived, never
+   typed, so a split adds itself to the cycle the day it banks a result. */
+function resultsBuckets(){
+  const seen = [];
+  LEDGER.forEach(r => {
+    if(r.bucket_id != null && !seen.includes(r.bucket_id)) seen.push(r.bucket_id);
+  });
+  return seen.sort((a, b) => a - b);
+}
+
+/* Next value in a cycle that always contains null. */
+function cycle(list, current){
+  const all = [null].concat(list);
+  const i = all.findIndex(v => String(v) === String(current));
+  return all[(i + 1) % all.length];
+}
+
+function resultsRows(){
+  let rows = LEDGER.slice();
+  if(RESULTS_REGIME) rows = rows.filter(r => r.regime === RESULTS_REGIME);
+  if(RESULTS_BUCKET != null)
+    rows = rows.filter(r => String(r.bucket_id) === String(RESULTS_BUCKET));
+  /* LEDGER arrives newest-first from the publisher, so "newest" is the identity
+     and only the other direction costs a reverse. */
+  return RESULTS_SORT === "oldest" ? rows.reverse() : rows;
+}
 
 /* The seed this machine is RUNNING, not merely the last one it touched. */
 const seedOnMachine = m =>
@@ -2200,6 +2319,35 @@ function go(page){
 /* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
    the ACTIVE tab, and reusing it here would have opening a finished job also
    change what the Active tab was showing. */
+/* A CHIP INSIDE THE ROW BUTTON IS NOT THE ROW. Checked FIRST and returns, so
+   tapping a regime chip narrows the list instead of opening the job underneath
+   it -- which is the whole reason Trevor carved the chips out of the button. */
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-rfilter]");
+  if(!c) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const [what, value] = String(c.dataset.rfilter).split(":");
+  if(what === "sort"){
+    RESULTS_SORT = RESULTS_SORT === "newest" ? "oldest" : "newest";
+  } else if(what === "regime"){
+    /* A TAP ON A ROW'S OWN CHIP JUMPS STRAIGHT TO THAT REGIME -- it is the
+       fastest thing it could mean, and cycling from wherever the filter happens
+       to be would make the same tap do different things on different rows. The
+       control-row chip, which names no regime, cycles. */
+    RESULTS_REGIME = value
+      ? (RESULTS_REGIME === value ? null : value)
+      : cycle(["BULL", "BEAR", "RANGING"], RESULTS_REGIME);
+  } else if(what === "bucket"){
+    RESULTS_BUCKET = value
+      ? (String(RESULTS_BUCKET) === value ? null : value)
+      : cycle(resultsBuckets(), RESULTS_BUCKET);
+  }
+  RESULTS_JOB = null;              // a narrowed list has no job open
+  document.getElementById("page-results").innerHTML = renderResults();
+  window.scrollTo(0, 0);
+});
+
 document.addEventListener("click", e => {
   const j = e.target.closest("[data-rjob]");
   if(!j) return;
