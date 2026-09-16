@@ -325,7 +325,10 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   font-size:.73rem;font-family:"Roboto Mono",ui-monospace,monospace;
 }
 .tvn{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text);}
-.tvr{color:var(--faint);font-size:.65rem;}
+/* TWO BOXES, SIDE BY SIDE. Trevor, 2026-09-16: *"I was hoping to get
+   Default, Pinned, Floating, Center. And then next to it i want the Resolution
+   in a similar box next to it."* Same shell for both so they read as a pair --
+   where the variable is up to, and how finely it is being looked at. */
 .tst{
   font-size:.58rem;font-weight:700;letter-spacing:.06em;
   padding:2px 6px;border-radius:4px;white-space:nowrap;
@@ -335,9 +338,24 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
    wider band, and if it stays it is a park waiting to happen. So it gets the
    warn colour and everything else stays quiet. */
 .tst.pinned{background:rgba(224,139,74,.16);color:var(--warn);}
-.tst.middle{background:rgba(95,190,149,.14);color:var(--good);}
+.tst.center{background:rgba(95,190,149,.14);color:var(--good);}
 .tst.floating{background:var(--tonal);color:#9CC6E8;}
 .tst.locked{background:rgba(140,160,172,.12);color:var(--dim);}
+/* DEFAULT is the absence of a result, not a result -- the EA's own compiled
+   value, which no round has moved. Dimmest of the five on purpose: it is the
+   state that means "nothing has happened here yet". */
+.tst.default{background:rgba(140,160,172,.10);color:var(--faint);}
+/* The resolution wears the same shell, one notch quieter -- it qualifies the
+   state beside it rather than competing with it. Fixed width so a column of
+   them lines up under each other down the list. */
+.tvr{
+  font-size:.58rem;font-weight:700;letter-spacing:.06em;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;
+  background:var(--card);color:var(--dim);
+  border:1px solid var(--line);
+  min-width:58px;text-align:center;
+}
 
 /* The trade-band verdict. IN BAND is the quiet one; both misses are loud,
    because a round outside the band is a round whose result the EA discounted. */
@@ -1635,14 +1653,14 @@ function reportButtons(r, relDir){
    pick a CSS class; the label shown is the publisher's own. */
 function stateClass(s){ return String(s || "").toLowerCase(); }
 
-/* EXPLAIN ONLY THE STATES ON SCREEN. Printing all four every time is a
+/* EXPLAIN ONLY THE STATES ON SCREEN. Printing all five every time is a
    glossary; printing the ones this task actually has is an answer. Ordered
    PINNED first, matching notify.py's own ordering and for the same reason --
    it is the one worth eyeballing, because a variable stuck there is asking for
    a wider band and is a park waiting to happen. */
 function taskStateKey(list){
   const seen = [];
-  ["PINNED", "MIDDLE", "FLOATING", "LOCKED"].forEach(st => {
+  ["PINNED", "CENTER", "FLOATING", "DEFAULT", "LOCKED"].forEach(st => {
     if((list || []).some(v => v.state === st) && STATE_TEXT[st]) seen.push(st);
   });
   if(!seen.length) return "";
@@ -1655,9 +1673,12 @@ function taskVars(list){
   if(!(list || []).length) return "";
   return list.map(v => `<div class="tvar">
       <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
-      (v.resolution ? `<span class="tvr">${esc(v.resolution)}</span>` : "") +
       (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>`
-               : "") + `</div>`).join("");
+               : "") +
+      /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
+         otherwise pull the state chip right and break the column. */
+      `<span class="tvr">${v.resolution ? esc(v.resolution) : "—"}</span>` +
+      `</div>`).join("");
 }
 
 /* A SWEPT VARIABLE HAS TWO SHAPES, because a task gets here two ways: a seeded
