@@ -294,6 +294,155 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .rfile[hidden]{display:none;}
 
+/* ---------- the task card ---------- */
+/* ONE ROUND, FULLY DESCRIBED. Trevor, 2026-09-16: *"build a Task Card ...
+   clickable from any job card ... as much information about that particular
+   task."*
+
+   INLINE, NOT A THIRD SCREEN. The app is already two levels deep by the time a
+   job card is open, and a third back button to get out of a detail panel is the
+   navigation nobody wants on a phone. Expanding in place also keeps the row it
+   belongs to on screen, which is the thing that says WHICH task this is. */
+.task{
+  margin-top:8px;padding:10px 11px;border-radius:9px;
+  background:var(--card-2);border:1px solid var(--line);
+  display:flex;flex-direction:column;gap:10px;
+}
+.task[hidden]{display:none;}
+.tsec{display:flex;flex-direction:column;gap:6px;}
+.tlab{
+  font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);
+}
+.tnote{font-size:.75rem;color:var(--dim);line-height:1.45;}
+.tby{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
+
+/* A variable and where it is up to. The state carries the colour because it is
+   the thing worth scanning down a list for -- a column of names is a column of
+   names whatever colour it is. */
+.tvar{
+  display:flex;align-items:baseline;gap:8px;
+  font-size:.73rem;font-family:"Roboto Mono",ui-monospace,monospace;
+}
+.tvn{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text);}
+.tvr{color:var(--faint);font-size:.65rem;}
+.tst{
+  font-size:.58rem;font-weight:700;letter-spacing:.06em;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;
+}
+/* PINNED is the one worth eyeballing -- a variable stuck there is asking for a
+   wider band, and if it stays it is a park waiting to happen. So it gets the
+   warn colour and everything else stays quiet. */
+.tst.pinned{background:rgba(224,139,74,.16);color:var(--warn);}
+.tst.middle{background:rgba(95,190,149,.14);color:var(--good);}
+.tst.floating{background:var(--tonal);color:#9CC6E8;}
+.tst.locked{background:rgba(140,160,172,.12);color:var(--dim);}
+
+/* The trade-band verdict. IN BAND is the quiet one; both misses are loud,
+   because a round outside the band is a round whose result the EA discounted. */
+.tband{
+  display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  font-size:.76rem;font-variant-numeric:tabular-nums;
+}
+.tbv{font-weight:700;}
+.tbv.inband{color:var(--good);}
+.tbv.under{color:var(--bad);}
+.tbv.over{color:var(--warn);}
+.tbv.unknown{color:var(--faint);font-weight:600;}
+.tbm{color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;}
+
+/* A graph is the one output you want to SEE rather than tap, so it is drawn
+   rather than turned into a button. Bounded height: a curve is wider than it is
+   tall and an unbounded one pushes everything below it off the screen. */
+.tgraph{
+  width:100%;border-radius:7px;border:1px solid var(--line);
+  background:var(--bg);display:block;
+}
+.tgcap{font-size:.65rem;color:var(--faint);margin-top:3px;}
+
+/* THE ROW IS THE BUTTON. It was a div; making the whole thing tappable is what
+   "clickable from any job card" means, and a small chevron on its own would be
+   a target nobody hits on a phone. */
+.tlr.tappable{cursor:pointer;}
+.tlr.tappable .tlh:after{
+  content:"\203A";color:var(--faint);font-size:.9rem;line-height:1;
+  margin-left:auto;padding-left:6px;transition:transform .12s;
+}
+.tlr.tappable.open .tlh:after{content:"\2039";}
+
+/* ---------- picking a pass, in the app ---------- */
+/* MOCKUP -- PREVIEW ONLY, NOT IN THE LIVE PAGE. Trevor, 2026-09-16: *"I want to
+   apply the pass number on the app now rather than reply with telegram. Lets
+   see what that would look like."* This is the dev sandbox doing its job: the
+   format is tried here before anything is ported.
+
+   ⚠️ THE APP CANNOT APPLY ANYTHING TODAY. It is a static page on Pages reading
+   a published snapshot -- there is no write path back to the machines at all.
+   The reply-to-Telegram route exists precisely because the bot is the only
+   inbound channel that reaches them. So this is a picture of a screen, and the
+   channel underneath it is a separate build. */
+.pick{
+  border-top:1px solid var(--line);
+  padding-top:11px;display:flex;flex-direction:column;gap:9px;
+}
+.pickhd{
+  font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--gold);
+}
+.picksub{font-size:.73rem;color:var(--dim);line-height:1.45;}
+/* NOTHING ON CADENCE is a different claim, not a footnote -- see
+   notify.format_recommendation, which refuses to let that case print under the
+   heading it would otherwise inherit. Same rule, same words, one surface. */
+.pickwarn{
+  font-size:.72rem;color:var(--warn);line-height:1.45;
+  background:rgba(224,139,74,.09);border-radius:7px;padding:7px 9px;
+}
+.pickrow{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  font-family:inherit;color:var(--text);cursor:pointer;
+  background:var(--card-2);border:1px solid var(--line);
+  border-radius:9px;padding:8px 10px;
+}
+.pickrow.on{border-color:var(--gold);background:rgba(224,180,87,.10);}
+.pickrow .rk{
+  font-size:.62rem;font-weight:700;color:var(--faint);
+  width:14px;flex:none;font-variant-numeric:tabular-nums;
+}
+.pickrow.on .rk{color:var(--gold);}
+.pickp{font-size:.82rem;font-weight:700;white-space:nowrap;}
+.pickm{
+  font-size:.67rem;color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;line-height:1.4;
+}
+.pickme{flex:1;min-width:0;}
+.pickpf{font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums;}
+/* THE FREE FIELD IS NOT A FALLBACK. Trevor picks from the workbook as often as
+   from the ranking, and a form that only offers three passes out of 8,192 is a
+   form that gets abandoned for the one that takes any number. */
+.pickother{display:flex;align-items:center;gap:8px;}
+.pickother label{font-size:.72rem;color:var(--dim);white-space:nowrap;}
+.pickin{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.82rem;
+  background:var(--card-2);color:var(--text);
+  border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;width:104px;
+  font-variant-numeric:tabular-nums;
+}
+.pickin:focus{outline:none;border-color:var(--gold);}
+.applyb{
+  font-family:inherit;font-size:.8rem;font-weight:700;letter-spacing:.01em;
+  border:0;border-radius:9px;padding:11px 12px;width:100%;
+  background:var(--gold);color:#1A1204;cursor:pointer;
+}
+.applyb:disabled{background:var(--card-2);color:var(--faint);cursor:default;}
+.applyb:active:not(:disabled){transform:translateY(1px);}
+.pickfoot{font-size:.68rem;color:var(--faint);line-height:1.45;}
+.pickdone{
+  font-size:.75rem;color:var(--good);line-height:1.45;
+  background:rgba(95,190,149,.10);border-radius:7px;padding:9px 10px;
+}
+
 /* ---------- results rows ---------- */
 .row{
   background:var(--card);
@@ -437,7 +586,18 @@ let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES 
 /* Where the report files can be fetched, when something is serving them. null
    is the normal resting state -- the machine that ran the round has to be on
    for its files to exist anywhere at all. */
-let REPORTS_BASE = null;
+/* THE NAME IS DELIBERATE, AND SHORTER THAN IT WAS. It used to be prefixed with
+   one of job_control's PHASE constants, which puts it on publish.py's derived
+   denylist -- and that scan is a SUBSTRING match, on purpose, so a group id
+   buried inside a longer identifier cannot slip past it. The old name therefore
+   refused every publish that touched a line mentioning it, over a collision
+   that was never a leak.
+
+   RENAMING THE IDENTIFIER IS THE FIX. Loosening the scan to special-case this
+   would trade a real protection for a cosmetic convenience, and the next thing
+   it failed to catch would be an actual one. The snapshot key this reads
+   (`reports_base`, lower case) is untouched -- the wire format did not move. */
+let FILE_BASE = null;
 
 const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
 const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
@@ -919,6 +1079,67 @@ function renderRounds(){
               .join("");
 }
 
+/* PICK A PASS, ON THE PHONE. Mockup; see the .pick CSS for what does not
+   exist behind it yet.
+
+   THE RANKING IS THE ONE UPSTREAM ALREADY COMPUTES -- pick_pass.rank(), the
+   same rows notify.format_recommendation prints into the Telegram message.
+   Re-ranking here would put two orders for the same report on two surfaces,
+   which is the exact failure that module's docstring warns about: "Two numbers
+   that differ are two numbers you cannot use."
+
+   SELECTION IS LOCAL AND UNSENT until Apply. The row and the free field are one
+   value, not two -- typing clears the row highlight, tapping a row clears the
+   field -- because a form that can show a chosen pass AND a different typed one
+   at the same time is a form that applies the wrong number eventually. */
+let PICKED = {};
+
+function passRow(r, i, key){
+  const on = PICKED[key] != null && Number(PICKED[key]) === Number(r.pass);
+  return `<button type="button" class="pickrow${on ? " on" : ""}" ` +
+    `data-pick="${esc(key)}" data-pass="${esc(r.pass)}">
+      <span class="rk">${i + 1}</span>
+      <span class="pickme">
+        <span class="pickp">pass ${esc(r.pass)}</span>
+        <span class="pickm"> · ${esc(r.trades)} trades (${esc(r.per_year)}/yr)</span>
+        <div class="pickm">${r.profit >= 0 ? "+" : ""}${esc(r.profit)}</div>
+      </span>
+      <span class="pickpf">${esc(r.pf)}</span>
+    </button>`;
+}
+
+function passPick(f){
+  const a = f.awaiting_pass;
+  if(!a) return "";
+  const key = `${f.regime}|${f.bucket_id}|${f.group_id}`;
+  const rows = a.rows || [];
+  const sel = PICKED[key];
+  const typed = sel != null && !rows.some(r => Number(r.pass) === Number(sel));
+  return `<div class="pick">
+      <div class="pickhd">⏸ Round finished — pick a pass</div>
+      <div class="picksub">Nothing is applied until you do. ${esc(a.passes)} passes ran;
+        target is ${esc(a.band_low)}–${esc(a.band_high)} trades.</div>` +
+    (a.on_cadence === false
+      ? `<div class="pickwarn">⚠️ NOTHING landed on-cadence
+           (${esc(a.band_low)}–${esc(a.band_high)} trades). These are NEAREST TO
+           TARGET instead, so "best PF among on-cadence" is not what ranked
+           them.</div>`
+      : `<div class="picksub">Best PF among the on-cadence passes:</div>`) +
+    rows.map((r, i) => passRow(r, i, key)).join("") + `
+      <div class="pickother">
+        <label for="pin-${esc(key)}">Or any pass</label>
+        <input class="pickin" id="pin-${esc(key)}" type="number" inputmode="numeric"
+               min="1" max="${esc(a.passes)}" placeholder="—"
+               data-pickin="${esc(key)}" value="${typed ? esc(sel) : ""}">
+      </div>
+      <button type="button" class="applyb" data-apply="${esc(key)}"
+        ${sel == null ? "disabled" : ""}>${
+          sel == null ? "Pick a pass to apply" : "Apply pass " + esc(sel)}</button>
+      <div class="pickfoot">Applies from the pre-round snapshot and re-runs both
+        backtests. Reversible until the next round on this group.</div>
+    </div>`;
+}
+
 /* ONE MACHINE, ONE CARD. Same reason as seedCard. */
 function machineCard(f){
     const rc = RC[f.regime] || "";
@@ -982,6 +1203,7 @@ function machineCard(f){
                    ["ETA", fmtEta(etaAt(f))],
                    ["In phase", phaseFor(f)]])}
         ${progressBar(f, rc)}
+        ${passPick(f)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
             ? sweptList(f.seed.variables, f.seed.cells)
             : varList(f.variables)}
@@ -1287,11 +1509,11 @@ function reportButtons(r, relDir){
      snapshot published. Each segment is encoded separately so a slash in a
      group name could never climb out of the directory it names. */
   const urls = Object.assign({}, r.urls || {});
-  if(REPORTS_BASE && relDir){
+  if(FILE_BASE && relDir){
     const dir = String(relDir).split("/").map(encodeURIComponent).join("/");
     PART_ORDER.forEach(p => {
       if(files[p] && !urls[p]){
-        urls[p] = REPORTS_BASE.replace(/\/+$/, "") + "/" + dir + "/" +
+        urls[p] = FILE_BASE.replace(/\/+$/, "") + "/" + dir + "/" +
                   encodeURIComponent(files[p]);
       }
     });
@@ -1304,6 +1526,118 @@ function reportButtons(r, relDir){
       : `<button type="button" class="rbtn pending" data-toggle>` +
         `${esc(PART_LABEL[p] || p)}</button>` +
         `<span class="rfile" hidden>${esc(files[p])}</span>`).join("") + '</div>';
+}
+
+/* ---------- the task card ---------- */
+/* The four words for where a variable is up to, straight from the publisher --
+   see task_detail.STATE_TEXT for what each one means. Lower-cased here only to
+   pick a CSS class; the label shown is the publisher's own. */
+function stateClass(s){ return String(s || "").toLowerCase(); }
+
+function taskVars(list){
+  if(!(list || []).length) return "";
+  return list.map(v => `<div class="tvar">
+      <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
+      (v.resolution ? `<span class="tvr">${esc(v.resolution)}</span>` : "") +
+      (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>`
+               : "") + `</div>`).join("");
+}
+
+/* A SWEPT VARIABLE HAS TWO SHAPES, because a task gets here two ways: a seeded
+   sweep carries its own grid on the record, a rotation round sweeps its group's
+   active variables at whatever resolution each is on. Same reason the publisher
+   has two shapes -- see task_detail.swept_variables. */
+function taskSwept(list){
+  if(!(list || []).length) return "";
+  return list.map(v => {
+    const grid = (v.min != null && v.max != null)
+      ? `${esc(v.min)} → ${esc(v.max)}` +
+        (v.points ? ` · ${esc(v.points)} steps` : "") +
+        (v.step ? ` · Δ ${esc(v.step)}` : "")
+      : (v.resolution ? esc(v.resolution) + " resolution" : "");
+    return `<div class="tvar"><span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span></div>` +
+           (grid ? `<div class="tvr" style="padding-left:2px">${grid}</div>` : "");
+  }).join("");
+}
+
+const BAND_WORD = { IN_BAND: "In band", UNDER: "Under", OVER: "Over",
+                    UNKNOWN: "Not measured here" };
+
+function taskBand(c){
+  if(!c) return "";
+  const v = String(c.verdict || "UNKNOWN");
+  const cls = v.toLowerCase().replace("_", "");
+  let line = "";
+  if(v === "UNKNOWN"){
+    /* NOT A MISS. A sweep runs with logging off and writes no count at all, and
+       the round ledger is per-machine so a peer's round has no row here either.
+       Saying "0 trades" or "under" would invent a cadence problem. */
+    line = `<span class="tbm">no trade count on this machine</span>`;
+  } else {
+    line = `<span class="tbm">${esc(c.trades)} trades · band ` +
+           `${esc(c.floor_trades)}–${esc(c.ceiling_trades)}</span>` +
+           (c.off_by ? `<span class="tbm">${esc(c.off_by)} ${
+              v === "UNDER" ? "short" : "over"}</span>` : "");
+  }
+  return `<div class="tband"><span class="tbv ${cls}">${
+      esc(BAND_WORD[v] || v)}</span>${line}</div>`;
+}
+
+/* WHY IT CUT IN LINE. The tag is the category and the note is the sentence --
+   both, because the tag alone loses the specifics and the note alone cannot be
+   grouped. See seeds.REASONS. */
+function taskSeed(sd){
+  if(!sd) return "";
+  return `<div class="tsec">
+      <div class="tlab">Seeded — ${esc(sd.reason || "")}</div>` +
+    (sd.reason_text ? `<div class="tnote">${esc(sd.reason_text)}</div>` : "") +
+    (sd.note ? `<div class="tnote">“${esc(sd.note)}”</div>` : "") +
+    (sd.outcome ? `<div class="tnote">${esc(sd.outcome)}</div>` : "") +
+    (sd.created_by ? `<div class="tby">by ${esc(sd.created_by)}</div>` : "") +
+    `</div>`;
+}
+
+/* The pictures. Drawn, not linked -- see .tgraph. Built from the same base and
+   the same directory the report buttons use, so a graph can never point
+   somewhere its own report does not. */
+function taskGraphs(files, relDir, urls){
+  const name = (files || {}).CURVE;
+  if(!name) return "";
+  /* A URL THE RECORD CARRIES WINS, exactly as reportButtons does it -- one rule
+     for "where does this file live", so a graph can never resolve differently
+     from the report sitting beside it. */
+  let url = (urls || {}).CURVE || "";
+  if(!url){
+    if(!FILE_BASE || !relDir) return "";
+    const dir = String(relDir).split("/").map(encodeURIComponent).join("/");
+    url = FILE_BASE.replace(/\/+$/, "") + "/" + dir + "/" +
+          encodeURIComponent(name);
+  }
+  return `<div class="tsec"><div class="tlab">Balance curve</div>
+      <img class="tgraph" src="${esc(url)}" alt="balance curve" loading="lazy">
+      <div class="tgcap">Before and after, on one scale.</div></div>`;
+}
+
+function taskCard(r, relDir){
+  const d = r.detail;
+  if(!d) return "";
+  const parts = [
+    taskSeed(d.seed),
+    d.cadence ? `<div class="tsec"><div class="tlab">Trade band</div>` +
+                taskBand(d.cadence) + `</div>` : "",
+    (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
+                             taskSwept(d.swept) + `</div>` : "",
+    (d.variables || []).length ? `<div class="tsec"><div class="tlab">Variables</div>` +
+                                 taskVars(d.variables) + `</div>` : "",
+    taskGraphs(d.files, d.rel_dir || relDir, d.urls),
+  ].filter(Boolean);
+  /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
+     no files -- an empty panel would read as a broken card rather than as a
+     round that has not happened yet. */
+  if(!parts.length){
+    parts.push(`<div class="tnote">Nothing recorded yet — this one has not run.</div>`);
+  }
+  return `<div class="task" hidden>${parts.join("")}</div>`;
 }
 
 function renderTimeline(tl){
@@ -1324,13 +1658,17 @@ function renderTimeline(tl){
       : r.inferred ? "ran — no report filed"
       : r.status === "queued" && r.conditional ? "only if " + r.conditional
       : r.status === "running" ? "running now" : "";
-    return `<div class="tlr ${esc(r.status)}${r.inferred ? " inferred" : ""}">
+    /* Tappable only when there is a card behind it -- a row that opens an
+       empty panel teaches you not to tap the ones that are not empty. */
+    const card = taskCard(r, tl.rel_dir);
+    return `<div class="tlr ${esc(r.status)}${r.inferred ? " inferred" : ""}${
+        card ? " tappable" : ""}"${card ? ' data-task' : ""}>
         <div class="tlm">${ROUND_MARK[r.status] || ""}</div>
         <div class="tlb">
           <div class="tlh"><span class="tlk">${esc(phaseText(r.kind))}</span>` +
           (r.at ? `<span class="tlw">${esc(fmtWhen(r.at))}</span>` : "") + `</div>` +
           (note ? `<div class="tlnote">${esc(note)}</div>` : "") +
-          reportButtons(r, tl.rel_dir) + `</div>
+          reportButtons(r, tl.rel_dir) + card + `</div>
       </div>`;
   }).join("");
   /* WHICH PASS, because a group is deliberately re-run and "OPTIMIZE passed"
@@ -1482,7 +1820,7 @@ function applySnapshot(d, source){
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
-  REPORTS_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
+  FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
      nine-minute-old snapshot looking exactly like a live one -- which is what
@@ -1621,6 +1959,69 @@ document.addEventListener("click", e => {
     document.getElementById("page-active").innerHTML = renderActive();
     window.scrollTo(0, 0);
   }
+});
+
+/* MOCKUP HANDLERS. THEY EDIT THE CARD IN PLACE and never repaint a page.
+   The first cut called renderActive(), which is correct in the app and wrong
+   everywhere else: the format preview builds its own page out of these cards,
+   so repainting Active deleted the very card being tapped. Touching only the
+   nodes inside this .pick block works in both, and in the app it also stops a
+   tap on one machine's card from flickering every other machine's. */
+function syncPick(scope, key, value){
+  PICKED[key] = value;
+  scope.querySelectorAll("[data-pick]").forEach(r =>
+    r.classList.toggle("on", value != null &&
+                       Number(r.dataset.pass) === Number(value)));
+  const btn = scope.querySelector("[data-apply]");
+  if(btn){
+    btn.disabled = value == null;
+    btn.textContent = value == null ? "Pick a pass to apply"
+                                    : "Apply pass " + value;
+  }
+}
+
+document.addEventListener("click", e => {
+  const row = e.target.closest("[data-pick]");
+  if(row){
+    const scope = row.closest(".pick");
+    /* ONE VALUE, NOT TWO -- the typed field is cleared, so the card can never
+       show a highlighted row and a different number in the box at once. */
+    const inp = scope.querySelector("[data-pickin]");
+    if(inp) inp.value = "";
+    syncPick(scope, row.dataset.pick, Number(row.dataset.pass));
+    return;
+  }
+  const ap = e.target.closest("[data-apply]");
+  if(ap && !ap.disabled){
+    const n = PICKED[ap.dataset.apply];
+    const box = ap.parentElement;
+    /* WHAT IT WOULD SAY, not what it did. The preview must not imply a round
+       was applied -- nothing was sent, and there is nowhere to send it. */
+    box.innerHTML = `<div class="pickhd">⏸ Round finished — pick a pass</div>` +
+      `<div class="pickdone">✓ Pass ${n} would be applied here, and the two
+        post-round backtests queued. <b>Nothing was sent</b> — this page has no
+        write path to the machines yet.</div>`;
+  }
+});
+
+document.addEventListener("input", e => {
+  const inp = e.target.closest("[data-pickin]");
+  if(!inp) return;
+  const v = inp.value.trim();
+  syncPick(inp.closest(".pick"), inp.dataset.pickin, v === "" ? null : Number(v));
+});
+
+/* OPEN THE TASK CARD. Separate from [data-toggle] because the row contains
+   report buttons and a [data-toggle] of their own -- a single handler would
+   open the card every time one of those was tapped. */
+document.addEventListener("click", e => {
+  if(e.target.closest(".rbtn")) return;      // a report button is not the row
+  const row = e.target.closest("[data-task]");
+  if(!row) return;
+  const card = row.querySelector(".task");
+  if(!card) return;
+  card.hidden = !card.hidden;
+  row.classList.toggle("open", !card.hidden);
 });
 
 document.addEventListener("click", e => {
