@@ -282,12 +282,17 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   font-family:"Roboto Mono",ui-monospace,monospace;
 }
 .tlnote{font-size:.73rem;color:var(--faint);line-height:1.4;}
-.rbtns{display:flex;gap:6px;flex-wrap:wrap;}
+/* HORIZONTAL, AND WRAPPING TO A SECOND ROW RATHER THAN A COLUMN. `wrap` was
+   always set; what made it stack was the buttons being wide enough that two
+   rarely fitted. Narrower padding and one-word labels put four or five on a
+   line at 375px, and the fifth drops to a second row instead of each taking
+   one of its own. */
+.rbtns{display:flex;gap:5px;flex-wrap:wrap;row-gap:5px;}
 .rbtn{
-  font-family:inherit;font-size:.71rem;font-weight:600;
-  border-radius:14px;padding:4px 10px;cursor:pointer;
+  font-family:inherit;font-size:.68rem;font-weight:600;
+  border-radius:13px;padding:3px 9px;cursor:pointer;
   border:1px solid var(--line);background:transparent;color:var(--text);
-  text-decoration:none;display:inline-block;
+  text-decoration:none;display:inline-block;white-space:nowrap;
 }
 .rbtn:active{transform:translateY(1px);}
 /* A button with nowhere to go says so rather than looking broken when tapped. */
@@ -554,9 +559,11 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
    when rows are missing. */
 .cchip.on{background:rgba(224,180,87,.15);color:var(--gold);border-color:rgba(224,180,87,.35);}
 .cchip .car{opacity:.55;font-weight:400;}
-/* A row's own chips are controls too. They keep the regime colours -- the chip
-   IS the regime -- and only gain the pointer. */
-.row .chip[data-rfilter],.row .bkt[data-rfilter]{cursor:pointer;}
+/* NOTHING INSIDE A RESULTS ROW IS A CONTROL. Trevor, 2026-09-16: *"I had
+   initially thought that the chip themselves would work as the switch, but I
+   like your idea better."* The control row above owns every filter, which means
+   the row needs no exceptions -- the WHOLE grey box is the button, with no
+   small targets inside it that do something else when mis-tapped. */
 /* MATCHED BY ORDER, NOT BY KEY. Rows written before round_id was recorded are
    placed positionally -- a sound guess, and still a guess. It is said on the
    job it qualifies rather than in a footnote, because the reader is about to
@@ -1443,23 +1450,38 @@ function renderResultsList(){
        row whose reports never resolved has no tasks behind it, so it stays an
        inert card rather than a button that does nothing. */
     const hasJob = !!(r.reports && (r.reports.tasks || []).length);
+    /* 🔴 NOTHING INTERACTIVE MAY GO INSIDE THIS ROW. It is a <button>, and a
+       button inside a button is invalid HTML: the parser CLOSES the outer one
+       where the inner starts, so the rest of the row falls out of it and renders
+       full-width underneath. That is what the report buttons did here -- they
+       looked stacked because the row had been torn open around them, not
+       because of any style.
+
+       They belong on the detail card anyway. Trevor, 2026-09-16: *"The Results
+       tab itself won't have the reports on it, Just the Bucket pf and Portfolio
+       PF, along with the round counter, machine id, mode and pass picked."* */
     return `
     <${hasJob ? "button type=\"button\"" : "article"} class="row${
         hasJob ? " jrowbtn" : ""}"${hasJob ? ` data-rjob="${esc(r.round_no)}"` : ""}>
       <div class="row-top">
-        <span class="chip ${r.failed ? "warn" : rc}"${
-          r.failed ? "" : ` data-rfilter="regime:${esc(r.regime)}"`}>${
+        <span class="chip ${r.failed ? "warn" : rc}">${
           r.failed ? "FAILED" : esc(r.regime)}</span>` +
         /* WAS IT SEEDED. Trevor, 2026-09-16: *"I want to know if it was a
            seed."* Derived upstream from the seed records, not from the ledger
            row -- see app_snapshot._seeded_round_keys for why, and for the rule
            that stops a group seeded once from marking every later round too. */
-        (r.seeded ? `<span class="chip gold">SEED</span>` : "") + `
+        (r.seeded ? `<span class="chip gold">SEED</span>` : "") +
+        /* WHAT KIND OF JOB, beside the SEED chip and in the same shell --
+           Trevor asked for it in that spot. phaseText, not a short form: this
+           page has one spelling for an operation wherever it appears, and a
+           fifth abbreviation would be a fifth thing to learn. */
+        (jobKind(r) ? `<span class="chip">${esc(phaseText(jobKind(r)))}</span>`
+                    : "") + `
         <span class="row-grp">${
           /* THE BUCKET, because a group name alone does not say which bucket
              earned the round -- and buckets are the campaign's own unit. Its
              own span so it stays legible when the name wraps beside it. */
-          bktEl(r.bucket_id, true, r.bucket_id)}${esc(humanize(r.group_id))}</span>` +
+          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>` +
         (hasJob ? `<span class="row-car">›</span>` : "") + `
       </div>
       ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
@@ -1493,7 +1515,6 @@ function renderResultsList(){
             under a PASS folder, not by round_no. Until app_snapshot attaches
             them these stay empty on the live app; the format preview fills them
             so the layout is real. */""}
-      ${reportButtons(r, r.rel_dir)}
       <div class="row-foot">
         <span>r${r.round_no}</span>
         <span>${esc(r.machine)}</span>
@@ -1532,6 +1553,15 @@ function renderResultsList(){
              ? "Bucket " + esc(RESULTS_BUCKET) : "All buckets"}</button>`
       /* ONE BUCKET IS NOT A CHOICE. Hiding the control until a split gives it
          something to cycle through keeps a dead button off the screen. */
+      : "") +
+    (resultsMachines().length > 1 || RESULTS_MACHINE
+      ? `<button type="button" class="cchip${RESULTS_MACHINE ? " on" : ""}"
+           data-rfilter="machine">${esc(RESULTS_MACHINE || "All machines")}</button>`
+      : "") +
+    (resultsTasks().length > 1 || RESULTS_TASK
+      ? `<button type="button" class="cchip${RESULTS_TASK ? " on" : ""}"
+           data-rfilter="task">${RESULTS_TASK ? esc(phaseText(RESULTS_TASK))
+                                              : "All tasks"}</button>`
       : "") + `
     </div>` + rows;
 }
@@ -1619,6 +1649,58 @@ let RESULTS_JOB = null;
 let RESULTS_SORT = "newest";       // or "oldest"
 let RESULTS_REGIME = null;         // null = every regime
 let RESULTS_BUCKET = null;         // null = every bucket
+let RESULTS_MACHINE = null;        // null = every machine
+let RESULTS_TASK = null;           // null = every kind of job
+
+/* WHAT KIND OF JOB THIS ROW WAS. Trevor, 2026-09-16: *"I want to know what type
+   of task each task was, So Same spot as SEED, i want Optimize, buckettest
+   Fulltest."*
+
+   THE JOB'S OWN KIND IS ITS FIRST TASK. A finished job holds several tasks and
+   they are stored oldest-first, so the one that opened it is what the job WAS:
+   an ordinary round opens with a sweep, and a seeded backtest opens with the
+   backtest and never sweeps at all. Showing every task's chip instead would put
+   four chips on a row that already carries a regime, a bucket and a name.
+
+   "" when the reports never resolved -- 15 of 31 rows today -- because the
+   tasks are the only record of what a row was, and guessing from the ledger
+   fields would be inventing it. */
+function jobKind(r){
+  const t = ((r.reports || {}).tasks || [])[0];
+  return t && t.kind ? t.kind : "";
+}
+
+function resultsMachines(){
+  const seen = [];
+  LEDGER.forEach(r => { if(r.machine && !seen.includes(r.machine)) seen.push(r.machine); });
+  return seen.sort();
+}
+
+function resultsTasks(){
+  /* PLAN ORDER, DERIVED RATHER THAN LISTED. A job's tasks are stored oldest
+     first, and a job runs them in plan order -- so the position a kind first
+     appears at IS its place in the plan, and averaging that across every job
+     orders the filter without this page holding a copy of the order at all.
+
+     THE FIRST CUT HARDCODED THE LIST and the leak scan refused it, correctly:
+     a literal array of phase names here is a second copy of job_control's own
+     vocabulary, in a PUBLIC repo, that nothing keeps in step. Deriving it is
+     both the fix and the better code -- a phase added upstream orders itself. */
+  const at = {};
+  LEDGER.forEach(r => {
+    ((r.reports || {}).tasks || []).forEach((t, i) => {
+      if(!t.kind) return;
+      (at[t.kind] = at[t.kind] || []).push(i);
+    });
+  });
+  const mean = k => at[k].reduce((a, b) => a + b, 0) / at[k].length;
+  const seen = [];
+  LEDGER.forEach(r => {
+    const k = jobKind(r);
+    if(k && !seen.includes(k)) seen.push(k);
+  });
+  return seen.sort((a, b) => (at[a] ? mean(a) : 99) - (at[b] ? mean(b) : 99));
+}
 
 /* The buckets that actually have rounds, in a stable order -- derived, never
    typed, so a split adds itself to the cycle the day it banks a result. */
@@ -1642,6 +1724,8 @@ function resultsRows(){
   if(RESULTS_REGIME) rows = rows.filter(r => r.regime === RESULTS_REGIME);
   if(RESULTS_BUCKET != null)
     rows = rows.filter(r => String(r.bucket_id) === String(RESULTS_BUCKET));
+  if(RESULTS_MACHINE) rows = rows.filter(r => r.machine === RESULTS_MACHINE);
+  if(RESULTS_TASK) rows = rows.filter(r => jobKind(r) === RESULTS_TASK);
   /* LEDGER arrives newest-first from the publisher, so "newest" is the identity
      and only the other direction costs a reverse. */
   return RESULTS_SORT === "oldest" ? rows.reverse() : rows;
@@ -1789,8 +1873,14 @@ const ROUND_MARK = { passed: "✓", running: "▶", queued: "○",
 /* Ordered by what you would actually open on a phone: the summary first, MT5's
    own report after it, the raw rows last. */
 const PART_ORDER = ["Deepdive", "MAIN", "Excel", "CLOSED", "TRADELEDGER"];
+/* ONE WORD EACH. Trevor, 2026-09-16: *"Make the report buttons to shorter
+   horizontal buttons, not stacked."* "Closed trades" and "Trade ledger" were
+   wide enough that five of them could not share a phone's width, so the strip
+   became a column -- the shape it was meant not to be. The parts are already
+   grouped under the task that produced them, so the second word was doing no
+   work the heading had not already done. */
 const PART_LABEL = { Deepdive: "Summary", MAIN: "Report", Excel: "Excel",
-                     CLOSED: "Closed trades", TRADELEDGER: "Trade ledger" };
+                     CLOSED: "Closed", TRADELEDGER: "Ledger" };
 
 function timelineFor(regime, bucketId, groupId){
   if(!groupId) return null;
@@ -2319,9 +2409,10 @@ function go(page){
 /* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
    the ACTIVE tab, and reusing it here would have opening a finished job also
    change what the Active tab was showing. */
-/* A CHIP INSIDE THE ROW BUTTON IS NOT THE ROW. Checked FIRST and returns, so
-   tapping a regime chip narrows the list instead of opening the job underneath
-   it -- which is the whole reason Trevor carved the chips out of the button. */
+/* THE CONTROL ROW OWNS EVERY FILTER. It sits outside the rows, so nothing here
+   competes with the row button -- but the guard stays: it is registered first
+   and stops propagation, which is what keeps that true if a control is ever
+   placed inside a row again. */
 document.addEventListener("click", e => {
   const c = e.target.closest("[data-rfilter]");
   if(!c) return;
@@ -2331,10 +2422,8 @@ document.addEventListener("click", e => {
   if(what === "sort"){
     RESULTS_SORT = RESULTS_SORT === "newest" ? "oldest" : "newest";
   } else if(what === "regime"){
-    /* A TAP ON A ROW'S OWN CHIP JUMPS STRAIGHT TO THAT REGIME -- it is the
-       fastest thing it could mean, and cycling from wherever the filter happens
-       to be would make the same tap do different things on different rows. The
-       control-row chip, which names no regime, cycles. */
+    /* `value` is still honoured so a control CAN name a target, but nothing
+       does today -- every chip cycles. */
     RESULTS_REGIME = value
       ? (RESULTS_REGIME === value ? null : value)
       : cycle(["BULL", "BEAR", "RANGING"], RESULTS_REGIME);
@@ -2342,6 +2431,14 @@ document.addEventListener("click", e => {
     RESULTS_BUCKET = value
       ? (String(RESULTS_BUCKET) === value ? null : value)
       : cycle(resultsBuckets(), RESULTS_BUCKET);
+  } else if(what === "machine"){
+    RESULTS_MACHINE = value
+      ? (RESULTS_MACHINE === value ? null : value)
+      : cycle(resultsMachines(), RESULTS_MACHINE);
+  } else if(what === "task"){
+    RESULTS_TASK = value
+      ? (RESULTS_TASK === value ? null : value)
+      : cycle(resultsTasks(), RESULTS_TASK);
   }
   RESULTS_JOB = null;              // a narrowed list has no job open
   document.getElementById("page-results").innerHTML = renderResults();
