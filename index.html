@@ -861,6 +861,24 @@ function dur(sec){
   return (sec/3600).toFixed(1) + "h";
 }
 
+/* HOW LONG SOMETHING RAN, in hours and minutes. Trevor, 2026-09-16: *"the
+   runtime recording lets get that so that it does hours and min."*
+
+   SEPARATE FROM dur(), which stays as it is. dur() answers "how stale is this"
+   for a beacon age and an ETA, where 1.6h is the right shape -- a rough
+   magnitude you glance at. A RUN TIME is a measurement you compare against
+   another run, and "2h 36m" is the form that survives that comparison. Two
+   questions, two answers; collapsing them would make one of the two worse. */
+function hm(sec){
+  if(sec == null) return "";
+  const t = Math.round(sec);
+  if(t < 60) return t + "s";
+  const h = Math.floor(t / 3600), m = Math.round((t % 3600) / 60);
+  /* 59.6 minutes rounding to 60 would print "0h 60m". */
+  if(m === 60) return (h + 1) + "h 0m";
+  return h ? h + "h " + m + "m" : m + "m";
+}
+
 function ago(sec){
   if(sec == null) return "";
   return dur(sec) + " ago";
@@ -1381,14 +1399,37 @@ function machineCard(f){
    running job uses, so a task looks and behaves identically whether the job
    finished five minutes ago or five days ago, and the task card comes along
    with it for free. */
+/* THE JOB'S CURVES, one per task that drew one. Trevor, 2026-09-16: *"This is
+   also where I want the Graphs, for the BucketTest and FullTest, Below the
+   Variables I want the graph."*
+
+   ON THE JOB, NOT BEHIND A CHIP. Both curves are the job's RESULT -- the
+   isolated reading and the portfolio one -- and a job opens on its FIRST task,
+   which is a sweep and draws nothing. Left only on the task cards they would
+   be two taps away on the one screen that exists to show how the job went.
+
+   Each is labelled with the task that produced it, because a bucket-only curve
+   and a full-range curve answer different questions and look alike. */
+function jobGraphs(tasks, relDir){
+  const out = (tasks || []).map(t => {
+    const g = taskGraphs((t.detail || {}).files, (t.detail || {}).rel_dir || relDir,
+                         (t.detail || {}).urls);
+    return g ? `<div class="tsec"><div class="tlab">${
+      esc(phaseText(t.kind))} — balance curve</div>` +
+      g.replace(/<div class="tsec">[\s\S]*?<div class="tlab">[^<]*<\/div>/, "") +
+      `</div>` : "";
+  }).filter(Boolean).join("");
+  return out ? `<div class="card"><div class="card-in">${out}</div></div>` : "";
+}
+
 /* First report to last, worded so it cannot be read as a stopwatch. "" when
    a job has fewer than two reports, because one timestamp is not a span. */
 function jobSpan(tasks){
   const ts = (tasks || []).map(t => Date.parse(t.at || "")).filter(v => !isNaN(v));
   if(ts.length < 2) return null;
-  /* dur(), not ago(): this is a SPAN. ago() appends "ago", which turned a
-     seven-hour job into "7.0h ago" -- a different and untrue statement. */
-  return dur(Math.round((Math.max.apply(null, ts) - Math.min.apply(null, ts)) / 1000));
+  /* hm(), not ago(): this is a SPAN, and ago() appends "ago" -- which turned a
+     seven-hour job into "7.0h ago", a different and untrue statement. */
+  return hm(Math.round((Math.max.apply(null, ts) - Math.min.apply(null, ts)) / 1000));
 }
 
 /* The variable states a finished job left behind. "" when no task carried
@@ -1474,6 +1515,7 @@ function renderResultsJob(r){
        it stands once the job is done. That is the right thing on a card about a
        FINISHED job: not what was swept, but where everything ended up. */
     jobVariables(rep.tasks) +
+    jobGraphs(rep.tasks, rep.rel_dir) +
     (rep.exact === false
       ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
            order</b>, not by key — it ran before the pass number was recorded on
@@ -1500,11 +1542,14 @@ function taskPanel(t, relDir){
         <span class="tpk">${esc(phaseText(t.kind))}</span>` +
         (t.at ? `<span class="tpw">${esc(fmtWhen(t.at))}</span>` : "") +
         `<span class="sp"></span>` +
-        (ran != null ? `<span class="tpran">ran ${esc(dur(ran))}</span>`
+        (ran != null ? `<span class="tpran">ran ${esc(hm(ran))}</span>`
                      : `<span class="tpran none">run time not recorded</span>`) +
       `</div>` +
       reportButtons(t, relDir) +
-      taskCard(t, relDir, true) + `</div>`;
+      /* NO GRAPH HERE ON THIS PAGE -- jobGraphs above already drew every curve
+         this job has. The task card keeps drawing its own everywhere else, so
+         the Active tab is unchanged. */
+      taskCard(t, relDir, true, true) + `</div>`;
 }
 
 function renderResultsList(){
@@ -2136,7 +2181,7 @@ function taskGraphs(files, relDir, urls){
       <div class="tgcap">Before and after, on one scale.</div></div>`;
 }
 
-function taskCard(r, relDir, open){
+function taskCard(r, relDir, open, skipGraph){
   const d = r.detail;
   if(!d) return "";
   const parts = [
@@ -2159,7 +2204,7 @@ function taskCard(r, relDir, open){
              the pass before it leaves pinned, so this list does not exist
              until that one finishes.</div></div>`
         : "",
-    taskGraphs(d.files, d.rel_dir || relDir, d.urls),
+    skipGraph ? "" : taskGraphs(d.files, d.rel_dir || relDir, d.urls),
   ].filter(Boolean);
   /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
      no files -- an empty panel would read as a broken card rather than as a
