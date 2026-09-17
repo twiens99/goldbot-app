@@ -408,6 +408,20 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .tgcap{font-size:.65rem;color:var(--faint);margin-top:3px;}
 /* The state key. Indented under the list it explains, and quiet -- it is a
    reminder for the reader who has forgotten the vocabulary, not a finding. */
+/* The open task, standing on its own rather than inside a timeline row. */
+.tpanel{
+  background:var(--card);border-radius:11px;padding:12px 13px;
+  display:flex;flex-direction:column;gap:9px;
+}
+.tphead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.tpk{font-size:.86rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+.tpw{font-size:.68rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
+.tpran{
+  font-size:.68rem;color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;
+}
+.tpran.none{color:var(--faint);}
+.tpanel .task{background:transparent;border:0;padding:0;margin-top:0;}
 .tkey{display:flex;gap:8px;align-items:baseline;margin-top:6px;}
 .tkt{font-size:.68rem;color:var(--faint);line-height:1.45;flex:1;min-width:0;}
 
@@ -1367,6 +1381,16 @@ function machineCard(f){
    running job uses, so a task looks and behaves identically whether the job
    finished five minutes ago or five days ago, and the task card comes along
    with it for free. */
+/* First report to last, worded so it cannot be read as a stopwatch. "" when
+   a job has fewer than two reports, because one timestamp is not a span. */
+function jobSpan(tasks){
+  const ts = (tasks || []).map(t => Date.parse(t.at || "")).filter(v => !isNaN(v));
+  if(ts.length < 2) return null;
+  /* dur(), not ago(): this is a SPAN. ago() appends "ago", which turned a
+     seven-hour job into "7.0h ago" -- a different and untrue statement. */
+  return dur(Math.round((Math.max.apply(null, ts) - Math.min.apply(null, ts)) / 1000));
+}
+
 /* The variable states a finished job left behind. "" when no task carried
    any, which is every job whose reports never resolved. */
 function jobVariables(tasks){
@@ -1387,10 +1411,24 @@ function renderResultsJob(r){
   const rep = r.reports || {};
   const back = '<button type="button" class="backbtn" data-rjob="">' +
                '\u2039 All jobs</button>';
+  /* THE TASKS, AT THE VERY TOP. One chip per task this job ran, in the order it
+     ran them, each opening that task's card below. This replaces the rounds
+     list that used to sit at the BOTTOM: the same information, reachable in one
+     tap instead of a scroll, and only one card on screen at a time. */
+  const tasks = rep.tasks || [];
+  const open = Math.min(RESULTS_TASK_OPEN, Math.max(0, tasks.length - 1));
+  const chips = tasks.length
+    ? `<div class="rctl">` + tasks.map((t, i) =>
+        `<button type="button" class="cchip${i === open ? " on" : ""}"
+           data-rtask="${i}">${esc(phaseText(t.kind))}</button>`).join("") +
+      `</div>`
+    : "";
   /* The pass number comes off the folder, which is the only place it exists for
      a finished job -- `round_no` is a fleet-wide counter, not this. */
   const pass = String(rep.rel_dir || "").split("/").filter(Boolean).pop() || null;
-  return back + `
+  /* The task chips sit between the back button and the job -- Trevor: *"Right
+     below (Back All Jobs)."* */
+  return back + chips + `
     <article class="card">
       <div class="stripe ${esc(rc)}"></div>
       <div class="card-in">
@@ -1407,7 +1445,11 @@ function renderResultsJob(r){
                    ["Pass picked", r.picked_pass ?? null],
                    ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
                           : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
-                   ["Passes", r.passes ?? null]])}
+                   ["Passes", r.passes ?? null],
+                   /* THE JOB'S OWN SPAN -- first report to last. Same evidence
+                      and the same caveat as a task's: it is the gap between
+                      reports, so it misses whatever ran before the first one. */
+                   ["Took", jobSpan(rep.tasks)]])}
         <div class="row-pf">
           <div>
             <div class="lab">Bucket PF</div>
@@ -1438,9 +1480,31 @@ function renderResultsJob(r){
            the row. They are almost certainly this round's, and this page will
            not claim more than that.</div>`
       : "") +
-    renderTimeline({regime: r.regime, bucket_id: r.bucket_id,
-                    group_id: r.group_id, rel_dir: rep.rel_dir,
-                    pass: pass, rounds: rep.tasks || []});
+    (tasks.length ? taskPanel(tasks[open], rep.rel_dir) : "");
+}
+
+/* ONE TASK, OPEN, WITH ITS OWN HEADING. The expanding panel inside a timeline
+   row got its name and time from the row above it; standing alone it has to
+   carry them itself -- plus the report buttons, which used to live on that row.
+
+   `ran` is the gap back to the previous task's report, which is the only
+   durable evidence of how long anything took -- see app_snapshot
+   ._attach_task_elapsed. The FIRST task of a job has no predecessor and says
+   so rather than showing a number derived from another job. */
+function taskPanel(t, relDir){
+  if(!t) return "";
+  const d = t.detail || {};
+  const ran = d.elapsed_seconds;
+  return `<div class="tpanel">
+      <div class="tphead">
+        <span class="tpk">${esc(phaseText(t.kind))}</span>` +
+        (t.at ? `<span class="tpw">${esc(fmtWhen(t.at))}</span>` : "") +
+        `<span class="sp"></span>` +
+        (ran != null ? `<span class="tpran">ran ${esc(dur(ran))}</span>`
+                     : `<span class="tpran none">run time not recorded</span>`) +
+      `</div>` +
+      reportButtons(t, relDir) +
+      taskCard(t, relDir, true) + `</div>`;
 }
 
 function renderResultsList(){
@@ -1471,12 +1535,11 @@ function renderResultsList(){
            row -- see app_snapshot._seeded_round_keys for why, and for the rule
            that stops a group seeded once from marking every later round too. */
         (r.seeded ? `<span class="chip gold">SEED</span>` : "") +
-        /* WHAT KIND OF JOB, beside the SEED chip and in the same shell --
-           Trevor asked for it in that spot. phaseText, not a short form: this
-           page has one spelling for an operation wherever it appears, and a
-           fifth abbreviation would be a fifth thing to learn. */
-        (jobKind(r) ? `<span class="chip">${esc(phaseText(jobKind(r)))}</span>`
-                    : "") + `
+        /* NO TASK CHIP HERE. Trevor, 2026-09-16: *"I added Optimize in the
+           results tab. That's not true, Each one of these are actual Jobs, not
+           a task."* A row is a whole job and a job runs several tasks, so
+           naming one of them on the row asserts something false about the other
+           three. The tasks are chips INSIDE the job, where they belong. */ `
         <span class="row-grp">${
           /* THE BUCKET, because a group name alone does not say which bucket
              earned the round -- and buckets are the campaign's own unit. Its
@@ -1651,6 +1714,13 @@ let RESULTS_REGIME = null;         // null = every regime
 let RESULTS_BUCKET = null;         // null = every bucket
 let RESULTS_MACHINE = null;        // null = every machine
 let RESULTS_TASK = null;           // null = every kind of job
+/* WHICH TASK OF THE OPEN JOB IS SHOWING, by index into its own task list.
+   Trevor, 2026-09-16: *"That chipset will be All the tasks that this job had to
+   do ... These will be buttons, And will Bring up each taskcard."*
+
+   Index, not kind: a job can run the same kind twice and two chips that look
+   identical must still open different cards. Reset whenever a job opens. */
+let RESULTS_TASK_OPEN = 0;
 
 /* WHAT KIND OF JOB THIS ROW WAS. Trevor, 2026-09-16: *"I want to know what type
    of task each task was, So Same spot as SEED, i want Optimize, buckettest
@@ -1676,6 +1746,8 @@ function resultsMachines(){
   return seen.sort();
 }
 
+/* EVERY kind any job ran, not just the opening one -- the filter offers what
+   it can actually find. */
 function resultsTasks(){
   /* PLAN ORDER, DERIVED RATHER THAN LISTED. A job's tasks are stored oldest
      first, and a job runs them in plan order -- so the position a kind first
@@ -1694,12 +1766,8 @@ function resultsTasks(){
     });
   });
   const mean = k => at[k].reduce((a, b) => a + b, 0) / at[k].length;
-  const seen = [];
-  LEDGER.forEach(r => {
-    const k = jobKind(r);
-    if(k && !seen.includes(k)) seen.push(k);
-  });
-  return seen.sort((a, b) => (at[a] ? mean(a) : 99) - (at[b] ? mean(b) : 99));
+  const seen = Object.keys(at);
+  return seen.sort((a, b) => mean(a) - mean(b));
 }
 
 /* The buckets that actually have rounds, in a stable order -- derived, never
@@ -1725,7 +1793,12 @@ function resultsRows(){
   if(RESULTS_BUCKET != null)
     rows = rows.filter(r => String(r.bucket_id) === String(RESULTS_BUCKET));
   if(RESULTS_MACHINE) rows = rows.filter(r => r.machine === RESULTS_MACHINE);
-  if(RESULTS_TASK) rows = rows.filter(r => jobKind(r) === RESULTS_TASK);
+  /* A JOB THAT RAN THIS TASK, not a job OF this kind -- a job is not of a
+     kind. Filtering by the opening task alone would hide every job that also
+     ran the one you asked for. */
+  if(RESULTS_TASK)
+    rows = rows.filter(r => ((r.reports || {}).tasks || [])
+      .some(t => t.kind === RESULTS_TASK));
   /* LEDGER arrives newest-first from the publisher, so "newest" is the identity
      and only the other direction costs a reverse. */
   return RESULTS_SORT === "oldest" ? rows.reverse() : rows;
@@ -2063,7 +2136,7 @@ function taskGraphs(files, relDir, urls){
       <div class="tgcap">Before and after, on one scale.</div></div>`;
 }
 
-function taskCard(r, relDir){
+function taskCard(r, relDir, open){
   const d = r.detail;
   if(!d) return "";
   const parts = [
@@ -2094,7 +2167,7 @@ function taskCard(r, relDir){
   if(!parts.length){
     parts.push(`<div class="tnote">Nothing recorded yet — this one has not run.</div>`);
   }
-  return `<div class="task" hidden>${parts.join("")}</div>`;
+  return `<div class="task"${open ? "" : " hidden"}>${parts.join("")}</div>`;
 }
 
 function renderTimeline(tl){
@@ -2446,8 +2519,17 @@ document.addEventListener("click", e => {
 });
 
 document.addEventListener("click", e => {
+  const t = e.target.closest("[data-rtask]");
+  if(!t) return;
+  RESULTS_TASK_OPEN = Number(t.dataset.rtask) || 0;
+  document.getElementById("page-results").innerHTML = renderResults();
+  window.scrollTo(0, 0);
+});
+
+document.addEventListener("click", e => {
   const j = e.target.closest("[data-rjob]");
   if(!j) return;
+  RESULTS_TASK_OPEN = 0;           // a newly opened job starts at its first task
   RESULTS_JOB = j.dataset.rjob || null;
   document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
