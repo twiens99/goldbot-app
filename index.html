@@ -303,17 +303,6 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .rbtn:active{transform:translateY(1px);}
 /* A button with nowhere to go says so rather than looking broken when tapped. */
 .rbtn.pending{color:var(--faint);}
-/* THE JOB WORKBOOK, 2026-09-17. It is the only button in its strip and it stands
-   for the whole job, so it takes the full width rather than sitting as a chip
-   against empty space -- the chip shape was for five of them sharing a row. Gold
-   border because it is the one thing on the card worth opening; the fill stays
-   transparent so it reads as the same family as the buttons it replaced. */
-.rbtn.wide{
-  display:block;width:100%;text-align:center;box-sizing:border-box;
-  padding:9px 12px;border-radius:10px;font-size:.78rem;
-  border-color:var(--gold);color:var(--gold);white-space:normal;
-}
-.rbtn.wide.pending{border-color:var(--line);color:var(--faint);}
 .rfile{
   font-family:"Roboto Mono",ui-monospace,monospace;
   font-size:.67rem;color:var(--dim);word-break:break-all;line-height:1.45;
@@ -401,6 +390,215 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .tvr.coarse{color:#C8B78A;border-color:rgba(224,180,87,.30);}
 .tvr.full{color:var(--dim);}
+
+/* ---------- a variable is a button, and the graph is shared ---------- */
+/* THE NAME IS THE CONTROL. Trevor, 2026-09-17: *"The Words of the Variable
+   become the button ... I want them in Badges style like you've got on yours."*
+   So it wears the same shell as the metric group chips -- same radius, same
+   hairline, same on-state -- because it does the same job: it adds one series
+   to a shared view. A second button shape for the same idea would be a second
+   thing to learn.
+
+   ON CARRIES THE SERIES COLOUR, set inline rather than by class. The colour is
+   assigned by SELECTION ORDER, not by name, so it cannot be a stylesheet rule:
+   the first variable you tap is gold whichever one it is. */
+.vbtn{
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  font-size:.735rem;font-weight:500;text-align:left;
+  padding:2px 8px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--text);
+  flex:1;min-width:0;overflow-wrap:anywhere;
+}
+.vbtn:active{transform:translateY(1px);}
+/* A VARIABLE WITH NO HISTORY IS NOT A BUTTON. Same rule as a results row with
+   no job behind it: nothing that does nothing may look tappable. */
+.vbtn.flat{border-color:transparent;padding-left:0;cursor:default;}
+.vhwrap{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;}
+.vhempty{font-size:.72rem;color:var(--faint);line-height:1.45;}
+.vhsvg{width:100%;height:auto;display:block;border-radius:7px;background:var(--bg);
+  cursor:zoom-in;}
+
+/* FULL SCREEN, SIDEWAYS. Fixed to the viewport, above the sticky header and the
+   tab bar -- both of which are the app's own furniture and would otherwise sit
+   on top of a thing that is supposed to be the whole screen. */
+.gfull{
+  position:fixed;inset:0;z-index:80;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+}
+.gfullin{
+  display:flex;flex-direction:column;justify-content:center;gap:10px;
+  padding:16px;box-sizing:border-box;width:100%;height:100%;
+  /* NOT SHRINKABLE. As a flex child of a 375px-wide overlay, `width:100vh`
+     (812px) was being squeezed straight back down to 375 -- the one dimension
+     the rotation exists to escape. */
+  flex:none;
+}
+.gfullin .vhsvg{cursor:zoom-out;height:auto;}
+.gfx{
+  align-self:flex-end;font-family:inherit;font-size:.72rem;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;
+  background:transparent;color:var(--dim);border:1px solid var(--line);
+  border-radius:9px;padding:5px 12px;cursor:pointer;
+}
+/* THE ROTATION ONLY HAPPENS IN PORTRAIT. Sized to the SWAPPED viewport so that
+   after the quarter turn it fills the screen exactly. A phone already held
+   sideways needs none of this and gets none of it. */
+@media (orientation:portrait){
+  .gfullin{width:100vh;height:100vw;transform:rotate(90deg);}
+}
+.vhcap{font-size:.65rem;color:var(--faint);line-height:1.5;margin-top:5px;}
+/* The history table. Same grid discipline as .mrw -- a column of numbers only
+   reads as a column if every row agrees where it starts. */
+.vht{
+  width:100%;font-family:"Roboto Mono",ui-monospace,monospace;
+  font-size:.63rem;font-variant-numeric:tabular-nums;
+  border-collapse:collapse;margin-top:8px;
+}
+.vht th{
+  font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:700;text-align:right;padding:0 4px 3px;
+}
+.vht th:first-child,.vht td:first-child{text-align:left;}
+.vht td{padding:3px 4px;border-top:1px solid var(--line);color:var(--dim);text-align:right;}
+/* NOT `.v` -- that class already belongs to the swept-variable list, where it
+   draws a bullet with ::before and sets display:flex. Reusing the name put a
+   stray dot in front of every number in this table. */
+.vht td.vhv{color:var(--text);font-weight:600;}
+.vht td.st{font-size:.55rem;font-weight:700;letter-spacing:.05em;}
+/* The swatch that ties a table block to its line on the graph. */
+.vhkey{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:5px;}
+
+/* ---------- the metrics badge's own graph ---------- */
+/* THE DOT IS THE TOGGLE. A metric row is already a button that opens its
+   explanation, so the thing that puts it on the graph cannot also be the row --
+   it is a target of its own at the start of the line, where a column of them
+   reads as a column. Hollow = off, filled = on and carrying that series colour. */
+.mdot{
+  width:9px;height:9px;border-radius:50%;flex:none;
+  border:1.5px solid var(--faint);background:transparent;padding:0;
+  cursor:pointer;margin-right:7px;
+}
+.mrw .nm{display:flex;align-items:center;min-width:0;}
+/* THE GRAPH FOLLOWS YOU DOWN THE CARD. Trevor, 2026-09-17: *"I want the graph
+   to be locked to the top of the screen as soon as we scroll down. if we go
+   above it, it's not locked."* Which is exactly what sticky does and nothing
+   more -- it sits in flow until its top edge would leave, then holds there.
+
+   `top` IS SET FROM JS, not typed here. The header is itself sticky at top:0, so
+   a hard-coded offset would be wrong the moment the header wraps to two lines --
+   which it does at 375px with a long group name. See stickTop(). */
+.gbadge{position:sticky;top:var(--hdr,64px);z-index:4;}
+/* It is over live content once it sticks, so it needs to be opaque and to cast
+   a little shade -- without this the rows scroll THROUGH it. */
+.gbadge > .card-in{background:var(--card);border-radius:14px;}
+.gbadge{box-shadow:0 6px 14px rgba(10,16,22,.55);}
+/* PINNED, THE PROSE GOES. Trevor, 2026-09-17: *"lets remove those captions as
+   soon as we start scrolling."* The caption and the history table are for
+   reading; once the card is holding the top of the screen its whole job is to be
+   a picture you glance at while the rows go past underneath. Unpinned they come
+   back -- nothing is lost, it is deferred.
+
+   THE COLLAPSE IS A REVEAL, NOT A LURCH, and that is worth stating because it
+   sounds like one. The card only ever collapses at the moment its top reaches
+   the header -- when it already fills most of the screen -- so the content that
+   moves up into the gap is content that was below the fold anyway. No scroll
+   compensation is needed and none is done; compensating would fight momentum
+   scrolling on a phone for no gain.
+
+   max-height rather than display:none so it eases instead of snapping. The value
+   only has to be comfortably larger than the tallest table this ever holds. */
+.gbadge .vht,.gbadge .vhcap{
+  overflow:hidden;max-height:600px;opacity:1;
+  transition:max-height .18s ease,opacity .12s ease,margin .18s ease;
+}
+.gbadge.stuck .vht,.gbadge.stuck .vhcap{max-height:0;opacity:0;margin-top:0;margin-bottom:0;}
+@media (prefers-reduced-motion:reduce){
+  .gbadge .vht,.gbadge .vhcap{transition:none;}
+}
+
+/* No rule above it any more: on its own card the graph header is the first
+   thing in the box, and a border there would draw a line under nothing. */
+.mghead{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.mgttl{
+  font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--gold);flex:1;min-width:0;
+}
+.mgbtn{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.58rem;font-weight:700;
+  letter-spacing:.06em;padding:2px 8px;border-radius:9px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--dim);
+}
+.mgbtn.on{border-color:var(--gold);color:var(--gold);}
+.mglg{display:flex;flex-direction:column;gap:3px;margin-top:6px;}
+.mglgr{
+  display:flex;align-items:baseline;gap:6px;width:100%;text-align:left;
+  font-size:.66rem;font-family:"Roboto Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;color:var(--dim);
+  /* A row that removes a line has to look like it does something without
+     becoming a fifth button shape on this card: the press, and a rail that
+     only shows while it is held. */
+  background:transparent;border:0;border-left:2px solid transparent;
+  padding:2px 0 2px 7px;margin-left:-9px;cursor:pointer;border-radius:4px;
+}
+.mglgr:active{transform:translateY(1px);background:var(--card-2);border-left-color:var(--faint);}
+/* An absence is not a control -- it has nothing to remove and must not invite a
+   tap. Rendered as a div rather than a button for the same reason. */
+.mglgr.none{color:var(--faint);cursor:default;font-style:italic;}
+.mglgr:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+.mglgr .nm{flex:1;min-width:0;color:var(--text);overflow-wrap:anywhere;}
+.mgdash{display:inline-block;width:11px;height:2px;border-radius:1px;flex:none;}
+/* The count of what is PLOTTED, on a group chip that is otherwise about what is
+   listed. Gold because it survives the filter -- see the note in taskMetrics. */
+.gch .p{color:var(--gold);font-weight:700;margin-left:4px;}
+
+/* A badge that is named but not built. It says so plainly rather than
+   rendering an empty card, which would read as a badge that is broken. */
+.soon{
+  font-size:.73rem;color:var(--faint);line-height:1.5;
+}
+.soon b{color:var(--dim);font-weight:600;}
+
+/* ---------- the session badge ---------- */
+.srw{
+  width:100%;display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;
+  align-items:baseline;background:transparent;cursor:pointer;text-align:left;
+  border:0;border-top:1px solid var(--line);padding:5px 3px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.7rem;
+  color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.srw .snm{color:var(--text);overflow-wrap:anywhere;}
+.srw.on .snm{color:var(--gold);}
+.srw .spips{font-weight:600;}
+.srw .spips.up{color:var(--good);}
+.srw .spips.dn{color:var(--bad);}
+/* Same dot as the metrics badge -- one shape for "this is on", page-wide. */
+.sdot{
+  width:9px;height:9px;border-radius:50%;flex:none;align-self:center;
+  border:1.5px solid var(--faint);background:transparent;
+}
+.srw.on .sdot{background:var(--gold);border-color:var(--gold);}
+/* WHAT A NUMBER IS, when a session is picked: a slice of the run, or the whole
+   run because it cannot be cut. Quiet -- it qualifies the number beside it. */
+.mws{font-size:.58rem;font-style:italic;color:var(--faint);white-space:nowrap;}
+.mrw.ses{grid-template-columns:1fr auto auto auto;}
+.mhd.ses{grid-template-columns:1fr auto auto auto;}
+/* A row that CANNOT be re-sliced is dimmed whole, because the number it is
+   showing is not the number the rest of the card is showing. */
+.mrw.na{opacity:.45;}
+/* The slope row carries one column more than a session row: the lift figure. */
+.srw.slb{grid-template-columns:auto 1fr auto auto auto;}
+.mhd.sl{grid-template-columns:1fr auto auto auto;}
+.sbid{margin-left:6px;}
+.slift{font-weight:700;font-variant-numeric:tabular-nums;}
+.slift.up{color:var(--good);}
+.slift.dn{color:var(--faint);}
+/* Share of net, as a bar rather than a fifth number. It is a proportion of a
+   whole that is already on the row, so it wants a shape, not a digit. */
+.sbar{height:3px;border-radius:2px;background:var(--line);margin:0 3px 5px;}
+.sbar i{display:block;height:100%;border-radius:2px;}
+
 
 /* The trade-band verdict. IN BAND is the quiet one; both misses are loud,
    because a round outside the band is a round whose result the EA discounted. */
@@ -1203,6 +1401,28 @@ function fmtStarted(v){
    empty one is not invisible -- it is a 20px band of two stray rules. Idle
    machines hit this the moment a field is dropped from the row, which is
    exactly what happened when Tier came out. */
+/* HOW MANY PASSES ACTUALLY RAN, and how big the space was. Trevor,
+   2026-09-17: *"Passes 8192 I want to know how many actual passes were run."*
+
+   BOTH NUMBERS, NOT A SWAP. `passes` is estimate_group_passes() -- the size of
+   the grid, and the figure the scheduler calls a group HEAVY on. The count that
+   actually ran is a different fact: a GA reaches a fraction of the space, and
+   "1,184 of 8,192" says how hard it looked as well as how big the room was.
+   Replacing one with the other would lose the reason the round was scheduled
+   the way it was.
+
+   ⚠️ PUBLISHER-GATED. The real count exists as RoundOutcome.pass_count
+   (len(df) off the parsed report) and STOPS THERE -- run_next_round writes only
+   the estimate onto the LedgerRow, and `passes_run` is not on the row or in
+   app_snapshot._LEDGER_FIELDS. Until it is, this falls back to the single
+   number the card has always shown. */
+function passesText(r){
+  const est = r.passes, run = r.passes_run;
+  if(run == null) return est != null ? est.toLocaleString() : null;
+  if(est == null) return run.toLocaleString();
+  return run.toLocaleString() + " of " + est.toLocaleString();
+}
+
 function metaRow(pairs){
   const cells = pairs.filter(x => x[1] != null && x[1] !== "");
   if(!cells.length) return "";
@@ -1510,29 +1730,6 @@ function machineCard(f){
    running job uses, so a task looks and behaves identically whether the job
    finished five minutes ago or five days ago, and the task card comes along
    with it for free. */
-/* THE JOB'S CURVES, one per task that drew one. Trevor, 2026-09-16: *"This is
-   also where I want the Graphs, for the BucketTest and FullTest, Below the
-   Variables I want the graph."*
-
-   ON THE JOB, NOT BEHIND A CHIP. Both curves are the job's RESULT -- the
-   isolated reading and the portfolio one -- and a job opens on its FIRST task,
-   which is a sweep and draws nothing. Left only on the task cards they would
-   be two taps away on the one screen that exists to show how the job went.
-
-   Each is labelled with the task that produced it, because a bucket-only curve
-   and a full-range curve answer different questions and look alike. */
-function jobGraphs(tasks, relDir){
-  const out = (tasks || []).map(t => {
-    const g = taskGraphs((t.detail || {}).files, (t.detail || {}).rel_dir || relDir,
-                         (t.detail || {}).urls);
-    return g ? `<div class="tsec"><div class="tlab">${
-      esc(phaseText(t.kind))} — balance curve</div>` +
-      g.replace(/<div class="tsec">[\s\S]*?<div class="tlab">[^<]*<\/div>/, "") +
-      `</div>` : "";
-  }).filter(Boolean).join("");
-  return out ? `<div class="card"><div class="card-in">${out}</div></div>` : "";
-}
-
 /* First report to last, worded so it cannot be read as a stopwatch. "" when
    a job has fewer than two reports, because one timestamp is not a span. */
 function jobSpan(tasks){
@@ -1545,16 +1742,40 @@ function jobSpan(tasks){
 
 /* The variable states a finished job left behind. "" when no task carried
    any, which is every job whose reports never resolved. */
-function jobVariables(tasks){
+function jobVariables(rep, openTask){
+  const tasks = (rep || {}).tasks || [];
   let vars = null;
-  (tasks || []).forEach(t => {
+  tasks.forEach(t => {
     const v = (t.detail || {}).variables;
     if(v && v.length) vars = v;
   });
   if(!vars) return "";
+  /* THE GRAPH FOLLOWS THE CHIP AT THE TOP. On a sweep there is nothing to plot
+     that the card is not already showing, so the badge falls back to the plain
+     list and the names stop being buttons -- see isBacktest. */
+  const hist = isBacktest(openTask)
+    ? ((rep || {}).variable_history || null) : null;
+  /* 2026-09-17 -- THE FIVE-STATE GLOSSARY IS OFF THIS BADGE. Trevor: *"Take the
+     Lower explanation section out. Here's where I want a graph to show up."*
+     It was five paragraphs restating what the chips already say in colour, and
+     it sat exactly where the history belongs. `taskStateKey` is untouched and
+     still runs on the task card, so the vocabulary is still explained
+     somewhere -- it just stops being explained twice on one screen. */
   return `<div class="card"><div class="card-in">
       <div class="tlab">Variables — where they stand</div>` +
-      taskVars(vars) + taskStateKey(vars) + `</div></div>`;
+      taskVars(vars, hist) +
+      /* THE HISTORY DRAWS IN THE GRAPH BADGE AT THE TOP, not here -- see
+         graphBadge. What stays is the list, which is what this badge is for:
+         where every variable STANDS. The buttons are the control; the picture
+         they drive lives with every other picture on the card. */
+      (hist && VHSTATE.on.length
+        ? `<div class="vhwrap"><div class="vhempty">${VHSTATE.on.length} drawing
+             in the graph at the top of the card.</div></div>`
+        : hist
+          ? `<div class="vhwrap"><div class="vhempty">Tap a variable to draw its
+               history in the graph at the top. Several can share it.</div></div>`
+          : "") +
+      `</div></div>`;
 }
 
 function renderResultsJob(r){
@@ -1597,7 +1818,7 @@ function renderResultsJob(r){
                    ["Pass picked", r.picked_pass ?? null],
                    ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
                           : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
-                   ["Passes", r.passes ?? null],
+                   ["Passes", passesText(r)],
                    /* THE JOB'S OWN SPAN -- first report to last. Same evidence
                       and the same caveat as a task's: it is the gap between
                       reports, so it misses whatever ran before the first one. */
@@ -1625,16 +1846,33 @@ function renderResultsJob(r){
        list is the backtest, which carries the group entire with every state as
        it stands once the job is done. That is the right thing on a card about a
        FINISHED job: not what was swept, but where everything ended up. */
-    jobVariables(rep.tasks) +
-    jobWorkbook(rep) +
-    jobGraphs(rep.tasks, rep.rel_dir) +
+    /* NO TASK PANEL HERE. It carried the chip's own header, how long it ran,
+       the pass it picked and its trade band, and Trevor took it out on
+       2026-09-17: the Information badge above already names the job and the
+       chips already say which task you are on, so it was a third header on one
+       screen. ⚠️ THE TRADE BAND AND THE SEED REASON WENT WITH IT -- neither has
+       another home on this card yet, and both are worth one.
+       `taskPanel` itself is untouched: the Active tab still uses it. */
+    /* THE PER-CHIP BADGES. The panel above carries what belongs to the TASK
+       and nothing else -- its header, what it picked, its trade band -- and
+       these three carry the rest. A sweep gets its own badge instead, because
+       none of the three says anything true about a grid. */
+    (tasks.length && isBacktest(tasks[open])
+      ? graphBadge(tasks[open], rep) + jobVariables(rep, tasks[open]) +
+        metricsBadge(tasks[open]) + slopeBadge(tasks[open]) +
+        sessionBadge(tasks[open])
+      : tasks.length
+        /* How many non-backtest tasks the job has reached, this one included. */
+        ? optimizeBadge(tasks[open],
+            tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length)
+        : "") +
+    (tasks.length ? graphFull(tasks[open], rep) : "") +
     (rep.exact === false
       ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
            order</b>, not by key — it ran before the pass number was recorded on
            the row. They are almost certainly this round's, and this page will
            not claim more than that.</div>`
-      : "") +
-    (tasks.length ? taskPanel(tasks[open], rep.rel_dir) : "");
+      : "");
 }
 
 /* ONE TASK, OPEN, WITH ITS OWN HEADING. The expanding panel inside a timeline
@@ -1645,7 +1883,7 @@ function renderResultsJob(r){
    durable evidence of how long anything took -- see app_snapshot
    ._attach_task_elapsed. The FIRST task of a job has no predecessor and says
    so rather than showing a number derived from another job. */
-function taskPanel(t, relDir){
+function taskPanel(t, relDir, lift){
   if(!t) return "";
   const d = t.detail || {};
   const ran = d.elapsed_seconds;
@@ -1666,10 +1904,12 @@ function taskPanel(t, relDir){
          A parallel session restored the strip here on 2026-09-17; Trevor:
          *"NO, i want your render."* Removed again. If the strip is ever wanted
          back it is one line -- `reportButtons(t, relDir) +` right here. */
-      /* NO GRAPH HERE ON THIS PAGE -- jobGraphs above already drew every curve
-         this job has. The task card keeps drawing its own everywhere else, so
-         the Active tab is unchanged. */
-      taskCard(t, relDir, true, true) + `</div>`;
+      /* NO GRAPH HERE ON THIS PAGE. This used to say "jobGraphs above already
+         drew every curve" -- that pair of balance curves at the foot of the job
+         card was deleted on 2026-09-17, so nothing draws one here now. The task
+         card keeps drawing its own everywhere else, so the Active tab is
+         unchanged. */
+      taskCard(t, relDir, true, true, lift) + `</div>`;
 }
 
 function renderResultsList(){
@@ -2156,59 +2396,12 @@ function reportButtons(r, relDir){
         `<span class="rfile" hidden>${esc(files[p])}</span>`).join("") + '</div>';
 }
 
-/* THE JOB WORKBOOK -- one file, the whole job. Trevor, 2026-09-17: *"wire it
-   into the results tab. This will take out all the other report buttons."*
-
-   WHY IT REPLACES FIVE BUTTONS PER TASK RATHER THAN JOINING THEM. The workbook
-   already contains what every one of them opened: the MT5 result block for each
-   backtest side by side, the top passes of each sweep, the DeepDive's analytical
-   sections, the per-trade rows, and the excursion figures -- which no button
-   ever reached, because give-back is not in any single artifact. A seven-task
-   job was thirty-five buttons; it is one file.
-
-   NO BUTTON WHEN THERE IS NO WORKBOOK, and that is not the same as an empty one.
-   A job that finished before job_workbook existed has none, and the publisher
-   sends the field absent rather than a name that would 404. Same reasoning as
-   `reportButtons`' pending state, one level up.
-
-   The filename is the publisher's, never rebuilt here -- the builder owns it. */
-function jobWorkbook(rep){
-  const name = (rep || {}).workbook;
-  if(!name) return "";
-  let url = null;
-  if(FILE_BASE && rep.rel_dir){
-    /* Each segment encoded on its own, exactly as reportButtons does it, so a
-       slash inside a group name can never climb out of the directory. */
-    const dir = String(rep.rel_dir).split("/").map(encodeURIComponent).join("/");
-    url = FILE_BASE.replace(/\/+$/, "") + "/" + dir + "/" + encodeURIComponent(name);
-  }
-  const body = url
-    ? `<a class="rbtn wide" href="${esc(url)}" target="_blank" rel="noopener">`
-      + `Job workbook (.xlsx)</a>`
-    /* Unpublished: reveal the FILENAME, which is what you need to find it on the
-       desktop. The day a publisher fills the base in, this becomes a link with
-       no change here. */
-    : `<button type="button" class="rbtn wide pending" data-toggle>`
-      + `Job workbook (.xlsx)</button>`
-      + `<span class="rfile" hidden>${esc(name)}</span>`;
-  return `<div class="card"><div class="card-in">
-      <div class="tlab">Reports</div>
-      <div class="rbtns">${body}</div>
-      <div class="sub" style="margin-top:6px">Every task in this job, in one
-        file - backtest stats side by side, top passes, excursion, what changed,
-        and the deep-dive sections.</div>
-    </div></div>`;
-}
-
-/* TEST RESULTS. Trevor, 2026-09-17: *"Below the Graph. This is where I want
-   Test Results report numbers listed."* Published by task_metrics; absent on a
-   sweep, which writes no backtest, so the section simply does not appear.
-
-   THE COMPARISON IS THE PREVIOUS TASK OF THE SAME KIND in this job -- a second
-   pass re-runs both backtests, so the job holds an earlier one of each KIND.
-   Same kind only: a bucket reading against a full-range one
-   is not a comparison, it is the mix-up S9.1 exists to prevent. */
 const M_DEFS = [
+  /* EQUITY LEADS, and it is the line the graph opens on -- see M_OPEN. It is
+     where the money ENDED; everything under it is a different way of asking how
+     it got there. Whole dollars: the cents on a two-year balance are noise at
+     this size, and the column has to line up against Net Profit beside it. */
+  ["Results", "equity", "Equity", 0, 1],
   ["Results", "pf", "Profit Factor", 3, 1], ["Results", "net", "Net Profit", 0, 1],
   ["Results", "trades", "Total Trades", 0, 0], ["Results", "payoff", "Expected Payoff", 2, 1],
   ["Results", "sharpe", "Sharpe Ratio", 2, 1], ["Results", "rec", "Recovery Factor", 2, 1],
@@ -2229,6 +2422,7 @@ const M_DEFS = [
   ["Fitness", "cadterm", "Cadence term", 4, 1], ["Fitness", "bcredit", "Band credit", 4, 1]
 ];
 const M_WHAT = {
+  equity:"Where the account finished — the starting balance plus net profit. This is the last point of the balance curve, and across rounds it is the line that says whether the campaign is going anywhere.",
   pf:"Gross profit over gross loss. 1.0 breaks even; the live gate wants 1.50.",
   net:"Total profit in account currency, after swap.",
   trades:"Closed positions. The trade band above judges whether it is the right number.",
@@ -2272,18 +2466,45 @@ function taskMetrics(d){
   const groups = [];
   have.forEach(x => { if(groups.indexOf(x[0]) < 0) groups.push(x[0]); });
   const sel = MSTATE.g, open = MSTATE.open;
+  /* HOW MANY OF THIS GROUP ARE ON THE GRAPH, beside how many it holds. The
+     second number is the one that survives the filter, which is the whole point
+     of keeping the two states apart -- see metricPlotted. */
+  const plotted = g => have.filter(x => (!g || x[0] === g) && metricPlotted(x[1])).length;
+  const pEl = n => n ? `<span class="p">${n}</span>` : "";
   const chips = '<div class="mgrp">' +
     `<button type="button" class="gch${sel ? "" : " on"}" data-mg="">All` +
-    `<span class="n">${have.length}</span></button>` +
+    `<span class="n">${have.length}</span>${pEl(plotted(""))}</button>` +
     groups.map(g => {
       const n = have.filter(x => x[0] === g).length;
       return `<button type="button" class="gch${sel === g ? " on" : ""}" ` +
-             `data-mg="${esc(g)}">${esc(g)}<span class="n">${n}</span></button>`;
+             `data-mg="${esc(g)}">${esc(g)}<span class="n">${n}</span>${
+               pEl(plotted(g))}</button>`;
     }).join("") + '</div>';
+  /* THE SLICE, if one is picked. It changes the VALUE COLUMN and the chip
+     beside it -- never the row list, and never the graph below, which is a
+     history of whole runs and has no session series behind it. */
+  const ses = anySlice(d);
   const rows = have.filter(x => !sel || x[0] === sel).map(([g, k, label, dp, better]) => {
-    const v = Number(m[k]);
+    const whole = ses && !sesSliceable(k);
+    const sliced = ses && !whole ? ((ses.metrics || {})[k]) : undefined;
+    const v = ses
+      ? (whole ? Number(m[k]) : (sliced == null ? null : Number(sliced)))
+      : Number(m[k]);
     let chip = "";
-    if(prev && prev[k] != null){
+    /* WITH A SESSION ON, the third cell stops being "which way it moved": the
+       comparison is against the previous generation of the WHOLE run, and a
+       session slice has no such counterpart. It says what kind of number this
+       is instead. */
+    if(ses){
+      chip = whole
+        ? `<span class="mv fl">n/a</span>`
+        : sliced == null ? `<span class="mv fl">—</span>`
+        /* A rebuilt-curve figure gets the neutral chip, not the green one: it is
+           this slice's number, but it is not this slice's CONTRIBUTION to the
+           run's, and a confident colour would blur the two. */
+        : sesOwnCurve(k) ? `<span class="mv fl">${esc(ses.name)}</span>`
+                         : `<span class="mv up">${esc(ses.name)}</span>`;
+    } else if(prev && prev[k] != null){
       const dlt = v - Number(prev[k]);
       const moved = Math.abs(dlt) >= Math.pow(10, -dp) / 2;
       const cls = (!moved || better === 0) ? "fl" : ((dlt > 0) === (better > 0) ? "up" : "dn");
@@ -2292,21 +2513,847 @@ function taskMetrics(d){
               mFmt(Math.abs(dlt), dp) : ""}</span>`;
     }
     const isOpen = open === k;
-    return `<button type="button" class="mrw${isOpen ? " open" : ""}" data-mk="${k}">` +
-           `<span class="nm">${esc(label)}</span>` +
-           `<span class="vv">${mFmt(v, dp)}</span>${chip}</button>` +
+    const word = !ses ? "" : `<span class="mws">${
+        whole ? "whole run"
+          : sliced == null ? "not measured"
+          : sesOwnCurve(k) ? "slice curve" : "sliced"}</span>`;
+    /* THE DOT IS AN INDICATOR, NOT A TARGET. It used to carry `data-mp` and plot
+       on its own, which meant two taps to get a line and its explanation --
+       Trevor, 2026-09-17: *"You've got it so that I have to click twice to get
+       it to be in the graph. Can the first click click the bullet, and the
+       description in one go?"* So the whole ROW does both now and the dot just
+       reports the state. `data-mp` still exists on the legend, where removing is
+       the only thing a tap can mean. */
+    const on = metricPlotted(k);
+    return `<button type="button" class="mrw${isOpen ? " open" : ""}${
+             ses ? " ses" : ""}${whole ? " na" : ""}" data-mk="${k}">` +
+           `<span class="nm"><span class="mdot"${
+              on ? ` style="background:${metricColour(k)};border-color:${
+                metricColour(k)}"` : ""}></span>${esc(label)}</span>` +
+           `<span class="vv">${v == null ? "—" : mFmt(v, dp)}</span>${
+             word}${chip}</button>` +
            (isOpen ? `<div class="mdf">${esc(M_WHAT[k] || "")}</div>` : "");
   }).join("");
   return `<div class="tsec"><div class="tlab">Test results${
-      prev ? " · vs " + esc(fmtWhen(d.metrics_prev_at)) : ""}</div>` +
-    chips + `<div class="mhd"><span>Metric</span><span>This test</span>` +
-    `<span>${prev ? "Moved" : ""}</span></div>` + rows +
-    `<div class="mdf">Tap a row for what it means.${prev ? " The chip says which way " +
-      "it moved and whether that was good — a falling drawdown is a green ▼." : ""}</div></div>`;
+      ses ? " · " + esc(ses.name) + " only"
+          : prev ? " · vs " + esc(fmtWhen(d.metrics_prev_at)) : ""}</div>` +
+    chips + `<div class="mhd${ses ? " ses" : ""}"><span>Metric</span>` +
+    `<span>${ses ? esc(ses.name) : "This test"}</span>` +
+    (ses ? `<span></span>` : "") +
+    `<span>${ses ? "" : prev ? "Moved" : ""}</span></div>` + rows +
+    `<div class="mdf">Tap a row to draw it on the graph and read what it means;
+      tap it again to clear it.${prev ? " The chip says which way it moved and " +
+      "whether that was good — a falling drawdown is a green ▼." : ""}${ses
+        ? " <b>slice curve</b> means the figure was rebuilt from this slice's own" +
+          " trades in time order — it is what this slice ALONE would have done," +
+          " not its share of the whole run's number." : ""}</div>` +
+    `</div>`;
 }
 /* One open row and one group at a time, page-wide. A per-card store would mean
    a card remembering a filter you set on a different card. */
-const MSTATE = { g: "", open: "" };
+/* `plot` and `mode` belong to the GRAPH, `g` and `open` to the table -- see
+   metricGraph for why the two must not be the same state. */
+/* THE GRAPH OPENS ON EQUITY. Trevor, 2026-09-17: *"I want that one open as the
+   default Metric to start the badge."* A graph that starts empty asks the reader
+   to guess what is worth plotting; starting on where the money ended answers the
+   first question anybody has, and every other line is added beside it.
+
+   IT IS A STARTING VALUE, NOT A FLOOR. Clear empties it like any other pick --
+   the default is what the page opens with, not something it insists on. */
+const M_OPEN = "equity";
+const MSTATE = { g: "", open: "", plot: [M_OPEN], mode: "value" };
+
+/* ---------- the shared series graph ---------- */
+/* ONE DRAWING FUNCTION, TWO BADGES. The variables badge and the metrics badge
+   ask the same question -- how has this number moved across rounds, and what was
+   it allowed to move within -- so they share a renderer rather than growing a
+   second one that would drift away from the first.
+
+   EVERY LINE IS SCALED TO ITS OWN RANGE. Trevor's own wording on the metrics
+   graph: *"Each line is scaled to its own range, so heights are NOT comparable
+   between lines -- only each line against itself."* That is forced, not chosen:
+   a lookback in DAYS (2-6) and a session weight (0-1) on one absolute axis draw
+   the weight as a flat line on the floor. The cost is real and is stated on the
+   card rather than hidden. The table under the graph carries the raw numbers,
+   which is where a comparison between variables is legitimate.
+
+   THE BAND SURVIVES NORMALISATION, and that is why each series is scaled to the
+   VARIABLE rather than to its visible points: a round swept over 1-4 draws a
+   shorter band than one swept over 2-6, so "the optimizer was given less room
+   this time" stays visible. */
+const SG_W = 320, SG_H = 116, SG_PAD = {l: 5, r: 5, t: 9, b: 15};
+/* A hollow dot has to punch a hole in the line behind it, so it needs the
+   card's own background rather than `none` -- the literal, because this
+   string goes into an SVG attribute where a CSS var does not resolve. */
+const SG_BG = "#0A1016";
+
+/* The span a series moves in, including the bounds it was swept OVER -- not just
+   the values it landed on. A variable pinned at the top of three widening bands
+   has three identical values and three different ceilings, and it is the
+   ceilings that carry the story. */
+function sgSpan(nums){
+  const v = (nums || []).filter(n => typeof n === "number" && isFinite(n));
+  if(!v.length) return null;
+  let lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+  if(hi - lo < 1e-9){
+    const pad = Math.abs(hi) > 1e-9 ? Math.abs(hi) * 0.12 : 1;
+    lo -= pad; hi += pad;
+  }
+  return [lo, hi];
+}
+
+function sgX(i, n, W){
+  const w = (W || SG_W) - SG_PAD.l - SG_PAD.r;
+  return n <= 1 ? SG_PAD.l + w / 2 : SG_PAD.l + w * (i / (n - 1));
+}
+
+/* series: [{colour, span, points:[{i, value, lo, hi, dot, square}]}]
+   labels: the x axis, SHARED by every series -- a round one variable was not
+   swept in is still a column, so two variables tuned in different rounds stay
+   aligned instead of one sliding along to fill the other's gaps. */
+function seriesGraph(labels, series, box){
+  /* THE BOX IS A PARAMETER so the full-screen view is the SAME GRAPH at another
+     size, not a second drawing routine. Only the viewBox changes; every
+     coordinate below is computed from it. */
+  const W = (box && box.w) || SG_W, H = (box && box.h) || SG_H;
+  const n = labels.length;
+  const h = H - SG_PAD.t - SG_PAD.b;
+  const y = (sp, v) => SG_PAD.t + h * (1 - (v - sp[0]) / (sp[1] - sp[0]));
+  const bands = [], lines = [], marks = [];
+  series.forEach(se => {
+    const sp = se.span;
+    if(!sp) return;
+    const pts = se.points.filter(p => typeof p.value === "number");
+    se.points.forEach(p => {
+      if(typeof p.lo !== "number" || typeof p.hi !== "number") return;
+      const top = y(sp, p.hi), bot = y(sp, p.lo);
+      bands.push('<rect x="' + (sgX(p.i, n, W) - 4).toFixed(1) + '" y="' +
+        top.toFixed(1) + '" width="8" height="' +
+        Math.max(1, bot - top).toFixed(1) + '" rx="2" fill="' + se.colour +
+        '" opacity="0.13"></rect>');
+    });
+    if(pts.length > 1){
+      lines.push('<polyline fill="none" stroke="' + se.colour +
+        '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" ' +
+        'points="' + pts.map(p => sgX(p.i, n, W).toFixed(1) + "," +
+                                  y(sp, p.value).toFixed(1)).join(" ") +
+        '"></polyline>');
+    }
+    pts.forEach(p => {
+      const cx = sgX(p.i, n, W), cy = y(sp, p.value);
+      /* THE SQUARE IS THE COMPILED DEFAULT -- a different SHAPE, not a different
+         colour, because colour on this graph is already spoken for twice over:
+         the line says which variable, the fill says which state. */
+      /* HOLLOW IS AN EARLIER ROUND, SOLID IS THIS ONE. Trevor, on the metrics
+         graph: *"Solid dot = this test, hollow = the comparison."* Same ink, so
+         a series keeps one colour down its whole length. */
+      marks.push(p.square
+        ? '<rect x="' + (cx - 3).toFixed(1) + '" y="' + (cy - 3).toFixed(1) +
+          '" width="6" height="6" fill="none" stroke="' + (p.dot || se.colour) +
+          '" stroke-width="1.6"></rect>'
+        : p.hollow
+          ? '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) +
+            '" r="2.6" fill="' + SG_BG + '" stroke="' + (p.dot || se.colour) +
+            '" stroke-width="1.4"></circle>'
+          : '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) +
+            '" r="3" fill="' + (p.dot || se.colour) + '"></circle>');
+    });
+  });
+  /* ONLY THE ENDS ARE LABELLED. Four round labels at 375px overlap into a grey
+     smear, and the table below names every one of them anyway. */
+  const ends = n > 1
+    ? '<text x="' + SG_PAD.l + '" y="' + (H - 4) + '" fill="#5F727E" ' +
+      'font-size="7">' + esc(labels[0]) + '</text>' +
+      '<text x="' + (W - SG_PAD.r) + '" y="' + (H - 4) + '" fill="#5F727E" ' +
+      'font-size="7" text-anchor="end">' + esc(labels[n - 1]) + '</text>'
+    : "";
+  return '<svg data-gopen class="vhsvg" viewBox="0 0 ' + W + ' ' + H + '" ' +
+    'preserveAspectRatio="none" role="img">' + bands.join("") + lines.join("") +
+    marks.join("") + ends + '</svg>';
+}
+
+/* ---------- the variables badge: one graph, several variables ---------- */
+/* WHICH VARIABLES ARE ON THE GRAPH, in the order they were added -- and that
+   order IS the colour assignment, so the first one you tap is gold whichever one
+   it is. Page-wide for the same reason MSTATE is: a per-card store would mean a
+   card remembering a selection made on a different card. */
+const VHSTATE = { on: [] };
+const VH_SERIES = ["#E0B457", "#6FA8D4", "#5FBE95", "#E08B4A", "#A98BE0", "#E0685A"];
+/* The dot takes the colour of the state that round LEFT the variable in -- the
+   same five the chips use, so the graph and the list agree without a key. */
+const VH_STATE_DOT = {
+  DEFAULT: "#8CA0AC", FLOATING: "#7FB6DE", CENTER: "#5FBE95",
+  PINNED: "#F0A05E", LOCKED: "#A98BE0"
+};
+/* HISTORY IS FOR THE BACKTESTS ONLY. Trevor, 2026-09-17: *"Technically this is
+   only for the [backtest] chips at the top. Optimize will be shown a little
+   differently."* A sweep lists only what it is sweeping, and its history is the
+   round you are already looking at.
+
+   🔴 ASKED OF THE DATA, NOT OF THE PHASE NAME. The obvious spelling is a list of
+   the two phase names -- and publish.py REFUSED it, correctly: those names are
+   on the protected list and this file goes to a PUBLIC repo. The app has always
+   rendered them from the snapshot and never written them down, and the standing
+   rule when this collides is to rename, never to loosen a substring scan that
+   exists to catch exactly this.
+
+   SO THE TEST IS `metrics`. A task that produced a measured result block IS a
+   backtest; a sweep produces a ranking of passes and has none. That is not a
+   workaround dressed up -- it is the more honest question, because what these
+   badges actually need is a task with measured numbers behind it, which is what
+   they are asking. */
+const isBacktest = t => !!(((t || {}).detail || {}).metrics);
+
+const vhOn = name => VHSTATE.on.indexOf(name) >= 0;
+function vhColour(name){
+  const i = VHSTATE.on.indexOf(name);
+  return i < 0 ? "var(--faint)" : VH_SERIES[i % VH_SERIES.length];
+}
+
+/* A round label short enough for a table column: "r46 09-09". */
+const vhLabel = pt => (pt.round != null ? "r" + pt.round : "") +
+  (pt.at ? (pt.round != null ? " " : "") + fmtWhen(pt.at).split(" ")[0] : "");
+
+function varHistoryGraph(hist, vars, big){
+  const chosen = VHSTATE.on.filter(n => hist[n]);
+  if(!chosen.length){
+    return '<div class="vhempty">Tap a variable above to draw its history here. ' +
+           'Several can share the graph.</div>';
+  }
+  const cols = [];
+  chosen.forEach(n => (hist[n].points || []).forEach(pt => {
+    const k = String(pt.round);
+    if(cols.indexOf(k) < 0) cols.push(k);
+  }));
+  cols.sort((a, b) => Number(a) - Number(b));
+  const labelFor = {};
+  chosen.forEach(n => (hist[n].points || []).forEach(pt => {
+    labelFor[String(pt.round)] = vhLabel(pt);
+  }));
+  const labels = ["default"].concat(cols.map(k => labelFor[k] || ("r" + k)));
+
+  const series = chosen.map(name => {
+    const h = hist[name];
+    const nums = [h.default];
+    (h.points || []).forEach(pt => { nums.push(pt.value, pt.lo, pt.hi); });
+    const points = [];
+    if(typeof h.default === "number"){
+      points.push({i: 0, value: h.default, square: true, dot: VH_STATE_DOT.DEFAULT});
+    }
+    (h.points || []).forEach(pt => {
+      points.push({i: cols.indexOf(String(pt.round)) + 1, value: pt.value,
+                   lo: pt.lo, hi: pt.hi, dot: VH_STATE_DOT[pt.state] || null});
+    });
+    return {name: name, colour: vhColour(name), span: sgSpan(nums), points: points};
+  });
+
+  /* UNDER TWO POINTS THERE IS NO LINE, and saying so beats drawing one dot and
+     calling it a history. Trevor: *"The graph will at least have 2 points for
+     the first time we actual want to render it."* */
+  const drawable = series.filter(se => se.points.length >= 2);
+  const thin = series.filter(se => se.points.length < 2).map(se => se.name);
+  const one = chosen.length === 1;
+
+  const rows = series.map(se => {
+    const h = hist[se.name];
+    const head = one ? "" :
+      '<tr><td colspan="5" style="padding-top:7px;color:var(--text)">' +
+      '<span class="vhkey" style="background:' + se.colour + '"></span>' +
+      esc(spaceOut(stripRegime(se.name))) +
+      '<span style="color:var(--faint)"> &middot; default ' +
+      esc(num(h.default)) + '</span></td></tr>';
+    const body = (h.points || []).map(pt =>
+      '<tr><td>' + esc(vhLabel(pt)) + '</td>' +
+      '<td>' + (pt.bucket != null ? esc(pt.bucket) : "&mdash;") + '</td>' +
+      '<td class="vhv">' + esc(num(pt.value)) + '</td>' +
+      '<td>' + (pt.lo != null && pt.hi != null
+          ? esc(num(pt.lo) + " \u2192 " + num(pt.hi)) : "&mdash;") + '</td>' +
+      '<td class="st" style="color:' + (VH_STATE_DOT[pt.state] || "#5F727E") +
+      '">' + esc(pt.state || "\u2014") + '</td></tr>').join("");
+    return head + body;
+  }).join("");
+
+  return (drawable.length ? seriesGraph(labels, drawable, big) : "") +
+    (big ? "" : 
+    '<table class="vht"><thead><tr><th>Round</th><th>Bucket</th><th>Value</th>' +
+    '<th>Swept over</th><th>State</th></tr></thead><tbody>' + rows +
+    '</tbody></table>' +
+    '<div class="vhcap">Square = the compiled default. Dot colour = the state ' +
+    'that round left it in. The band behind each point is the range it was ' +
+    'swept over.' +
+    (chosen.length > 1
+      ? ' <b>Each line is scaled to its own range</b>, so heights are not ' +
+        'comparable between lines \u2014 only each line against itself. The ' +
+        'table carries the raw values.'
+      : "") +
+    (thin.length
+      ? " " + esc(thin.map(n => spaceOut(stripRegime(n))).join(", ")) +
+        ' has one point and no line yet.'
+      : "") + '</div>');
+}
+
+/* ---------- the slope section ---------- */
+/* WHERE IN THE SLOPE RANGE THE GOOD TRADES WERE. Trevor, 2026-09-17: *"how much
+   information can we get in relation to how steep the D1 bucket slope was ... I
+   want to kinda split the range up as if we were splitting a bucket ... WE might
+   target certain slopes that do well."*
+
+   THE BANDS ARE THE SPLITS THIS BUCKET WOULD MAKE. Not arbitrary bins: the
+   bucket system cuts at the midpoint and halves the gap each generation, so two
+   generations of that cut give four bands, and each one carries the bucket id it
+   WOULD become. That is what makes the badge actionable -- a band that earns its
+   keep is a split proposal with a number already attached.
+
+   🔴 TRADE COUNT ALONE IS THE TRAP, AND THE EA SAYS SO IN ITS OWN COMMENTS.
+   Every ENTRY_FIRED row carries BucketD1Slope, so binning trades by slope looks
+   free -- and SampleBucketSlope() exists precisely because those samples are
+   "CONDITIONED ON A TRADE HAVING FIRED", which is the quantity you are trying to
+   normalise. A band holding 30% of the trades because the market SAT there 30%
+   of the time has told you nothing. So every row here carries its share of TIME
+   beside its share of trades, and the x figure is the ratio of the two: above
+   1.0 the system fires more often than the band's mere presence explains.
+
+   WHERE THE TWO NUMBERS COME FROM. Trades and their slope: `EntryBucketSlope`,
+   which rides the CLOSED record ALONGSIDE Profit, Pips and Duration -- so the
+   slope and the money are already on one row and no join is needed. (An earlier
+   version of this note sent the reader to the ENTRY_FIRED lines, which carry the
+   slope but not the outcome; that would have been a join for nothing.)
+   `closed_lines.py` keeps those rows as CLOSED.csv after the log is deleted, so
+   this survives for every round from 2026-09-07 on and for none before it.
+   Time: the slope-sample CSV, one row per D1 bar, written when
+   MQL_TESTER && !MQL_OPTIMIZATION.
+
+   ⚠️ AND THAT SECOND CONDITION IS WHY THIS IS FOR A SINGLE BACKTEST ONLY. The
+   denominator is not written during an optimization at all, so a sweep has trade
+   counts and no time to divide them by -- exactly the confidently-wrong number
+   above. The restriction is the data's, not a preference. */
+/* WHICH METRIC THE BANDS ARE COUNTED IN. Trevor: *"Can you make it also so
+   that that metric can be selectable on that bucket slope?"* The badge follows
+   whatever is highlighted in the metrics badge above rather than growing a
+   picker of its own -- one selection, two places reading it.
+
+   IT HAS TO BE SLICEABLE. Highlighting Balance DD max cannot make a per-band
+   drawdown exist, so a whole-run metric is skipped here and the badge falls back
+   down the list: the row you opened, then the lines on the graph in the order
+   you added them, then Net Profit, which is the question this badge was built
+   for. */
+function slopeMetric(d){
+  const defs = {};
+  M_DEFS.forEach(x => { defs[x[1]] = x; });
+  const bands = (d || {}).slope_bands || [];
+  const has = k => bands.some(b => ((b.metrics || {})[k]) != null);
+  const wanted = [MSTATE.open].concat(MSTATE.plot || []).concat(["net"]);
+  for(const k of wanted){
+    if(k && sesSliceable(k) && has(k) && defs[k]) return defs[k];
+  }
+  return null;
+}
+
+/* THE GRAPH IS ITS OWN BADGE NOW, and it sits directly under the Information
+   badge. Trevor, 2026-09-17: *"Lets also make the graph have it's own badge. And
+   move that to Right below the information badge."*
+
+   IT READS THE SAME MSTATE.plot as the metric rows further down, so tapping a
+   dot in the Test results badge still draws the line up here -- the two are one
+   selection shown twice, not two states to keep in step. */
+/* 🔴 ONE GRAPH, TWO SOURCES, NEVER BOTH AT ONCE. Trevor, 2026-09-17: *"The
+   Variables badge will use the same graph up top as well. If we've already got
+   metric data on it, clear the graph when selecting a variable. Same going the
+   other way."*
+
+   AND THE CLEARING IS THE HONEST PART, not a convenience. A variable history and
+   a metric history do not share an x axis: the variable's columns are the rounds
+   that MOVED it -- it is absent from the rest -- while the metric's are every
+   round that produced a number. Drawn together, two points at the same x would
+   be different rounds. The same objection recorded against putting an equity
+   curve and a metric history on one axis, one level down.
+
+   WHICHEVER WAS PICKED LAST WINS, because that is the thing you just asked to
+   see. The other selection is emptied rather than remembered -- a graph that
+   silently restored four metric lines when you removed your last variable would
+   be answering a question you had already moved on from. */
+function graphBadge(t, rep){
+  const d = (t || {}).detail;
+  if(!d) return "";
+  const hist = isBacktest(t) ? ((rep || {}).variable_history || null) : null;
+  const vars = (d.variables || []);
+  const body = (hist && VHSTATE.on.length)
+    ? varHistoryGraph(hist, vars)
+    : (d.metrics ? metricGraph(d) : "");
+  if(!body) return "";
+  return `<div class="card gbadge"><div class="card-in">` + body + `</div></div>`;
+}
+
+function slopeBadge(t){
+  const d = (t || {}).detail;
+  if(!d) return "";
+  const inner = slopeSection(d);
+  if(!inner){
+    return soonBadge("By slope", `<b>Nothing published for this task.</b> The
+      bands need each trade's <code>BucketD1Slope</code> — already on every
+      <code>ENTRY_FIRED</code> row — and the D1 slope sample file that says how
+      much TIME each band occupied. The sampler only runs on a single backtest,
+      never during an optimization, which is why this is a bucket-test badge.`);
+  }
+  return `<div class="card"><div class="card-in">` + inner + `</div></div>`;
+}
+
+function slopeSection(d){
+  const bands = (d || {}).slope_bands;
+  if(!Array.isArray(bands) || !bands.length) return "";
+  const def = slopeMetric(d);
+  const mk = def ? def[1] : "net", mdp = def ? def[3] : 0;
+  const sesName = SLICE.session;
+  const totT = bands.reduce((a, b) => a + (b.trades || 0), 0);
+  const totS = bands.reduce((a, b) => a + (b.time_share || 0), 0);
+  const nets = bands.map(b => b.net).filter(v => typeof v === "number");
+  const totN = nets.reduce((a, v) => a + v, 0);
+  const rows = bands.map(b => {
+    const on = SLICE.slope === String(b.bucket_id);
+    /* THE CELL, when a session is also picked -- LONDON inside THIS band. */
+    const cell = sesName ? ((b.by_session || {})[sesName] || null) : null;
+    const src = sesName ? cell : (b.metrics || {});
+    const mv = src ? src[mk] : null;
+    const cellTrades = sesName ? (cell ? cell.trades : null) : b.trades;
+    const tShare = totT ? (b.trades || 0) / totT : 0;
+    const sShare = totS ? (b.time_share || 0) / totS : 0;
+    /* THE ONE NUMBER THIS SECTION EXISTS FOR. Everything else on the row is an
+       input to it. */
+    const lift = sShare > 0 ? tShare / sShare : null;
+    /* THE BAR IS A SHARE, so it may only draw for a metric that HAS shares --
+       an additive quantity. Net and trade count add up across bands; a win rate,
+       a profit factor and a median hold do not, and a bar under those invites
+       "44.3 out of 152.7" to be read as a proportion of something real. It also
+       reads the SAME source as the number above it: with LONDON picked it is
+       LONDON's share of LONDON, never of the whole run. */
+    const additive = mk === "net" || mk === "trades";
+    const barTot = !additive ? null
+      : bands.reduce((a, x) => {
+          const sx = sesName ? ((x.by_session || {})[sesName] || null) : (x.metrics || {});
+          return a + ((sx && sx[mk]) || 0);
+        }, 0);
+    const netShare = additive && barTot ? (mv || 0) / barTot : null;
+    return `<button type="button" class="srw slb${on ? " on" : ""}" ` +
+      `data-slope="${esc(b.bucket_id)}">` +
+      `<span class="sdot"></span>` +
+      `<span class="snm">${esc(num(b.lo))} → ${esc(num(b.hi))}` +
+      `<span class="sbid">${bktEl(b.bucket_id)}</span></span>` +
+      `<span>${cellTrades == null ? "—" : esc(cellTrades.toLocaleString())} tr · ${
+        (sShare * 100).toFixed(0)}% time</span>` +
+      `<span class="spips ${mv == null ? "" : mv >= 0 ? "up" : "dn"}">${
+        mv == null ? "—" : mFmt(mv, mdp)}</span>` +
+      `<span class="slift ${lift == null ? "" : lift >= 1 ? "up" : "dn"}">${
+        lift == null ? "—" : "×" + lift.toFixed(2)}</span></button>` +
+      (netShare != null && Math.abs(netShare) > 0.0001
+        ? `<div class="sbar"><i style="width:${
+             Math.max(0, Math.min(100, netShare * 100)).toFixed(1)}%;background:${
+             (b.net || 0) >= 0 ? "var(--good)" : "var(--bad)"}"></i></div>`
+        : "");
+  }).join("");
+  const best = bands.slice().sort((a, b) => (b.net || 0) - (a.net || 0))[0];
+  const bestShare = best && totN ? (best.net || 0) / totN : null;
+  const bestTime = best && totS ? (best.time_share || 0) / totS : null;
+  return `<div class="tsec"><div class="tlab">By slope${
+        def ? " · " + esc(def[2]) : ""}${sesName ? " · " + esc(sesName) + " only" : ""}</div>
+      <div class="mhd sl"><span>D1 slope band</span><span>Trades · time</span>
+        <span>${def ? esc(def[2]) : "Net"}</span><span>×</span></div>
+      ${rows}
+      <div class="vhcap">${sesName
+        ? `Showing <b>${esc(sesName)}</b>'s share of each band — the measured
+           cell, never ${esc(sesName)}'s overall figure scaled down. `
+        : ""}Each band is a cut this bucket could actually make —
+        the id beside it is the bucket it would become. <b>×</b> is the band's
+        share of trades over its share of TIME: above 1.00 the system fires there
+        more than the band simply being present would explain, and that is the
+        only form of this number worth acting on.` +
+    (mk === "net" || mk === "trades"
+      ? ` The bar under each row is its share of the column above.` : "") +
+    /* ⚠️ A WHOLE-RUN SENTENCE, ON THE WHOLE-RUN VIEW ONLY. `best` is chosen on
+       the bands' own net, so quoting it under a LONDON-only win-rate reading
+       would state a fact about a population that is not on the screen. */
+    (!sesName && mk === "net" && best && bestShare != null && bestTime != null
+      ? ` Here <b>${esc(best.bucket_id)}</b> is ${(bestTime * 100).toFixed(0)}%
+          of the time and ${(bestShare * 100).toFixed(0)}% of the net.`
+      : "") +
+    ` Tap a band to cut the metrics above to it.</div></div>`;
+}
+
+/* ---------- the graph, full screen and sideways ---------- */
+/* Trevor, 2026-09-17: *"I want to be able to click the graph and then it would
+   show up in landscape full screen."*
+
+   ROTATED IN CSS, NOT BY ASKING THE DEVICE. screen.orientation.lock() needs
+   fullscreen first, is refused outright on iOS Safari, and leaves the page at
+   the mercy of the rotation lock the phone is probably already holding. A
+   container sized to the SWAPPED viewport and turned 90 degrees needs no
+   permission and behaves the same everywhere. On a device already in landscape
+   the rotation is skipped -- see the media query.
+
+   THE TABLE AND CAPTION DO NOT COME. The whole point of the big view is the
+   shape; the reading material is on the card you came from. */
+let GFULL = false;
+
+function graphFull(t, rep){
+  if(!GFULL) return "";
+  const d = (t || {}).detail;
+  if(!d) return "";
+  const hist = isBacktest(t) ? ((rep || {}).variable_history || null) : null;
+  const big = {w: 640, h: 300};
+  const body = (hist && VHSTATE.on.length)
+    ? varHistoryGraph(hist, d.variables || [], big)
+    : (d.metrics ? metricGraph(d, big) : "");
+  if(!body) return "";
+  return `<div class="gfull" data-gclose>
+      <div class="gfullin">
+        <button type="button" class="gfx" data-gclose>Close</button>
+        ${body}
+      </div>
+    </div>`;
+}
+
+/* ---------- the per-chip badges ---------- */
+/* WHAT SITS UNDER THE INFORMATION BADGE depends on which chip is open. Trevor,
+   2026-09-17: *"All will have the information badge as standard ... Buckettest
+   & FullTest will get the Variable Badge, Metrics Badge and the Session Badge.
+   Optimize will get an optimize badge."*
+
+   The Information badge itself does NOT change with the chip -- it is the job's
+   own row, uncondensed, and a job has one of those however many tasks it ran. */
+function metricsBadge(t){
+  const d = (t || {}).detail;
+  if(!d || !d.metrics) return "";
+  return `<div class="card"><div class="card-in">` + taskMetrics(d) + `</div></div>`;
+}
+
+/* NAMED, NOT BUILT. A placeholder that states what it is waiting for beats
+   leaving a gap: the composition is the thing being reviewed, and a missing
+   badge and an empty one look the same from the outside. */
+function soonBadge(title, what){
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">${esc(title)}</div>
+      <div class="soon">${what}</div>
+    </div></div>`;
+}
+
+/* WHICH SESSION IS SINGLED OUT -- one at a time, or none. Trevor, 2026-09-17:
+   *"I had it where I could click the session weights and it would single out
+   the metric data (that was available)."* One at a time because two sessions
+   added together are just a smaller whole run, which is the thing you already
+   have above.
+
+   🔴 ONLY FOUR THINGS CANNOT BE CUT, and it is not because the arithmetic is
+   hard. `score` is what OnTester RETURNED for the pass it scored. `volr` is
+   annualised trades over this BUCKET's trades-per-year target, and `cadterm`
+   and `bcredit` are computed from it against the band. There is no LONDON
+   target and no 2800-band target -- a per-slice version would have to invent a
+   denominator, and a number with an invented denominator is worse than no
+   number. These stay whole-run permanently.
+
+   ⚠️ EVERYTHING ELSE CAN BE CUT, INCLUDING THE PATH METRICS -- reviewed
+   2026-09-17 against what CLOSED.csv actually holds, which is far more than the
+   summary it feeds: `Profit`, `Duration`, `EntryBucketSlope` and the close
+   `time` all ride the same per-trade row. So a slice has its own trades in time
+   order, and that is an equity path: drawdown, underwater days, months green,
+   time-in-trade, recovery, Sharpe and closing equity all follow from it.
+
+   🔴 AND THEY ANSWER A DIFFERENT QUESTION FROM THEIR WHOLE-RUN NAMESAKES. A
+   drawdown computed on LONDON's trades alone is "what the LONDON-ONLY strategy
+   would have suffered", NOT "LONDON's share of the account's drawdown" -- the
+   account fell while ASIAN trades were open too. Both are legitimate; they are
+   not the same number and must never be read as each other. That is why these
+   are labelled `slice curve` on the card rather than `sliced`: the word is doing
+   the work of a footnote nobody would read. See SES_OWN_CURVE.
+
+   A metric outside both lists is a plain sum or ratio over the slice's trades.
+   Either way it only shows a number if the record CARRIES one -- missing stays
+   missing rather than becoming a zero, per the rule task_metrics is built on. */
+const SES_WHOLE_RUN = ["score", "volr", "cadterm", "bcredit"];
+/* Sliceable, but only by rebuilding the slice's own curve -- so the card says so
+   in a different word. */
+const SES_OWN_CURVE = ["equity", "dd", "rec", "sharpe", "uwater", "inpos",
+                       "posmon"];
+/* TWO CUTS, AND THEY COMPOSE. This said one-at-a-time until Trevor asked for
+   the thing that needs both: *"I want to see London's 1200 bucket share for the
+   metric that is highlighted."* That is the intersection cell, and it is a
+   different question from either margin -- LONDON is not the same population
+   inside a rising D1 as it is overall, which is the whole reason to look.
+
+   THE INTERSECTION IS MEASURED, NOT MULTIPLIED. A cell comes from the band's own
+   by_session record; it is never LONDON's share times the band's total. Those
+   two agree only if session and slope are independent, and if they were
+   independent this badge would have nothing to say. */
+const SLICE = { session: "", slope: "" };
+const sesSliceable = k => SES_WHOLE_RUN.indexOf(k) < 0;
+const sesOwnCurve = k => SES_OWN_CURVE.indexOf(k) >= 0;
+/* The slice in force for THIS task, or null. A task with no session breakdown
+   published cannot be sliced whatever is selected elsewhere. */
+function sesRecord(d){
+  const all = (d || {}).sessions;
+  if(!SLICE.session || !Array.isArray(all)) return null;
+  return all.find(x => x.name === SLICE.session) || null;
+}
+function slopeRecord(d){
+  const all = (d || {}).slope_bands;
+  if(!SLICE.slope || !Array.isArray(all)) return null;
+  return all.find(x => String(x.bucket_id) === SLICE.slope) || null;
+}
+
+/* THE CUT IN FORCE -- one name and one metrics dict, whichever combination of
+   the two badges produced it. taskMetrics asks this and never branches on which
+   badge answered.
+
+   BOTH PICKED AND NO CELL PUBLISHED IS ITS OWN ANSWER, not a silent fallback to
+   one of the margins. A card that quietly showed you LONDON when you had asked
+   for LONDON-inside-2800 would be answering a question you did not ask. */
+function anySlice(d){
+  const ses = sesRecord(d), band = slopeRecord(d);
+  if(ses && band){
+    const cell = ((band.by_session || {})[ses.name]) || null;
+    return {name: ses.name + " in " + band.bucket_id,
+            metrics: cell ? cell : null, missing: !cell};
+  }
+  if(band) return {name: "Bucket " + band.bucket_id, metrics: band.metrics};
+  if(ses) return ses;
+  return null;
+}
+
+function sessionBadge(t){
+  const d = (t || {}).detail;
+  if(!d) return "";
+  const all = d.sessions;
+  if(!Array.isArray(all) || !all.length){
+    return soonBadge("By session", `<b>Nothing published for this task.</b> The
+      split needs the round's <code>CLOSED.csv</code> re-cut by
+      <code>close time − Duration</code>, which the publisher does not do yet.`);
+  }
+  const sel = SLICE.session;
+  const rows = all.map(x => {
+    const on = sel === x.name;
+    const pips = typeof x.pips === "number" ? x.pips : null;
+    return `<button type="button" class="srw${on ? " on" : ""}" data-ses="${
+        esc(x.name)}">` +
+      `<span class="sdot"></span>` +
+      `<span class="snm">${esc(x.name)}</span>` +
+      `<span>${x.trades != null ? esc(x.trades.toLocaleString()) : "—"} trades</span>` +
+      `<span class="spips ${pips == null ? "" : pips >= 0 ? "up" : "dn"}">${
+        pips == null ? "—" : (pips >= 0 ? "+" : "−") + Math.abs(pips).toFixed(1) +
+        " pips"}</span></button>`;
+  }).join("");
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">By session · ${sel ? "1 selected" : "none selected"}</div>
+      ${rows}
+      <div class="mdf">${sel
+        ? `The test results above are cut to <b>${esc(sel)}</b>. Tap it again for
+           the whole run. A metric that cannot be cut to a session says
+           <i>whole run</i> and keeps the figure it had.`
+        : `Tap one to single out the metrics above. Session is tagged at ENTRY
+           from the GMT hour, so a trade counts where it opened, not where it
+           closed.`}</div>
+    </div></div>`;
+}
+
+/* THE TRADE BAND LIVES HERE AND NOWHERE ELSE. Trevor, 2026-09-17: *"Put the
+   Trade Band information only on the Optimize information panels."*
+
+   It reads as a result and is really an INSTRUCTION: the band is what the
+   pre-flight refuses a group on, what a seed's reason quotes, and what decides
+   whether a sweep has to go looking for cells that can reach it. That is a
+   statement about the search, so it belongs on the badge about the search. A
+   backtest's own trade count is already in its metrics, where it is one number
+   among thirty-two rather than a verdict. */
+/* WHICH SWEEP THIS IS, counted rather than named -- same reason as isBacktest.
+   `nth` is how many sweeps this job has reached including this one, which the
+   caller knows from the chip order and the renderer must not spell out. */
+function optimizeBadge(t, nth){
+  const two = nth >= 2;
+  const d = (t || {}).detail || {};
+  const band = d.cadence
+    ? `<div class="tsec"><div class="tlab">Trade band</div>` +
+      taskBand(d.cadence) + `</div>`
+    : "";
+  return band + soonBadge(two ? "Second pass" : "The sweep",
+    `<b>Not built yet.</b> ` + (two
+      ? `A second pass takes only what the first left PINNED, so this badge is
+         about a handful of variables and why each one was chosen — the effect
+         sizes behind the pick, not a grid.`
+      : `A sweep is a grid, not a result: this badge is about what was searched
+         — the cells, the step resolution per variable, how much of the space
+         the GA actually reached, and where the winning pass sat inside it.`));
+}
+
+/* ---------- the metrics badge: one graph, several metrics ---------- */
+/* WHICH METRICS ARE PLOTTED, in tap order -- the order is the colour, same rule
+   as the variables badge, and for the same reason.
+
+   🔴 THE FILTER AND THE PLOT ARE SEPARATE, DELIBERATELY. Trevor: *"Filtering by
+   group changes what you READ, never what is plotted -- a picked metric stays on
+   the graph with its group hidden."* So MSTATE.g narrows the TABLE only, and
+   MSTATE.plot survives it. Anything else would mean picking Profit Factor,
+   filtering to Ledger to check something, and silently losing the line you were
+   looking at. */
+function metricPlotted(k){ return (MSTATE.plot || []).indexOf(k) >= 0; }
+function metricColour(k){
+  const i = (MSTATE.plot || []).indexOf(k);
+  return i < 0 ? "var(--faint)" : VH_SERIES[i % VH_SERIES.length];
+}
+
+/* THE ROUNDS THIS TASK HAS NUMBERS FOR, oldest first, this test last. */
+function metricRounds(d){
+  const h = (d.metrics_history || {}).rounds;
+  return Array.isArray(h) && h.length ? h : null;
+}
+
+function metricGraph(d, big){
+  const rounds = metricRounds(d);
+  /* 🔴 A PICKED METRIC WITH NO SERIES USED TO VANISH. It was filtered out here
+     and nothing else mentioned it, so tapping Sharpe or Recovery Factor filled
+     its dot, changed the count, and drew no line -- a control that reports
+     success and does nothing, which is the exact failure this file keeps a
+     standing rule about.
+
+     RAGGED COVERAGE IS NORMAL AND PERMANENT, not a fixture quirk. task_metrics
+     takes each key from the source that has it, and the sources came online at
+     different times: give-back and the MFE/MAE timings need CLOSED.csv, which
+     only exists from 2026-09-07; the fitness block comes off the DeepDive. A
+     round measured before a source existed has fewer keys -- the gen-1 backtest
+     on the sample job has 25 of 32 -- and that is recorded as "a missing source
+     is a missing key, never a zero". So the graph has to be able to say
+     "measured now, not measured then" for the rest of the campaign. */
+  const picked = (MSTATE.plot || []);
+  const hasSeries = k => rounds && rounds.some(r => (r.metrics || {})[k] != null);
+  const drawn = picked.filter(hasSeries);
+  const noSeries = picked.filter(k => !hasSeries(k));
+  const defs = {};
+  M_DEFS.forEach(x => { defs[x[1]] = x; });
+
+  const head = (n, extra) =>
+    '<div class="mghead"><span class="mgttl">' + n + '</span>' + extra + '</div>';
+  const clear = picked.length
+    ? '<button type="button" class="mgbtn" data-mgclear>Clear</button>' : "";
+
+  if(!rounds){
+    /* NO HISTORY IS NOT AN EMPTY GRAPH. A task whose earlier rounds were never
+       measured has nothing to draw, and an axis with one column on it would
+       imply otherwise. */
+    return head("No round history yet", "") +
+      '<div class="vhempty">This task carries its own numbers and the previous ' +
+      'generation, but not the series behind them, so there is nothing to plot ' +
+      'across rounds.</div>';
+  }
+  if(!picked.length){
+    return head(rounds.length + " rounds on file", "") +
+      /* NOT "tap the dot" any more -- the dot stopped being a target when the
+         row took over both jobs, and an empty graph telling you to press
+         something that does nothing is the worst place to be wrong. */
+      '<div class="vhempty">Tap a metric below to draw it across those rounds, ' +
+      'or a variable to draw its history instead. Several can share the graph.</div>';
+  }
+
+  const mode = MSTATE.mode === "index" ? "index" : "value";
+  const labels = rounds.map((r, i) =>
+    i === rounds.length - 1 ? "this test"
+      : "r" + r.round + (r.at ? " " + fmtWhen(r.at).split(" ")[0] : ""));
+
+  /* INDEX MODE puts every series on ONE axis by asking the only question that is
+     comparable across metrics: how far has it moved from where it started. The
+     axis then names a real number -- per cent -- which the own-range mode
+     cannot. A series that STARTS at zero has no percentage to give and is held
+     out rather than divided by nothing. */
+  const held = [];
+  const series = drawn.map(k => {
+    const raw = rounds.map(r => {
+      const v = (r.metrics || {})[k];
+      return typeof v === "number" ? v : null;
+    });
+    const first = raw.filter(v => v != null)[0];
+    let vals = raw;
+    if(mode === "index"){
+      if(first == null || Math.abs(first) < 1e-9){ held.push(k); return null; }
+      vals = raw.map(v => v == null ? null : (v - first) / Math.abs(first) * 100);
+    }
+    const points = [];
+    vals.forEach((v, i) => {
+      if(v == null) return;
+      points.push({i: i, value: v, hollow: i !== rounds.length - 1});
+    });
+    return {key: k, colour: metricColour(k), vals: vals, raw: raw, points: points};
+  }).filter(Boolean);
+
+  /* ONE SPAN FOR EVERYONE in index mode, each series its own in value mode --
+     which IS the difference between the two, stated in the caption below. */
+  let shared = null;
+  if(mode === "index"){
+    const all = [];
+    series.forEach(se => se.vals.forEach(v => { if(v != null) all.push(v); }));
+    shared = sgSpan(all);
+  }
+  series.forEach(se => {
+    se.span = shared || sgSpan(se.vals.filter(v => v != null));
+  });
+
+  const absent = noSeries.map(k => {
+    const def = defs[k] || [null, k, k, 2, 0];
+    return '<div class="mglgr none"><span class="mgdash" ' +
+      'style="background:var(--line)"></span><span class="nm">' + esc(def[2]) +
+      '</span><span>not measured in these rounds</span></div>';
+  }).join("");
+
+  const legend = series.map(se => {
+    const def = defs[se.key] || [null, se.key, se.key, 2, 0];
+    const got = se.raw.filter(v => v != null);
+    const lo = Math.min.apply(null, got), hi = Math.max.apply(null, got);
+    /* THE LEGEND IS THE OFF SWITCH. Trevor, 2026-09-17: *"If i click the metric
+       in the graph list, i want to clear that metric from the graph."* Which is
+       the right place for it -- once the card is pinned the dots are somewhere
+       below the fold, and the line you want rid of is right here under your
+       thumb.
+
+       IT CARRIES `data-mp`, THE SAME ATTRIBUTE THE DOT DOES, so the existing
+       handler serves it with no second code path: that handler toggles, and a
+       metric in the legend is by definition already on, so a tap can only ever
+       remove it. A dedicated "remove" branch would be a second thing to keep in
+       step with the first, and this file has been bitten by exactly that before. */
+    return '<button type="button" class="mglgr" data-mp="' + esc(se.key) +
+      '"><span class="mgdash" style="background:' + se.colour +
+      '"></span><span class="nm">' + esc(def[2]) + '</span><span>' +
+      esc(mFmt(lo, def[3]) + " \u2013 " + mFmt(hi, def[3])) + '</span></button>';
+  }).join("");
+
+  const modeBtn = '<button type="button" class="mgbtn' +
+    (mode === "index" ? " on" : "") + '" data-mgmode>' +
+    (mode === "index" ? "% change" : "Value") + '</button>';
+
+  /* THE COUNT IS WHAT IS DRAWN, with the rest called out beside it -- "1 metric
+     · 6 rounds" over a graph holding one line when you have picked two would be
+     the same lie one level up. */
+  const title = drawn.length + " metric" + (drawn.length === 1 ? "" : "s") +
+    (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
+    " \u00b7 " + rounds.length + " rounds";
+  return head(title, modeBtn + clear) +
+    (drawn.length ? seriesGraph(labels, series, big) : "") +
+    '<div class="mglg">' + legend + absent + '</div>' +
+    /* THE BIG VIEW IS FOR THE SHAPE. The legend stays -- it names the lines and
+       three words of it fit anywhere -- but the paragraph explaining the scaling
+       belongs on the card you opened this from. */
+    (big ? "" : '<div class="vhcap">' +
+    (noSeries.length && !drawn.length
+      ? 'Nothing to draw: the metrics you picked were measured on THIS test but ' +
+        'not on the earlier rounds, so there is no line to run through them. '
+      : "") +
+    (mode === "index"
+      ? 'Every series on ONE axis, as per cent moved from ' + esc(labels[0]) +
+        '. Heights are comparable here \u2014 that is what this mode is for.'
+      : '<b>Each series is scaled to its own range</b>, so the shape is honest ' +
+        'but the axis names no real number and heights are not comparable ' +
+        'between lines. Switch to % change to compare them.') +
+    ' Solid dot = this test, hollow = an earlier round.' +
+    (held.length
+      ? ' ' + esc(held.map(k => (defs[k] || [,,k])[2]).join(", ")) +
+        ' starts at zero and has no percentage to show, so it is held out of ' +
+        'this mode.'
+      : "") +
+    '</div>');
+}
 
 /* ---------- the task card ---------- */
 /* The four words for where a variable is up to, straight from the publisher --
@@ -2330,10 +3377,18 @@ function taskStateKey(list){
     `<span class="tkt">${esc(STATE_TEXT[st])}</span></div>`).join("");
 }
 
-function taskVars(list){
+function taskVars(list, hist){
   if(!(list || []).length) return "";
-  return list.map(v => `<div class="tvar">
-      <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
+  return list.map(v => `<div class="tvar">` +
+      /* WITH a history to draw, the name is a button; without one it is the
+         same text it always was. `hist` is absent everywhere except the job
+         card, so every other caller renders exactly as before. */
+      (hist && hist[v.name]
+        ? `<button type="button" class="vbtn${vhOn(v.name) ? " on" : ""}"` +
+          (vhOn(v.name) ? ` style="border-color:${vhColour(v.name)};color:${
+             vhColour(v.name)}"` : "") +
+          ` data-vh="${esc(v.name)}">${esc(spaceOut(stripRegime(v.name)))}</button>`
+        : `<span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>`) +
       (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>`
                : "") +
       /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
@@ -2453,7 +3508,12 @@ function taskGraphs(files, relDir, urls){
       <div class="tgcap">Before and after, on one scale.</div></div>`;
 }
 
-function taskCard(r, relDir, open, skipGraph){
+/* `lift` -- 2026-09-17. On the RESULTS job card the variables and the test
+   results are badges of their own now, sitting under the Information badge
+   rather than inside this panel. Lifting them out here rather than rebuilding
+   the panel keeps ONE definition of each: the Active tab still gets the whole
+   card, because there the task panel IS the card. */
+function taskCard(r, relDir, open, skipGraph, lift){
   const d = r.detail;
   if(!d) return "";
   const parts = [
@@ -2463,20 +3523,20 @@ function taskCard(r, relDir, open, skipGraph){
                 taskBand(d.cadence) + `</div>` : "",
     (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
                              taskSwept(d.swept) + `</div>` : "",
-    (d.variables || []).length
+    (d.variables || []).length && !lift
       ? `<div class="tsec"><div class="tlab">${esc(SWEPT_LABEL[d.swept_source]
             || "Variables")}</div>` +
         taskVars(d.variables) + taskStateKey(d.variables) + `</div>`
       /* NOT DECIDED YET is a real answer and the only honest one for a queued
          sweep: a second pass takes whatever the first leaves PINNED, so its
          variable list does not exist until the first one finishes. */
-      : d.swept_source === "undecided"
+      : d.swept_source === "undecided" && !lift
         ? `<div class="tsec"><div class="tlab">Variables</div>
              <div class="tnote">Not chosen yet — a second pass sweeps whatever
              the pass before it leaves pinned, so this list does not exist
              until that one finishes.</div></div>`
         : "",
-    taskMetrics(d),
+    lift ? "" : taskMetrics(d),
     skipGraph ? "" : taskGraphs(d.files, d.rel_dir || relDir, d.urls),
   ].filter(Boolean);
   /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
@@ -2841,17 +3901,133 @@ document.addEventListener("click", e => {
   if(g){
     MSTATE.g = g.getAttribute("data-mg");
     MSTATE.open = "";
-    document.getElementById("page-results").innerHTML = renderResults();
+    repaintCards();
+    return;
+  }
+  /* THE DOT BEFORE THE ROW. Checked ahead of [data-mk] because it sits inside
+     that row -- closest() would otherwise find the row first and explain the
+     metric instead of plotting it. */
+  if(e.target.closest("[data-gclose]")){ GFULL = false; repaintCards(); return; }
+  if(e.target.closest("[data-gopen]")){ GFULL = true; repaintCards(); return; }
+  const sb = e.target.closest("[data-slope]");
+  if(sb){
+    const key = sb.getAttribute("data-slope");
+    SLICE.slope = SLICE.slope === key ? "" : key;
+    repaintCards();
+    return;
+  }
+  const sr = e.target.closest("[data-ses]");
+  if(sr){
+    const name = sr.getAttribute("data-ses");
+    SLICE.session = SLICE.session === name ? "" : name;
+    repaintCards();
+    return;
+  }
+  const mp = e.target.closest("[data-mp]");
+  if(mp){
+    const key = mp.getAttribute("data-mp");
+    const at = MSTATE.plot.indexOf(key);
+    if(at >= 0){ MSTATE.plot.splice(at, 1); }
+    else { MSTATE.plot.push(key); VHSTATE.on = []; }
+    repaintCards();
+    return;
+  }
+  if(e.target.closest("[data-mgmode]")){
+    MSTATE.mode = MSTATE.mode === "index" ? "value" : "index";
+    repaintCards();
+    return;
+  }
+  if(e.target.closest("[data-mgclear]")){
+    MSTATE.plot = [];
+    repaintCards();
     return;
   }
   const k = e.target.closest("[data-mk]");
   if(k){
     const key = k.getAttribute("data-mk");
-    MSTATE.open = MSTATE.open === key ? "" : key;
-    document.getElementById("page-results").innerHTML = renderResults();
+    const at = MSTATE.plot.indexOf(key);
+    if(at >= 0){
+      /* SECOND TAP CLEARS BOTH. */
+      MSTATE.plot.splice(at, 1);
+      /* ...but only closes the explanation if it was THIS row's. Unplotting a
+         metric you left open three rows ago must not shut the one you are
+         reading now. */
+      if(MSTATE.open === key) MSTATE.open = "";
+    } else {
+      MSTATE.plot.push(key);
+      MSTATE.open = key;
+      /* Same exchange as the dot made: a metric and a variable cannot share the
+         graph, so the variables let go. */
+      VHSTATE.on = [];
+    }
+    repaintCards();
+    return;
+  }
+  /* A VARIABLE NAME: add it to the shared graph, or take it off. APPENDED, never
+     inserted, because position in this list IS the series colour -- a variable
+     that changed colour when a different one was removed would no longer match
+     its own block in the table underneath. */
+  const vh = e.target.closest("[data-vh]");
+  if(vh){
+    const name = vh.getAttribute("data-vh");
+    const at = VHSTATE.on.indexOf(name);
+    if(at >= 0){ VHSTATE.on.splice(at, 1); }
+    else { VHSTATE.on.push(name); MSTATE.plot = []; }
+    repaintCards();
     return;
   }
 });
+
+/* BOTH PAGES, NOT JUST RESULTS. taskCard() is reached from taskPanel on the
+   Results job card AND from renderTimeline inside renderActive(), so a handler
+   that repainted only `page-results` left every one of these controls dead on
+   the Active tab -- while still mutating the shared state behind it, which then
+   surfaced on Results as a filter nobody set there. Repainting both is what
+   "page-wide" already claimed to mean. */
+/* WHERE THE STICKY GRAPH COMES TO REST: directly under the header, whatever
+   height the header happens to be. Measured rather than assumed, and re-measured
+   on resize because the header wraps. */
+function stickTop(){
+  const h = document.querySelector("header");
+  if(h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px");
+}
+window.addEventListener("resize", stickTop);
+
+/* IS IT HOLDING THE TOP RIGHT NOW. Read off the element's own rectangle rather
+   than off a scroll threshold: the card's position in the document changes every
+   time a badge above it grows or shrinks, and a remembered offset would be wrong
+   the first time anything did.
+
+   rAF-throttled, and the listener is passive -- this runs on every scroll frame
+   on a phone and must never be the reason a scroll stutters. */
+let _stuckRaf = 0;
+function syncStuck(){
+  _stuckRaf = 0;
+  const hdr = parseFloat(getComputedStyle(document.documentElement)
+                .getPropertyValue("--hdr")) || 64;
+  document.querySelectorAll(".gbadge").forEach(el => {
+    /* +1 for sub-pixel: a card resting exactly on the header reports 76.98. */
+    el.classList.toggle("stuck", el.getBoundingClientRect().top <= hdr + 1);
+  });
+}
+window.addEventListener("scroll", () => {
+  if(!_stuckRaf) _stuckRaf = requestAnimationFrame(syncStuck);
+}, {passive: true});
+/* Once the page exists, and again after any repaint -- a wrapped header is a
+   different height, and a repaint can change what the header says. */
+if(document.readyState === "loading")
+  document.addEventListener("DOMContentLoaded", stickTop);
+else stickTop();
+
+function repaintCards(){
+  document.getElementById("page-results").innerHTML = renderResults();
+  document.getElementById("page-active").innerHTML = renderActive();
+  stickTop();
+  /* The card is a new element after a repaint, so the class has to be put back
+     on it -- otherwise tapping a metric while scrolled down un-collapses the
+     graph under your thumb. */
+  syncStuck();
+}
 
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-rtask]");
