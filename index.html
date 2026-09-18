@@ -462,6 +462,34 @@ article.jrow{cursor:default;}
 /* Swept, not the group's, and nobody said it was a rider. That is two records
    disagreeing and it gets the colour this app reserves for wrong. */
 .tmem.stray{background:rgba(224,104,90,.18);color:var(--bad);}
+/* THE VERDICT CHIP. Widen and narrow are different ACTIONS, not two ends of one
+   dial, so they get different colours rather than one scale -- and NO SIGNAL is
+   deliberately the quietest thing on the row, because the honest answer to a
+   shapeless response is to do nothing. */
+.tshape{
+  font-size:.58rem;font-weight:700;letter-spacing:.06em;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;
+}
+.tshape.widen{background:rgba(224,139,74,.20);color:#F0A05E;}
+.tshape.narrow{background:rgba(95,190,149,.16);color:var(--good);}
+.tshape.noisy{background:transparent;color:var(--faint);border:1px solid var(--line);}
+/* The numbers that make the verdict actionable. Mono and unboxed -- it reads as
+   the sentence the chip started, not as a fourth chip competing with it. */
+.tshaped{
+  font-size:.66rem;color:var(--dim);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+/* The curve button and its correlations, under the row they belong to. */
+.tsub{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin:-2px 0 4px 0;
+}
+.tcorr{
+  font-size:.63rem;color:var(--faint);
+  font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;
+}
 .tvar.swept .tvn{flex:1 0 100%;}
 .tvar.swept .tvr{
   color:var(--text);border-color:rgba(140,160,172,.45);
@@ -2033,8 +2061,14 @@ function renderResultsJob(r){
         metricsBadge(tasks[open]) + slopeBadge(tasks[open]) +
         sessionBadge(tasks[open])
       : tasks.length
-        /* How many non-backtest tasks the job has reached, this one included. */
-        ? optimizeBadge(tasks[open],
+        /* THE GRAPH BADGE RIDES A SWEEP TOO. It was backtest-only, so a response
+           curve had nowhere to draw -- the chip toggled and the page did
+           nothing. On a sweep it renders ONLY when a curve is on: there are no
+           metrics behind it to fall back to, so it is absent the rest of the
+           time rather than empty. */
+        ? graphBadge(tasks[open], rep) +
+          /* How many non-backtest tasks the job has reached, this one included. */
+          optimizeBadge(tasks[open],
             tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length)
         : "") +
     (tasks.length ? graphFull(tasks[open], rep) : "") +
@@ -3026,8 +3060,10 @@ function graphBadge(t, rep){
   if(!d) return "";
   const hist = isBacktest(t) ? ((rep || {}).variable_history || null) : null;
   const vars = (d.variables || []);
-  const body = (hist && VHSTATE.on.length)
-    ? varHistoryGraph(hist, vars)
+  /* THREE SOURCES, ONE AXIS, NEVER TOGETHER -- a response curve's x is a
+     variable's VALUE, while a history's and a metric's are rounds. */
+  const body = SWSTATE.on.length ? sweepCurve(d.variables, d.swept)
+    : (hist && VHSTATE.on.length) ? varHistoryGraph(hist, vars)
     : (d.metrics ? metricGraph(d) : "");
   if(!body) return "";
   return `<div class="card gbadge"><div class="card-in">` + body + `</div></div>`;
@@ -3148,8 +3184,8 @@ function graphFull(t, rep){
   if(!d) return "";
   const hist = isBacktest(t) ? ((rep || {}).variable_history || null) : null;
   const big = {w: 640, h: 300};
-  const body = (hist && VHSTATE.on.length)
-    ? varHistoryGraph(hist, d.variables || [], big)
+  const body = SWSTATE.on.length ? sweepCurve(d.variables, d.swept)
+    : (hist && VHSTATE.on.length) ? varHistoryGraph(hist, d.variables || [], big)
     : (d.metrics ? metricGraph(d, big) : "");
   if(!body) return "";
   return `<div class="gfull" data-gclose>
@@ -3750,6 +3786,147 @@ function taskVars(list, hist){
    from the group list looks exactly like a rider and might instead be two
    records disagreeing -- so absence alone gets the loud warning below rather
    than a tidy label that would bury it. */
+/* ---------- what the sweep's own shape is telling you ----------
+   Trevor, 2026-09-17: *"I want a variable shapeset that will tell me if we need
+   to narrow the search resolution, or widen it."*
+
+   THE CLASSIFICATION IS NOT NEW WORK -- `GoldBot_OptReportSummarizer` already
+   bins each parameter's passes and calls the shape, precisely so a reader can
+   "tell narrow-candidates from widen-candidates from dead params at a glance".
+   It has never reached a screen. This is that verdict, said as the action:
+
+     EDGE-PIN-HIGH   best at the ceiling of the tested range -> WIDEN UP
+     EDGE-PIN-LOW    best at the floor                       -> WIDEN DOWN
+     INTERIOR-PEAK   the range brackets the best             -> NARROW
+     NOISY/MIXED     no shape at all                         -> NO SIGNAL
+
+   🔴 NARROW AND WIDEN ARE NOT OPPOSITE ENDS OF ONE DIAL. Widen moves the BOUNDS
+   because the optimum is outside them; narrow keeps the bounds and spends the
+   same passes on finer steps inside them. Answering "which" with a single arrow
+   would collapse two different actions.
+
+   ⚠️ IT SHOULD AGREE WITH THE STATE CHIP BESIDE IT, and when it does not that is
+   the interesting case rather than a bug: PINNED means the variable WON at its
+   edge, EDGE-PIN means the whole binned response leans that way. A PINNED
+   variable whose shape is NOISY won at the edge on noise. */
+const SHAPE_VERDICT = {
+  "EDGE-PIN-HIGH": ["widen", "WIDEN UP", "The best passes sit at the ceiling of the tested range, so the optimum may be outside it. Move the bounds up."],
+  "EDGE-PIN-LOW": ["widen", "WIDEN DOWN", "The best passes sit at the floor of the tested range. Move the bounds down."],
+  "INTERIOR-PEAK": ["narrow", "NARROW", "The range brackets the best value, so the bounds are right and the steps are coarse. Spend the same passes on a finer grid."],
+  "NOISY": ["noisy", "NO SIGNAL", "The binned response has no shape. Neither widening nor narrowing is justified by this round."],
+};
+/* THE VERDICT WITH NUMBERS ON IT. Trevor, 2026-09-17: *"Can that shape be more
+   specific than widen, narrow? How about narrow to a certain point? Variable
+   resolution kinda thing."*
+
+   🔴 IT READS THE BINS AND STOPS THERE. A narrowed range is arithmetic on the
+   curve -- the peak bin and its two neighbours -- and the step that follows from
+   keeping the same point count, which IS the resolution being asked about. That
+   much the app can say.
+
+   ⚠️ IT DOES NOT PROPOSE A WIDENED RANGE, and that restraint is deliberate.
+   Widening is not "add some room": `compute_directional_widen_step_count` solves
+   for the largest step count such that
+
+       widen**widening_vars * base**(other_vars) <= 20,000
+
+   so the answer depends on the whole GROUP's shape, not on this variable's
+   curve. A number invented here would look like the engine's and disagree with
+   it -- the exact failure this file keeps recording. So for a widen the card
+   states the EVIDENCE (still climbing, and by how much in the last bin) and
+   leaves the amount to the engine.
+
+   NARROWING HAS NO SUCH PROBLEM: it keeps the point count and moves the bounds
+   inward, so the pass budget is untouched by construction. */
+function shapeDetail(g){
+  const bins = (g || {}).bins || [];
+  if(bins.length < 3) return "";
+  const v = shapeVerdict(g.shape);
+  if(!v) return "";
+  const vals = bins.map(b => Number(b.result));
+  const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  const pts = Number(g.points) || bins.length;
+
+  if(v[0] === "narrow"){
+    let k = 0;
+    vals.forEach((x, i) => { if(x > vals[k]) k = i; });
+    /* The peak bin and one either side -- the narrowest window the curve
+       actually supports. Clamped, so a peak next to an edge still gives two
+       bins rather than running off the end. */
+    const a = bins[Math.max(0, k - 1)].v, b = bins[Math.min(bins.length - 1, k + 1)].v;
+    const step = pts > 1 ? (Number(b) - Number(a)) / (pts - 1) : null;
+    return `to ${esc(num(a))} → ${esc(num(b))}` +
+      (step ? ` · Δ${esc(num(Number(step.toPrecision(3))))} at the same ${esc(pts)} steps` : "");
+  }
+  if(v[0] === "widen"){
+    const up = v[1].indexOf("UP") >= 0;
+    const edge = up ? bins[bins.length - 1] : bins[0];
+    const prev = up ? bins[bins.length - 2] : bins[1];
+    const d = Number(edge.result) - Number(prev.result);
+    return `past ${esc(num(edge.v))} · still climbing, ${d >= 0 ? "+" : "−"}${
+      esc(num(Number(Math.abs(d).toPrecision(2))))} in the last bin`;
+  }
+  /* NOISY: quantify the flatness, so "no signal" is a measurement rather than a
+     shrug -- a 0.09 spread and a 0.9 spread are different kinds of nothing. */
+  return `best bin only +${esc(num(Number((hi - lo).toPrecision(2))))} over the worst`;
+}
+
+function shapeVerdict(shape){
+  const k = String(shape || "").toUpperCase();
+  if(SHAPE_VERDICT[k]) return SHAPE_VERDICT[k];
+  if(k.indexOf("INTERIOR") === 0) return SHAPE_VERDICT["INTERIOR-PEAK"];
+  if(k.indexOf("EDGE-PIN-HIGH") === 0) return SHAPE_VERDICT["EDGE-PIN-HIGH"];
+  if(k.indexOf("EDGE-PIN-LOW") === 0) return SHAPE_VERDICT["EDGE-PIN-LOW"];
+  if(k) return SHAPE_VERDICT["NOISY"];
+  return null;
+}
+
+/* Which response curves are on the shared graph. Same shape as VHSTATE and for
+   the same reason -- and the same exclusivity: a response curve's x axis is a
+   VARIABLE'S VALUE, a history's is rounds and a metric's is rounds too. Three
+   populations, one axis, never together. */
+const SWSTATE = { on: [] };
+const swOn = name => SWSTATE.on.indexOf(name) >= 0;
+function swColour(name){
+  const i = SWSTATE.on.indexOf(name);
+  return i < 0 ? "var(--faint)" : VH_SERIES[i % VH_SERIES.length];
+}
+
+/* THE RESPONSE CURVE. Mean Result per bin of the variable's tested range -- the
+   picture the shape verdict is read off, so you can disagree with it. */
+function sweepCurve(all, swept){
+  const grid = {};
+  (swept || []).forEach(v => { if(v && v.name) grid[v.name] = v; });
+  const chosen = SWSTATE.on.filter(n => grid[n] && (grid[n].bins || []).length);
+  if(!chosen.length) return "";
+  const width = Math.max.apply(null, chosen.map(n => grid[n].bins.length));
+  const labels = [];
+  for(let i = 0; i < width; i++){
+    const b = grid[chosen[0]].bins[i];
+    labels.push(b ? num(b.v) : "");
+  }
+  const series = chosen.map(name => {
+    const bins = grid[name].bins;
+    return {colour: swColour(name),
+            span: sgSpan(bins.map(b => b.result)),
+            points: bins.map((b, i) => ({i: i, value: b.result}))};
+  });
+  const legend = chosen.map(name => {
+    const g = grid[name], v = shapeVerdict(g.shape);
+    return `<div class="mglgr none" style="cursor:default">
+        <span class="mgdash" style="background:${swColour(name)}"></span>
+        <span class="nm">${esc(spaceOut(stripRegime(name)))}</span>
+        <span>${v ? esc(v[1]) : ""}</span></div>`;
+  }).join("");
+  return seriesGraph(labels, series) +
+    `<div class="mglg">${legend}</div>` +
+    `<div class="vhcap">Mean <b>Result</b> per bin across the range each variable
+      was swept over \u2014 the picture the shape verdict is read off. Left is the
+      floor of the range, right is the ceiling. A line still climbing at the right
+      edge is why WIDEN UP; a hump in the middle is why NARROW.
+      ${chosen.length > 1 ? "Each line is scaled to its own range." : ""}</div>`;
+}
+
 function sweepVars(all, swept){
   const grid = {};
   (swept || []).forEach(v => { if(v && v.name) grid[v.name] = v; });
@@ -3790,8 +3967,29 @@ function sweepVars(all, swept){
          variable's progress through ITS GROUP's rounds, and a rider is not on
          that journey. Saying why beats leaving a gap where every other row has
          a chip. */
-      (rider ? `<span class="tvr" style="border-color:transparent;color:var(--faint)">no group state</span>` : "") + `
-      </div>`;
+      (rider ? `<span class="tvr" style="border-color:transparent;color:var(--faint)">no group state</span>` : "") +
+      /* THE VERDICT, and it is the row's payload -- what to DO about this
+         variable next round. Only a swept variable has one: a held variable
+         produced no passes to bin. */
+      (g && shapeVerdict(g.shape)
+        ? `<span class="tshape ${shapeVerdict(g.shape)[0]}">${
+             esc(shapeVerdict(g.shape)[1])}</span>` +
+          (shapeDetail(g) ? `<span class="tshaped">${shapeDetail(g)}</span>` : "")
+        : "") + `
+      </div>` +
+      /* The curve behind the verdict, one tap away, in the shared graph at the
+         top of the card. Only offered when there are bins to draw. */
+      (g && (g.bins || []).length
+        ? `<div class="tsub"><button type="button" class="gch${
+             swOn(name) ? " on" : ""}" data-swcurve="${esc(name)}">${
+             swOn(name) ? "Hide curve" : "Response curve"}</button>
+           <span class="tcorr">${
+             g.corr_result != null
+               ? "r=" + esc(Number(g.corr_result).toFixed(2)) + " vs Result" : ""}${
+             g.corr_trades != null
+               ? " \u00b7 r=" + esc(Number(g.corr_trades).toFixed(2)) + " vs Trades" : ""}</span>
+           </div>`
+        : "");
   }).join("");
 }
 
@@ -4461,7 +4659,7 @@ document.addEventListener("click", e => {
     const key = mp.getAttribute("data-mp");
     const at = MSTATE.plot.indexOf(key);
     if(at >= 0){ MSTATE.plot.splice(at, 1); }
-    else { MSTATE.plot.push(key); VHSTATE.on = []; }
+    else { MSTATE.plot.push(key); VHSTATE.on = []; SWSTATE.on = []; }
     repaintCards();
     return;
   }
@@ -4489,6 +4687,7 @@ document.addEventListener("click", e => {
     } else {
       MSTATE.plot.push(key);
       MSTATE.open = key;
+      SWSTATE.on = [];
       /* Same exchange as the dot made: a metric and a variable cannot share the
          graph, so the variables let go. */
       VHSTATE.on = [];
@@ -4505,7 +4704,16 @@ document.addEventListener("click", e => {
     const name = vh.getAttribute("data-vh");
     const at = VHSTATE.on.indexOf(name);
     if(at >= 0){ VHSTATE.on.splice(at, 1); }
-    else { VHSTATE.on.push(name); MSTATE.plot = []; }
+    else { VHSTATE.on.push(name); MSTATE.plot = []; SWSTATE.on = []; }
+    repaintCards();
+    return;
+  }
+  const sw = e.target.closest("[data-swcurve]");
+  if(sw){
+    const name = sw.getAttribute("data-swcurve");
+    const at = SWSTATE.on.indexOf(name);
+    if(at >= 0){ SWSTATE.on.splice(at, 1); }
+    else { SWSTATE.on.push(name); MSTATE.plot = []; VHSTATE.on = []; }
     repaintCards();
     return;
   }
