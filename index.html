@@ -476,6 +476,21 @@ article.jrow{cursor:default;}
 .tshape.noisy{background:transparent;color:var(--faint);border:1px solid var(--line);}
 /* The numbers that make the verdict actionable. Mono and unboxed -- it reads as
    the sentence the chip started, not as a fourth chip competing with it. */
+/* ---------- the next-round rows ----------
+   The name takes its own line for the reason the sweep badge's rows do: three
+   chips plus a name does not fit 375px, and squeezing the name stacks it into
+   three words beside a tidy row of chips. */
+.nrv{
+  border-top:1px solid var(--line);
+  padding:9px 2px 3px;
+}
+.nrv:first-of-type{border-top:0;}
+.nrn{font-size:.78rem;font-weight:600;color:var(--text);margin-bottom:5px;}
+.nrc{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px;}
+.nrw{
+  font-size:.6rem;color:var(--faint);letter-spacing:.04em;
+  font-family:"Roboto Mono",ui-monospace,monospace;
+}
 .tshaped{
   font-size:.66rem;color:var(--dim);
   font-family:"Roboto Mono",ui-monospace,monospace;
@@ -888,6 +903,17 @@ article.jrow{cursor:default;}
 .pickdone{
   font-size:.75rem;color:var(--good);line-height:1.45;
   background:rgba(95,190,149,.10);border-radius:7px;padding:9px 10px;
+}
+.pickwarn{
+  font-size:.75rem;color:var(--bad);line-height:1.45;
+  background:rgba(224,104,90,.10);border-radius:7px;padding:9px 10px;
+}
+/* The withheld count sits with the slice chips because it describes the
+   POPULATION the slices are cut from, not a footnote about one of them. */
+.optheld{
+  font-size:.7rem;color:var(--warn);line-height:1.45;
+  background:rgba(224,139,74,.10);border-radius:7px;
+  padding:7px 9px;margin:6px 0 2px;
 }
 
 /* ---------- results rows ---------- */
@@ -2069,7 +2095,8 @@ function renderResultsJob(r){
         ? graphBadge(tasks[open], rep) +
           /* How many non-backtest tasks the job has reached, this one included. */
           optimizeBadge(tasks[open],
-            tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length)
+            tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length) +
+          nextRoundBadge(tasks[open])
         : "") +
     (tasks.length ? graphFull(tasks[open], rep) : "") +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
@@ -3390,10 +3417,51 @@ function optFmt(p, k){
   return def[3] ? v.toFixed(def[3]) : Math.round(v).toLocaleString();
 }
 
-function optPasses(d){
+/* ---------- 🔴 A SENTINEL IS NOT A SCORE ----------
+   A sweep reports back through the Result column and nothing else, so two
+   values in it are MESSAGES rather than measurements. Ranking one is not a
+   cosmetic error: the early-abort's window was cut short, so its trades, profit
+   and drawdown are whatever it had reached at an ARBITRARY date -- and `Closest
+   to target` ranks on exactly that trade count, which is how a pass the engine
+   refused ends up presented as the best one in the sweep.
+
+   🔴 FILTER WITH THE SET, NEVER AGAINST ONE VALUE. This is the renderer's copy
+   of the engine's single definition of a valid pass. Four call sites across
+   three files once tested equality against the older, single sentinel, and
+   every one of them counted an early-abort as a real candidate -- including the
+   one that auto-applies a winner.
+
+   THE TWO STAY APART ON SCREEN FOR THE REASON THEY STAY APART IN THE ENGINE:
+   collapsing them loses "this region trades far too much" against "this region
+   barely trades", which is most of what a leaderboard is for. */
+const OPT_SENTINELS = [
+  [-999, "disqualified"],
+  [-998, "early-aborted"],
+];
+const optSentinel = p => OPT_SENTINELS.find(x => Number(p.result) === x[0]) || null;
+
+/* ONE SPLIT, and everything that counts or ranks reads it -- the renderer's
+   valid_passes(). Returns null only when nothing was published at all, which is
+   a different state from "published, and none of it can be ranked". */
+function optSplit(d){
   const all = (d || {}).passes;
   if(!Array.isArray(all) || !all.length) return null;
-  const rows = all.slice();
+  const valid = [], held = [];
+  all.forEach(p => { (optSentinel(p) ? held : valid).push(p); });
+  return {all, valid, held};
+}
+
+/* "14 disqualified, 3 early-aborted" -- fixed order, and a kind with none in it
+   is left out rather than printed as a zero. */
+function optHeldParts(held){
+  return OPT_SENTINELS.map(x => {
+    const n = held.filter(p => Number(p.result) === x[0]).length;
+    return n ? n.toLocaleString() + " " + x[1] : null;
+  }).filter(Boolean);
+}
+
+function optPasses(valid, d){
+  const rows = valid.slice();
   const cad = d.cadence || {};
   const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
   const mid = (isFinite(lo) && isFinite(hi)) ? (lo + hi) / 2 : null;
@@ -3426,18 +3494,45 @@ function optimizeBadge(t, nth){
   const two = nth >= 2;
   const d = (t || {}).detail || {};
   const title = two ? "Second pass" : "The sweep";
-  const rows = optPasses(d);
-  if(!rows){
+  const split = optSplit(d);
+  if(!split){
     return soonBadge(title, `<b>No pass table published.</b> The sweep's own
       results -- one row per pass with its result, profit and trade count -- are
       in the optimization report the round produced. Nothing forwards them to the
       app yet, so there is nothing here to rank or to choose from.`);
   }
+  const heldParts = optHeldParts(split.held);
+  /* 🔴 PUBLISHED, AND NONE OF IT RANKABLE IS A REAL OUTCOME, not an error and
+     not the same as nothing arriving. A group that cannot reach its band can
+     have every cell refused, and an empty table under a full set of chips would
+     read as a renderer that broke. */
+  if(!split.valid.length){
+    return soonBadge(title, `<b>Every pass was refused.</b> All
+      ${split.all.length.toLocaleString()} carry a sentinel result instead of a
+      score \u2014 ${esc(heldParts.join(", "))}. There is nothing to rank or to
+      choose from: every cell this sweep tried traded too little, too much, or
+      outside its band.`);
+  }
+  const rows = optPasses(split.valid, d);
 
   const cad = d.cadence || {};
   const assigned = cad.pass_number != null ? String(cad.pass_number) : null;
   const key = String((t || {}).at || title);
   const chosen = OPT_PICK[key] != null ? String(OPT_PICK[key]) : assigned;
+  /* 🔴 THE FREE FIELD IS THE SAME HOLE WEARING A DIFFERENT HAT. The table can
+     only offer valid passes now, but "Or any pass" takes a number and the number
+     of a refused pass is as typeable as any other. An ASSIGNED one is louder
+     still: it means something upstream ranked a sentinel, which is the exact
+     shape of the bug this filter exists for, so the card says so rather than
+     dropping the row quietly and leaving the highlight to land nowhere. */
+  const chosenHeld = chosen != null
+    ? split.held.find(p => String(p.pass) === chosen) : null;
+  const assignedHeld = assigned != null
+    ? split.held.find(p => String(p.pass) === assigned) : null;
+  const heldNote = !split.held.length ? "" :
+    `<div class="optheld"><b>${split.held.length.toLocaleString()} of ${
+       split.all.length.toLocaleString()} withheld</b> \u2014 ${esc(heldParts.join(", "))}.
+       ${split.valid.length.toLocaleString()} ranked.</div>`;
   const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
   const inBand = n => isFinite(lo) && isFinite(hi) && n >= lo && n <= hi;
   const cols = OPTSTATE.cols;
@@ -3486,8 +3581,8 @@ function optimizeBadge(t, nth){
            "Pick a different pass" named one of the two things it is for. */
         OPTSTATE.open ? "Hide table" : "Table"}</button></div>` +
     (!OPTSTATE.open ? "" :
-      slices + colChips + head + body +
-      (assigned && !rows.some(p => String(p.pass) === assigned)
+      slices + heldNote + colChips + head + body +
+      (assigned && !assignedHeld && !rows.some(p => String(p.pass) === assigned)
         ? `<div class="vhcap" style="margin-top:6px">Pass ${esc(assigned)}, the one
              this round assigned, is not in this slice.</div>`
         : "") +
@@ -3498,7 +3593,18 @@ function optimizeBadge(t, nth){
                 value="${chosen != null && !rows.some(p => String(p.pass) === chosen)
                          ? esc(chosen) : ""}">
        </div>` +
-      (chosen != null && chosen !== assigned
+      (assignedHeld
+        ? `<div class="pickwarn">Pass ${esc(assigned)} was assigned by the round,
+             and it came back ${esc(optSentinel(assignedHeld)[1])} rather than
+             scored. Its numbers describe a run that was refused, so they cannot
+             be compared with the passes below.</div>`
+        : "") +
+      (chosenHeld && chosenHeld !== assignedHeld
+        ? `<div class="pickwarn">Pass ${esc(chosen)} is not a candidate \u2014 it came
+             back ${esc(optSentinel(chosenHeld)[1])} rather than scored, which is
+             why it is not in the table.</div>`
+        : "") +
+      (chosen != null && !chosenHeld && chosen !== assigned
         ? `<div class="pickdone">Pass ${esc(chosen)} chosen \u2014 not sent.
              ${assigned ? "The round still has pass " + esc(assigned) + " assigned." : ""}</div>`
         : "") +
@@ -3508,9 +3614,203 @@ function optimizeBadge(t, nth){
         isFinite(lo) ? " (" + esc(lo.toLocaleString()) + "\u2013" +
           esc(hi.toLocaleString()) + " trades)" : ""}. <b>Closest to target</b>
         ignores the columns entirely \u2014 nearness to the band is its own ranking.
+        A <b>withheld</b> pass reported a refusal through the result column instead
+        of a score: <b>disqualified</b> ran its whole window and missed the band,
+        <b>early-aborted</b> was stopped part-way for overtrading so its trades and
+        profit describe a window that never finished. Neither is comparable with a
+        scored pass, and Closest to target would have ranked one on a trade count
+        that was never final.
         \u26a0\ufe0f Choosing changes nothing yet: applying a pass re-runs both backtests
         from the pre-round snapshot, and the app has no channel to ask for that.</div>`) +
     `</div></div>`;
+}
+
+/* ---------- the next round: the gate, said as the decision ----------
+   🔴 THIS IS THE DECISION; THE SWEEP BADGE ABOVE IS THE EVIDENCE. They are
+   read off different things -- that verdict comes from the binned response
+   curve, this comes from the win state, the point count and what the budget can
+   buy -- so they can disagree, and the disagreement is the fact worth having. A
+   variable whose centre keeps winning on a curve with no shape converged on
+   nothing.
+
+   🔴 WHAT IT WILL AND WILL NOT PROPOSE, and the line is the pass budget.
+   Narrowing keeps the point count and moves the bounds inward, so it cannot
+   change what a round costs and the card can state it outright. Widening moves
+   the bounds outward, and the amount depends on the WHOLE group's shape rather
+   than this variable's curve -- so the card states the evidence and leaves the
+   number to the engine, exactly as the verdict above does. The affordable point
+   count is the engine's too: it is published, never worked out here.
+
+   🔴 A RANGE IS NOT A LADDER RUNG. Halving is a move along
+   FULL/HALF/QUARTER/EIGHTH and stops at the floor. A range rebuilt from the
+   curve is not on that ladder at all and has no floor to stop at -- which is
+   why the two say different words and only one of them can be held at EIGHTH. */
+const NR_CURVE_POINTS = 5;   /* under this, a range has no readable interior */
+const NR_LADDER = ["FULL", "HALF", "QUARTER", "EIGHTH"];
+
+/* The centre of the swept range. For a variable whose CENTRE won, this is the
+   winning value -- which is what the narrowed range re-centres on. */
+function nrCentre(v){ return (Number(v.min) + Number(v.max)) / 2; }
+
+/* 🔴 WOULD A FINER STEP ACTUALLY BE FINER? An INT parameter's step reaches the
+   .set file as an integer, so half of 1 is not 0.5, it is 1 -- or worse, 0. The
+   engine makes this check per variable against its own value; the card makes
+   the same check against the step it was published, which is the same question
+   asked of the same number. 87 of 93 INT inputs in the EA hit this at some
+   level, so it is the common case and not a corner. */
+function nrFloorsToSame(v, nextStep){
+  if(String(v.param_type || "DOUBLE").toUpperCase() !== "INT") return false;
+  return Math.max(1, Math.round(nextStep)) >= Math.max(1, Math.round(Number(v.step)));
+}
+
+/* The peak bin and one either side -- the narrowest window the curve supports,
+   clamped so a peak beside an edge still yields two bins. Same arithmetic as
+   shapeDetail(), deliberately: two places proposing DIFFERENT narrowed ranges
+   off one curve would be worse than either. */
+function nrPeakWindow(v){
+  const bins = (v || {}).bins || [];
+  if(bins.length < 3) return null;
+  let k = 0;
+  bins.forEach((b, i) => { if(Number(b.result) > Number(bins[k].result)) k = i; });
+  return [Number(bins[Math.max(0, k - 1)].v),
+          Number(bins[Math.min(bins.length - 1, k + 1)].v)];
+}
+
+function nrRound(x){ return Number(Number(x).toPrecision(3)); }
+
+/* WHAT NEXT ROUND DOES TO ONE VARIABLE. Returns the chip, its colour, the
+   proposed sweep where there is one, and the sentence that says why. */
+function nrGate(v, pointsNext){
+  const shape = String(v.shape || "").toUpperCase();
+  const state = String(v.state || "").toUpperCase();
+  const res = String(v.resolution || "FULL").toUpperCase();
+  const pts = Number(v.points) || 0;
+  const step = Number(v.step);
+
+  if(state === "LOCKED")
+    return {chip: "EXCLUDED", cls: "noisy", why: `Locked. It is not swept next
+      round at all — it comes back on its own re-check, and a re-check is where
+      a locked variable earns a finer step.`};
+
+  if(shape.indexOf("EDGE-PIN") === 0){
+    const up = shape.indexOf("HIGH") >= 0;
+    return {chip: up ? "WIDEN UP" : "WIDEN DOWN", cls: "widen", why: `The best
+      passes sit at the ${up ? "ceiling" : "floor"} of the tested range, so the
+      bounds move ${up ? "up" : "down"}. <b>By how much is the engine's to say</b>
+      — the widened step count is solved across the whole group, not off this
+      curve.`};
+  }
+
+  if(shape.indexOf("NOISY") === 0 || shape.indexOf("MIXED") >= 0)
+    return {chip: "HELD", cls: "noisy", why: `The binned response has no shape,
+      so nothing here argues for moving the bounds or the step. <b>A winner on a
+      curve like this is close to a coin flip</b>, and narrowing around it would
+      bake that in for the rest of the epoch.`};
+
+  /* 🔴 ENOUGH POINTS TO READ A CURVE, then rebuild the range from it. This is
+     the FLOATING case: a value strictly inside the range won, the bins either
+     side of it say where the peak really sits, and the new bounds come from
+     that rather than from a ladder. */
+  if(shape.indexOf("INTERIOR") === 0 && pts >= NR_CURVE_POINTS){
+    const w = nrPeakWindow(v);
+    if(w){
+      const n = Number(pointsNext) || pts;
+      const nextStep = n > 1 ? (w[1] - w[0]) / (n - 1) : null;
+      if(nextStep && nrFloorsToSame(v, nextStep))
+        return {chip: "HELD", cls: "noisy", why: `The curve brackets the peak,
+          but this is an integer parameter and the tighter range still floors to
+          a step of ${esc(num(Math.max(1, Math.round(step))))}. <b>Nothing would
+          actually be finer</b>, so it holds where it is.`};
+      return {chip: "NARROW", cls: "narrow",
+        next: `${esc(num(nrRound(w[0])))} \u2192 ${esc(num(nrRound(w[1])))}` +
+              (nextStep ? ` \u00b7 \u0394${esc(num(nrRound(nextStep)))} at ${esc(n)} points` : ""),
+        why: `A value inside the range won and the bins either side say where the
+          peak sits, so the bounds come in to bracket it${
+          Number(pointsNext) && Number(pointsNext) !== pts
+            ? ` \u2014 at <b>${esc(n)}</b> points rather than ${esc(pts)}, which is what
+              the budget buys next round` : " at the same point count"}.`};
+    }
+  }
+
+  /* 🔴 THE CENTRE WON AND THERE IS NOTHING TO READ. Three points are the floor
+     and the ceiling and the middle: the middle winning says the peak is
+     somewhere between its neighbours and nothing more. So the same bounds are
+     looked at twice as closely -- half the step, half the span, the point count
+     and therefore the pass cost untouched. */
+  if(state === "CENTER" && pts < NR_CURVE_POINTS){
+    const at = NR_LADDER.indexOf(res);
+    if(at >= 0 && at >= NR_LADDER.length - 1)
+      return {chip: "HELD", cls: "noisy", why: `The centre won again, but the
+        resolution ladder is at <b>EIGHTH</b> and there is no finer rung. It
+        holds here and keeps its value.`};
+    const nextStep = step / 2;
+    if(nrFloorsToSame(v, nextStep))
+      return {chip: "HELD", cls: "noisy", why: `The centre won, but this is an
+        integer parameter and a finer step still floors to
+        ${esc(num(Math.max(1, Math.round(step))))}. <b>Halving would change
+        nothing that reaches the .set file</b>, so it holds at ${esc(res)}.`};
+    const c = nrCentre(v), half = nextStep * (pts - 1) / 2;
+    return {chip: "HALVE", cls: "narrow",
+      next: `${esc(num(nrRound(c - half)))} \u2192 ${esc(num(nrRound(c + half)))}` +
+            ` \u00b7 \u0394${esc(num(nrRound(nextStep)))} at the same ${esc(pts)} points`,
+      why: `The centre won at ${esc(pts)} points, which says the peak is between
+        its neighbours and nothing more. <b>Same ground, looked at twice as
+        closely</b>: half the step, half the span, the same number of passes.` +
+        (at >= 0 ? ` ${esc(res)} \u2192 ${esc(NR_LADDER[at + 1])}.` : "")};
+  }
+
+  return {chip: "HELD", cls: "noisy", why: `Nothing this round argues for moving
+    the bounds or the step. It sweeps again as it is.`};
+}
+
+function nextRoundBadge(t){
+  const d = (t || {}).detail || {};
+  const nr = d.next_round || {};
+  const vars = Array.isArray(nr.vars) ? nr.vars : [];
+  if(!vars.length)
+    return soonBadge("Next round", `<b>Nothing published about the next round.</b>
+      What each variable does next -- a finer step, a rebuilt range, or nothing at
+      all -- is decided when the round is planned, from this sweep's own shape and
+      what the pass budget can buy. None of that is forwarded to the app yet, so
+      this card cannot say what is coming.`);
+
+  const pointsNext = Number(nr.points_next) || null;
+  const rows = vars.map(v => {
+    const g = nrGate(v, pointsNext);
+    return `<div class="nrv">
+        <div class="nrn">${esc(v.name)}</div>
+        <div class="nrc">
+          <span class="tshape ${g.cls}">${esc(g.chip)}</span>
+          <span class="nrw">${esc(String(v.state || "").toUpperCase())} \u00b7 ${
+            esc(Number(v.points) || "\u2014")} points \u00b7 ${
+            esc(String(v.resolution || "FULL").toUpperCase())}</span>
+        </div>
+        <div class="tshaped">${esc(num(Number(v.min)))} \u2192 ${esc(num(Number(v.max)))} \u00b7 \u0394${
+          esc(num(Number(v.step)))}${g.next ? `  \u21d2  ${g.next}` : ""}</div>
+        <div class="mdf">${g.why}</div>
+      </div>`;
+  }).join("");
+
+  /* THE BUDGET IS THE ENGINE'S NUMBER AND IS SHOWN AS ONE. The card does not
+     solve step**vars <= budget -- it prints what it was handed, because a
+     number invented here would look like the engine's and disagree with it. */
+  const foot = !pointsNext ? `<div class="vhcap">The point count each variable
+      gets next round is the engine's to decide, and it has not been published --
+      so a rebuilt range above is shown at the count this round used.</div>`
+    : `<div class="vhcap">Next round can buy <b>${esc(pointsNext)} points</b> per
+      variable across ${esc(nr.vars_next || vars.length)} active ones${
+      nr.budget ? `, against a ceiling of ${esc(Number(nr.budget).toLocaleString())}
+      passes for the group` : ""}. That count is the engine's, not this card's:
+      narrowing keeps it and costs nothing extra, which is why a narrowed range
+      can be proposed here and a widened one cannot.</div>`;
+
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">Next round</div>
+      <div class="sub" style="margin:0 0 6px">What each variable sweeps next, and
+        the gate that decided it. ⚠️ Proposed, not applied \u2014 the round is
+        planned when it starts.</div>
+      ${rows}${foot}
+    </div></div>`;
 }
 
 /* ---------- the metrics badge: one graph, several metrics ---------- */
