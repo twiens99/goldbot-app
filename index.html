@@ -133,7 +133,7 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .when{font-size:.69rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
 
 .title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;
-  /* A seed label is an identifier, not prose -- EMA_AB_TICKS_BEAR_EMA_PERIODS_MID
+  /* A seed label is an identifier, not prose -- they run to forty characters
      has no spaces to break at and ran off the card. */
   overflow-wrap:anywhere;}
 .sub{font-size:.83rem;color:var(--dim);margin-top:1px;}
@@ -1166,12 +1166,14 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     <section class="page" id="page-home"></section>
     <section class="page" id="page-active" hidden></section>
     <section class="page" id="page-results" hidden></section>
+    <section class="page" id="page-settings" hidden></section>
   </main>
 
   <nav role="tablist">
     <button role="tab" aria-selected="true" data-p="home"><span class="ic">⌂</span>Home</button>
     <button role="tab" aria-selected="false" data-p="active"><span class="ic">▶</span>Active</button>
     <button role="tab" aria-selected="false" data-p="results"><span class="ic">✓</span>Results</button>
+    <button role="tab" aria-selected="false" data-p="settings"><span class="ic">⚙</span>Settings</button>
   </nav>
 </div>
 
@@ -1193,7 +1195,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260918-111617";
+const APP_BUILD = "20260918-143610";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
@@ -1388,7 +1390,7 @@ function ago(sec){
 }
 
 /* HOW LONG THIS MACHINE HAS BEEN IN THIS PHASE. Trevor, 2026-09-16: *"I'd like
-   to see the time portion that it is in the SELECTING phase -- the moment the
+   to see the time portion that it is in the picking phase -- the moment the
    last task finished (or upon tray start) and the start of the next."*
 
    `phase_since` is job_control's own `updated` stamp, written as the phase is
@@ -1541,10 +1543,11 @@ function bktEl(id, trail, filterId){
 
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
 const running = f => f.group_id && f.phase;
-/* A PHASE WITH NO GROUP IS NOT IDLE. SELECTING writes no detail upstream, so
+/* A PHASE WITH NO GROUP IS NOT IDLE. The picking phase writes no detail
+   upstream, so
    regime, bucket, group and mode all arrive null and the phase is the only
    true thing on the record. `running` is false for it, which titled the card
-   "Idle -- no round" while it wore a SELECTING chip -- the card contradicted
+   "Idle -- no round" while it wore a picking chip -- the card contradicted
    itself, and the fabricated preview data was hiding it. */
 const picking = f => f.phase && !f.group_id;
 const completed = r => !r.failed;
@@ -1710,8 +1713,8 @@ const startedSeed = sd => STARTED_STATUSES.has(String(sd.status || "").toLowerCa
    it, and `claimed_by` stays behind as the record of who ran it, not as a claim
    on the machine now.
 
-   Measured 2026-09-16: the Laptop was 69% through a FULLTEST on
-   BEAR_EMA_PERIODS_LOW while its card read SWEEP and named an EMA A/B arm that
+   Measured 2026-09-16: the Laptop was 69% through a full-range backtest on
+   one group while its card read SWEEP and named an A/B arm that
    had finished two days earlier. Three seeds sat at consult with
    claimed_by=Laptop, `seedOnMachine` matched the first of them, and the rule
    that a claimed seed outranks the beacon then did exactly what it says --
@@ -2089,7 +2092,7 @@ function machineCard(f){
                 round type, and now the bucket -- and spent the card's biggest
                 type on them, leaving the one thing unique to this job in the
                 small grey sub-line underneath. The chips already say BULL, 1600
-                and OPTIMIZE; what they cannot say is WHICH GROUP.
+                and the sweep; what they cannot say is WHICH GROUP.
 
                 A SWEEP'S OWN NAME STILL WINS over the group it sweeps: on an
                 A/B the arm is the whole point, and two arms over one group are
@@ -2107,7 +2110,7 @@ function machineCard(f){
               ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
         </div>
         ${picking(f)
-            /* SELECTING writes no group, no mode and no percent, so this row is
+            /* Picking writes no group, no mode and no percent, so this row is
                otherwise empty and the card has nothing to say at all. How long
                it has been choosing is the one fact that exists. */
             ? metaRow([["Selecting for", phaseFor(f)]])
@@ -2728,7 +2731,8 @@ const seedOnMachine = m =>
 
 /* THE CARD IS THE JOB, NOT JUST THE BEACON. A beacon describes a ROUND, and a
    seeded sweep is not one: it carries no regime, no bucket, no group and no
-   mode, because `SELECTING writes nothing` upstream. So a machine running a
+   mode, because the picking phase writes nothing upstream. So a machine
+   running a
    named sweep against four variables rendered as "No group picked yet" with an
    empty card -- true about the beacon, useless about the job.
 
@@ -2771,7 +2775,7 @@ function jobsModel(){
       title: f.machine,
       // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
       // a sweep is not one -- so a machine part-way through a seeded sweep can
-      // truthfully report SELECTING with no group while it is plainly busy.
+      // truthfully report the picking phase with no group while it is busy.
       // Measured 2026-09-14: the Laptop read "choosing a group" for 90 minutes
       // while it held and ran the TICKS arm of an A/B. The seed record is the
       // stronger evidence: something claimed it, and nothing else can hold it.
@@ -4863,7 +4867,7 @@ function renderTimeline(tl){
           reportButtons(r, tl.rel_dir) + card + `</div>
       </div>`;
   }).join("");
-  /* WHICH PASS, because a group is deliberately re-run and "OPTIMIZE passed"
+  /* WHICH PASS, because a group is deliberately re-run and "it passed"
      means nothing without saying which attempt it belonged to. A job on a NEW
      pass has no folder yet; naming the one before it is what stops the empty
      timeline reading as "nothing has ever run here". */
@@ -5062,6 +5066,15 @@ function renderHome(){
     + homeButton("results", "✓", "Results",
         `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
         `completed · ${campaignProgress()}`, "var(--good)")
+    /* SETTINGS, under Results. Trevor, 2026-09-18: *"On the homescreen. I
+       want another Badge Here. Settings ... Each Number Can be it's own
+       Badge."* -- so it is a PAGE OF BADGES rather than a form, and each
+       thing you can change is one badge.
+
+       The subline states what is APPLIED, never how many settings exist: a
+       priority switched off and a priority nobody ever set are the same
+       screen and very different situations. */
+    + homeButton("settings", "⚙", "Settings", settingsSummary())
     /* BELOW RESULTS, and only when there is something in it. An empty "To
        review" heading is a heading that trains you to stop looking. */
     + (news.length
@@ -5072,10 +5085,388 @@ function renderHome(){
     + '</div>';
 }
 
+
+/* ==========================================================================
+   SETTINGS -- one badge per thing you can change
+   ==========================================================================
+   🔴 NOTHING HERE APPLIES ANYTHING ITSELF. That is fleet_api's standing
+   rule rather than a limitation of this page -- *"a handler may write a request
+   that the tick loop reads. It may not start MT5, move a file the EA reads, or
+   call into run_next_round."* So every control states what it WILL do and when,
+   and a change reads as QUEUED until a machine has picked it up. A control that
+   claimed to have taken effect the moment it was tapped would be lying for as
+   long as the current job had left, which on a real-tick round is days.
+
+   ⚠️ AND IT IS ONLY AS GOOD AS THE OLDEST MACHINE READING IT. A peer on
+   code predating app_settings.py ignores the file and schedules on the computed
+   shares -- the same caveat seeds.only_machine carries, and it fails OPEN the
+   same way. Until every machine has it, a priority is advisory. */
+
+/* Defaults that match app_settings.default_settings(), so the page renders a
+   true "nothing overridden" before any snapshot has arrived rather than an
+   empty one. A blank settings page and an unreachable fleet must not look the
+   same. */
+let SETTINGS_STATE = {bucket_priority: {mode: "off",
+                                        regimes: ["BULL", "BEAR", "RANGING"],
+                                        pins: {}, focus_pct: 80, top_n: 3},
+                      lease_extensions: {}};
+let LEASES = [];
+let BUCKET_SHARES = [];
+
+const MODE_LABEL = {
+  off: "Computed shares",
+  manual: "Manual priority",
+  auto_top: "Targeting winners",
+  auto_bottom: "Targeting losers",
+  auto_defaults: "Targeting defaults",
+};
+
+/* The prose lives in app_settings.MODE_TEXT and is PUBLISHED with the settings,
+   for the reason seeds.REASON_TEXT gives: a vocabulary and its explanation
+   drifting apart is the failure the text exists to prevent. These are the
+   fallback for a snapshot that predates it, not a second copy to maintain. */
+const MODE_TEXT_FALLBACK = {
+  off: "The scheduler uses each bucket's computed share of the market. Nothing here is applied.",
+  manual: "You set the percentages. A bucket you pin keeps exactly that share; the rest split what is left.",
+  auto_top: "Favours the best-performing buckets by Profit Factor, inside the regimes you have selected.",
+  auto_bottom: "Favours the worst-performing buckets by Profit Factor -- the ones with the most left to gain.",
+  auto_defaults: "Favours the buckets holding the most variables still at their compiled DEFAULT.",
+};
+
+function modeText(mode){
+  return (SETTINGS_STATE.mode_text || {})[mode] || MODE_TEXT_FALLBACK[mode] || "";
+}
+
+function settingsSummary(){
+  const bp = SETTINGS_STATE.bucket_priority || {};
+  const bits = [];
+  if(bp.mode && bp.mode !== "off") bits.push(MODE_LABEL[bp.mode] || bp.mode);
+  const ext = Object.keys(SETTINGS_STATE.lease_extensions || {}).length;
+  if(ext) bits.push(ext + " lease" + (ext === 1 ? "" : "s") + " extended");
+  return bits.length ? bits.join(" \u00b7 ") : "Nothing overridden";
+}
+
+
+/* ---------- the write client ----------
+   🔴 THE BASE URL AND ITS TOKEN NEVER TRAVEL IN THE SNAPSHOT, and this is
+   not caution, it is fleet_api's own rule: *"every design that let it write
+   ended in a bearer token sitting in a phone browser on a public origin ... a
+   token whose blast radius is 'applies passes to a live trading account'."*
+   This page is currently served from a PUBLIC gist, so anything published into
+   the snapshot is public with it.
+
+   So the base is read from somewhere private, in this order:
+     window.FLEET_API   -- injected by the page when it is served over the
+                           tailnet, which is what the private move delivers
+     localStorage       -- set once on a device you own, by hand
+   and when neither exists every control here is READ-ONLY and says so. That is
+   the honest state today: the endpoint is live and tested on the Laptop, and
+   nothing has ever called it.
+
+   ⚠️ DO NOT "FIX" THIS by publishing the base into the snapshot. It would
+   work immediately and would hand the write credential to anyone who found the
+   gist. The private move is the fix. */
+function apiBase(){
+  try{
+    if(window.FLEET_API) return String(window.FLEET_API).replace(/\/+$/, "");
+    const v = localStorage.getItem("gb.api.v1");
+    return v ? String(v).replace(/\/+$/, "") : "";
+  }catch(e){ return ""; }
+}
+
+let SETTINGS_BUSY = false;
+let SETTINGS_ERROR = "";
+
+async function apiPost(path, body){
+  const base = apiBase();
+  if(!base){
+    SETTINGS_ERROR = "read-only";
+    return false;
+  }
+  SETTINGS_BUSY = true;
+  SETTINGS_ERROR = "";
+  try{
+    const r = await fetch(base + path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body || {}),
+    });
+    const out = await r.json().catch(() => ({}));
+    /* 202 IS THE SUCCESS CODE HERE, not 200 -- fleet_api answers "accepted, not
+       applied" on purpose and the badge must not upgrade that to "done". */
+    if(r.status !== 202){
+      SETTINGS_ERROR = out.error || ("HTTP " + r.status);
+      return false;
+    }
+    if(out.bucket_priority) SETTINGS_STATE.bucket_priority = out.bucket_priority;
+    else await refreshSettings();
+    return true;
+  }catch(e){
+    SETTINGS_ERROR = "unreachable";
+    return false;
+  }finally{
+    SETTINGS_BUSY = false;
+    repaintSettings();
+  }
+}
+
+async function refreshSettings(){
+  const base = apiBase();
+  if(!base) return;
+  try{
+    const r = await fetch(base + "/settings", {cache: "no-store"});
+    const out = await r.json();
+    if(out && out.settings) SETTINGS_STATE = out.settings;
+    if(out && out.mode_text) SETTINGS_STATE.mode_text = out.mode_text;
+  }catch(e){ /* the badge keeps the snapshot's copy, which is still true */ }
+}
+
+function repaintSettings(){
+  const el = document.getElementById("page-settings");
+  if(el) el.innerHTML = renderSettings();
+}
+
+/* EVERY CONTROL ON THE PAGE, one listener. Registered on document rather than
+   per button because the whole badge is re-rendered after each change, and
+   per-button listeners would be re-attached (or silently lost) each time. */
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-lease],[data-bpregime],[data-bpmode],[data-bppin],[data-bpreset]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = t.dataset;
+  if(d.lease !== undefined){
+    const i = String(d.lease).lastIndexOf(":");
+    await apiPost("/lease", {key: String(d.lease).slice(0, i),
+                             hours: Number(String(d.lease).slice(i + 1))});
+  } else if(d.bpregime !== undefined){
+    const cur = (SETTINGS_STATE.bucket_priority || {}).regimes || [];
+    const next = cur.indexOf(d.bpregime) >= 0
+      ? cur.filter(r => r !== d.bpregime) : cur.concat([d.bpregime]);
+    await apiPost("/priority", {regimes: next});
+  } else if(d.bpmode !== undefined){
+    await apiPost("/priority", {mode: d.bpmode});
+  } else if(d.bppin !== undefined){
+    const i = String(d.bppin).lastIndexOf(":");
+    const key = String(d.bppin).slice(0, i);
+    const pct = Number(String(d.bppin).slice(i + 1));
+    /* -1 is Unpin. `null` rather than 0 -- a bucket pinned at 0% is a real and
+       different instruction ("never schedule this"), so they must not collapse. */
+    await apiPost("/priority", {mode: "manual",
+                                pin: {key: key, percent: pct < 0 ? null : pct}});
+  } else if(d.bpreset !== undefined){
+    await apiPost("/priority", {reset: true});
+  }
+});
+
+document.addEventListener("change", async e => {
+  const t = e.target.closest("[data-bpfocus]");
+  if(!t) return;
+  await apiPost("/priority", {focus_pct: Number(t.value)});
+});
+
+function renderSettings(){
+  const ro = !apiBase();
+  return '<div class="home">'
+    + '<div class="section-label">Settings</div>'
+    /* SAID ONCE, AT THE TOP, rather than on every control. A disabled chip with
+       no explanation reads as a bug; the same sentence repeated eleven times
+       reads as noise. */
+    + (ro ? '<div class="card"><div class="card-in">'
+      + '<div class="tlab">Read-only</div>'
+      + '<div class="tnote">This page cannot reach the fleet\'s write endpoint, '
+      + 'so nothing below can be saved. The endpoint deliberately has no public '
+      + 'address \u2014 it answers only over the private network, which is what '
+      + 'the Tailscale move delivers. Until then this badge shows what is set '
+      + 'and cannot change it.</div></div></div>' : "")
+    + (SETTINGS_ERROR && SETTINGS_ERROR !== "read-only"
+        ? '<div class="card"><div class="card-in"><div class="tlab">Not saved</div>'
+        + '<div class="tnote">' + esc(SETTINGS_ERROR) + '</div></div></div>' : "")
+    + leaseBadge()
+    + bucketPriorityBadge()
+    + '</div>';
+}
+
+/* ---------- 1. LEASES ---------- */
+/* Trevor, 2026-09-18: *"I want to be able to Add hours to a machines lease. In
+   case a machine goes offline for longer than 24 hours. And I personally know
+   that round is still going."*
+
+   🔴 THE ROW KEEPS SHOWING THE AGE AFTER AN EXTENSION, and that is the whole
+   design. Extending does NOT bump the heartbeat -- which is how it has been done
+   by hand, and which makes the record say the machine reported in when it did
+   not. It records that somebody who knows why has vouched for it until a stated
+   time. So both facts stay on screen: "31h since heartbeat" AND "vouched to
+   09:00" is the true state, where "1m since heartbeat" would be a fabricated
+   one. See leasing.LeaseManager.extensions. */
+function leaseBadge(){
+  const rows = (LEASES || []).slice()
+    .sort((a, b) => (Number(b.age_hours) || 0) - (Number(a.age_hours) || 0));
+  return '<div class="card"><div class="card-in">'
+    + '<div class="tlab">Leases</div>'
+    + '<div class="tnote">A lease goes stale after <b>24 hours</b> without a '
+    + 'heartbeat, and a peer may then reclaim the group. Extend one when a '
+    + 'machine is offline but you know its round is still going.</div>'
+    + (rows.length ? rows.map(leaseRow).join("")
+       : '<div class="tnote" style="margin-top:10px">No leases held right now. '
+       + 'Nothing to extend.</div>')
+    + '</div></div>';
+}
+
+function leaseRow(l){
+  const age = Number(l.age_hours) || 0;
+  /* THE AGE IS THE REASON THE ROW EXISTS, so it is the loud thing -- amber from
+     18h, red past 24. A row that only said "held" would leave you doing the
+     arithmetic that decides whether to act. */
+  const cls = age >= 24 ? "bad" : (age >= 18 ? "warn" : "");
+  const vouched = l.extended_until_text || "";
+  return '<div class="tsec" style="margin-top:12px">'
+    + '<div class="trow"><span class="tname">' + esc(l.machine_id || "?") + '</span>'
+    + '<span class="chip ' + cls + '">' + esc(dur(age * 3600)) + ' since heartbeat</span>'
+    + (vouched ? '<span class="chip gold">vouched to ' + esc(vouched) + '</span>' : "")
+    + '</div>'
+    + '<div class="tnote">' + esc(humanize(l.group_id || l.key || "")) + '</div>'
+    + '<div class="chips" style="margin-top:6px">'
+    + [6, 12, 24, 48].map(function(h){
+        return '<button type="button" class="chip" data-lease="'
+          + esc(l.key) + ':' + h + '">+' + h + 'h</button>'; }).join("")
+    + (vouched ? '<button type="button" class="chip" data-lease="'
+        + esc(l.key) + ':0">Cancel</button>' : "")
+    + '</div></div>';
+}
+
+/* ---------- 2. BUCKET PRIORITY ---------- */
+/* Trevor, 2026-09-18: *"I want to manually give priority to certain buckets ...
+   I want to be able to assign a percentage that the schedular prioritizes each
+   bucket. I will need the Percentage of bucket done beside that."*
+
+   THE REGIME CHIPS LEAD AND THE PERCENTAGE SITS DIRECTLY UNDER THEM -- Trevor,
+   same day: *"Under the Regimes Chips. We should actually put the percentage
+   below that. Integrate it together with the top one."* They are ONE control:
+   the chips choose what is targeted, the percentage says how hard. Split across
+   the badge, the percentage read as a property of the bucket list below it
+   rather than of the targeting above it.
+
+   🔴 WHY A PERCENTAGE MEANS ANYTHING AT ALL. `scheduler.bucket_shares()`
+   already gives every bucket a share of the work -- computed from how much of
+   the market it covers -- and the round-robin serves whichever bucket is
+   furthest below its share. So this is not a new concept bolted on: it
+   OVERRIDES that one number. Which is why each row shows the computed share
+   greyed beside the override. You are replacing a value, not inventing one. */
+function bucketPriorityBadge(){
+  const bp = SETTINGS_STATE.bucket_priority || {};
+  const mode = bp.mode || "off";
+  const regimes = bp.regimes || ["BULL", "BEAR", "RANGING"];
+  const auto = (mode !== "off" && mode !== "manual");
+  const modes = [["auto_top", "Top by PF"], ["auto_bottom", "Bottom by PF"],
+                 ["auto_defaults", "Most defaults"], ["off", "Off"]];
+  return '<div class="card"><div class="card-in">'
+    + '<div class="tlab">Bucket priority</div>'
+    + '<div class="tnote">' + esc(modeText(mode)) + '</div>'
+
+    + '<div class="section-label" style="margin-top:14px">Target these regimes</div>'
+    + '<div class="chips">'
+    + ["BULL", "BEAR", "RANGING"].map(function(r){
+        return '<button type="button" class="chip '
+          + (regimes.indexOf(r) >= 0 ? "on" : "") + '" data-bpregime="' + r + '">'
+          + r + '</button>'; }).join("")
+    + '</div>'
+
+    /* The percentage, integrated with the chips above rather than floating
+       further down -- see the note on this function. */
+    + '<div class="trow" style="margin-top:10px">'
+    + '<span class="tname">Share given to the target</span>'
+    + '<span class="chip ' + (auto ? "gold" : "") + '">' + fmtPct(bp.focus_pct) + '</span>'
+    + '</div>'
+    + '<input type="range" min="10" max="100" step="5" class="bpslider" data-bpfocus'
+    + ' value="' + (Number(bp.focus_pct) || 80) + '"' + (auto ? "" : " disabled") + '>'
+    + '<div class="tnote">The targeted buckets share this much of the work between'
+    + ' them; everything else splits the rest. '
+    + (auto ? "" : "<b>Pick an auto target below to use it.</b>") + '</div>'
+
+    + '<div class="section-label" style="margin-top:14px">Auto prioritize</div>'
+    + '<div class="chips">'
+    + modes.map(function(m){
+        return '<button type="button" class="chip ' + (mode === m[0] ? "on" : "")
+          + '" data-bpmode="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join("")
+    + '</div>'
+    + '<div class="tnote" style="margin-top:6px">Narrowed by the regime chips'
+    + ' above. With one bucket per regime today, that narrowing is what makes'
+    + ' &ldquo;top 3&rdquo; mean anything at all.</div>'
+
+    + '<div class="section-label" style="margin-top:14px">Buckets</div>'
+    + bucketPriorityRows(bp)
+    + '<div class="chips" style="margin-top:10px">'
+    + '<button type="button" class="chip" data-bpreset>Reset to computed</button>'
+    + '</div>'
+    + '<div class="tnote" style="margin-top:10px">⚠️ Applied by each machine'
+    + ' at its next tick, not immediately. A round already running keeps the'
+    + ' bucket it claimed.</div>'
+    + '</div></div>';
+}
+
+/* ONE ROW PER BUCKET: what it would get, what you have pinned, and how far
+   through it is. The percentage DONE sits beside the priority deliberately --
+   Trevor: *"I will need the Percentage of bucket done beside that."* Together
+   they answer one question ("should this get more?"); neither answers it alone,
+   because a bucket on a big share that is nearly finished and one on the same
+   share that has barely started want opposite things. */
+function bucketPriorityRows(bp){
+  const pins = bp.pins || {};
+  /* ONE bucket list, not two. `collect_buckets` already publishes every bucket
+     with its groups done and total, so the shares were added to THAT row rather
+     than to a second list -- two lists of buckets is two things to keep in step
+     and one of them would eventually be missing a bucket. GLOBALS is filtered:
+     it is not tradeable and holds no share, so a priority row for it would be
+     a control that cannot do anything. */
+  const rows = (BUCKETS || []).filter(b =>
+    String(b.regime || "").toUpperCase() !== "GLOBALS");
+  if(!rows.length){
+    return '<div class="tnote">No bucket shares published yet. The scheduler'
+      + ' computes these each tick; until one has, there is nothing to override'
+      + ' and a number here would be invented.</div>';
+  }
+  return rows.map(function(b){
+    const key = String(b.regime).toUpperCase() + "|" + b.bucket_id;
+    const pinned = pins[key] != null;
+    const done = (b.groups_total ? (100 * b.groups_done / b.groups_total) : null);
+    return '<div class="tsec" style="margin-top:10px">'
+      + '<div class="trow">'
+      + '<span class="tname">' + esc(String(b.regime)) + '<span class="dim"> / '
+      + esc(String(b.bucket_id)) + '</span></span>'
+      + '<span class="chip ' + (pinned ? "gold" : "") + '">'
+      + fmtPct(pinned ? pins[key] : b.effective_pct) + '</span>'
+      + '<span class="chip">' + fmtPct(done) + ' done</span>'
+      + '</div>'
+      + '<div class="tnote">' + (pinned
+          ? "Pinned. The other buckets split what is left, in their own proportions."
+          : "Computed share " + fmtPct(b.natural_pct) + ".")
+      + " " + b.groups_done + " of " + b.groups_total + " groups optimized."
+      + '</div>'
+      + '<div class="chips" style="margin-top:6px">'
+      + [10, 25, 40, 60, 80].map(function(p){
+          return '<button type="button" class="chip '
+            + (pinned && Math.round(pins[key]) === p ? "on" : "")
+            + '" data-bppin="' + esc(key) + ':' + p + '">' + p + '%</button>'; }).join("")
+      + (pinned ? '<button type="button" class="chip" data-bppin="' + esc(key)
+          + ':-1">Unpin</button>' : "")
+      + '</div></div>';
+  }).join("");
+}
+
+/* An em dash, not "0%". A bucket with no reading has not been given nothing --
+   nothing has been computed for it yet, and those are different claims. */
+function fmtPct(v){
+  const n = Number(v);
+  return isFinite(n) ? n.toFixed(0) + "%" : "\u2014";
+}
+
+
 function paint(stamp){
   document.getElementById("page-home").innerHTML = renderHome();
   document.getElementById("page-active").innerHTML = renderActive();
   document.getElementById("page-results").innerHTML = renderResults();
+  document.getElementById("page-settings").innerHTML = renderSettings();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
@@ -5103,6 +5494,11 @@ function applySnapshot(d, source){
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
+  /* 2026-09-18 -- the Settings badge. Absent on a snapshot from a machine
+     whose runtime predates them, which must read as "nothing to show"
+     rather than as "nothing is set": the badge says which. */
+  LEASES = Array.isArray(d.leases) ? d.leases : [];
+  if(d.settings && d.settings.bucket_priority) SETTINGS_STATE = d.settings;
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
@@ -5220,7 +5616,10 @@ const POLL_MS = 20000;
   }, 5000);
 })();
 
-const PAGES = ["home", "active", "results"];
+/* Every page the tab bar can show. A section added to the markup and not
+   added HERE renders correctly and can never be reached -- it stays
+   hidden, because the handler only ever unhides what this lists. */
+const PAGES = ["home", "active", "results", "settings"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
