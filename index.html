@@ -139,11 +139,17 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .sub{font-size:.83rem;color:var(--dim);margin-top:1px;}
 
 .meta{
-  /* 11px, not 13px. Mode/Rate/Jobs done/ETA needs 306px at 375px wide and the
+  /* 11px, not 13px. Mode/Rate/Jobs done/ETA needed 306px at 375px wide and the
      card gives it 302 -- four pixels short, so the ETA wrapped alone onto a
      second line and the row grew a ragged half-empty tier. Three gaps at 2px
      less buys 6px and lands it. The longer ETA forms ("Wed 13:38") still wrap,
-     which is correct: that is a genuinely wider row, not a near miss. */
+     which is correct: that is a genuinely wider row, not a near miss.
+
+     2026-09-17 -- STARTED makes six cells, so the row now wraps by design
+     rather than by four pixels. That is the reason this is flex-wrap and not a
+     grid: a wrapped tier of whole cells is fine, and it was only ever ONE cell
+     stranded on a line of its own that read as broken. The 11px gap stays --
+     it is what keeps the first tier whole. */
   display:flex;gap:11px;flex-wrap:wrap;
   border-top:1px solid var(--line);border-bottom:1px solid var(--line);
   padding:9px 0;font-size:.775rem;
@@ -297,6 +303,17 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .rbtn:active{transform:translateY(1px);}
 /* A button with nowhere to go says so rather than looking broken when tapped. */
 .rbtn.pending{color:var(--faint);}
+/* THE JOB WORKBOOK, 2026-09-17. It is the only button in its strip and it stands
+   for the whole job, so it takes the full width rather than sitting as a chip
+   against empty space -- the chip shape was for five of them sharing a row. Gold
+   border because it is the one thing on the card worth opening; the fill stays
+   transparent so it reads as the same family as the buttons it replaced. */
+.rbtn.wide{
+  display:block;width:100%;text-align:center;box-sizing:border-box;
+  padding:9px 12px;border-radius:10px;font-size:.78rem;
+  border-color:var(--gold);color:var(--gold);white-space:normal;
+}
+.rbtn.wide.pending{border-color:var(--line);color:var(--faint);}
 .rfile{
   font-family:"Roboto Mono",ui-monospace,monospace;
   font-size:.67rem;color:var(--dim);word-break:break-all;line-height:1.45;
@@ -1107,6 +1124,43 @@ function fmtEta(d){
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
 }
 
+/* WHEN THIS TASK STARTED -- the counterpart to fmtEta, and shaped like it on
+   purpose. The two sit side by side on the live card and read as a pair: this
+   began at X, it should land at Y.
+
+   NOT fmtWhen(), which always prints the date. Beside an ETA that says "13:38"
+   for today, a start reading "09-17 14:59" is a wider, noisier cell saying less.
+
+   NOT fmtEta() either, and this is the part worth stating: fmtEta returns
+   "due now" for anything in the past, which is right for a finishing time and
+   nonsense for a start -- a start is ALWAYS in the past. So the day distance
+   is measured the other way round.
+
+   THE DAY NAME IS NOT DECORATION. Rounds here run for days -- one on the tree
+   right now is 66 hours in and another is estimating 32 -- so "Started 14:59"
+   on a job that began on Monday is the same lie by omission fmtEta's own
+   comment was written about. Same midnight-to-midnight rounding, so a DST day
+   still counts as one.
+
+   Accepts an ISO string or unix SECONDS, matching fmtWhen, because not every
+   caller upstream carries the same shape. */
+function fmtStarted(v){
+  if(v == null || v === "") return null;
+  const d = (typeof v === "number") ? new Date(v * 1000) : new Date(v);
+  if(isNaN(d.getTime())) return null;
+  const p = n => String(n).padStart(2, "0");
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const now = new Date();
+  const days = Math.round(
+    (new Date(now.getFullYear(), now.getMonth(), now.getDate()) -
+     new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  /* <= 0 rather than === 0: a beacon written on a machine whose clock runs a
+     little ahead must read as today, never as a day in the future. */
+  if(days <= 0) return hm;
+  if(days < 7) return DAY_NAMES[d.getDay()] + " " + hm;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+}
+
 /* No cells means NO ROW. The .meta rule draws a border top and bottom, so an
    empty one is not invisible -- it is a 20px band of two stray rules. Idle
    machines hit this the moment a field is dropped from the row, which is
@@ -1373,8 +1427,27 @@ function machineCard(f){
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
                       ? f.pct_per_hour.toFixed(1) + " %/h" : null],
-                   ["Jobs done", jobsDone(f.regime, f.bucket_id)],
+                   /* 2026-09-17 (Trevor): "beside ETA, I want the time that
+                      the task started." BESIDE means beside: the two sit
+                      together, started first, so the row reads "began at X,
+                      lands at Y".
+
+                      AND THAT IS WHY `Jobs done` MOVED BEHIND THEM. Six cells
+                      wrap at 375px, and with Started left where Jobs done had
+                      been the tier broke exactly between Started and ETA --
+                      the one seam this change exists to close. Started is a
+                      narrower cell than Jobs done ("00:24" against "10 of 28"),
+                      so the pair fits the first tier in the width the old
+                      four-cell row was already tuned to.
+
+                      `phase_since` is the transition stamp job_control writes
+                      as the phase is written -- the same field "In phase"
+                      already counts from, shown as a clock time rather than a
+                      duration. A machine on older code sends none and metaRow
+                      drops the cell, which is why this needs no guard. */
+                   ["Started", fmtStarted(f.phase_since)],
                    ["ETA", fmtEta(etaAt(f))],
+                   ["Jobs done", jobsDone(f.regime, f.bucket_id)],
                    ["In phase", phaseFor(f)]])}
         ${progressBar(f, rc)}
         ${passPick(f)}
@@ -1515,6 +1588,7 @@ function renderResultsJob(r){
        it stands once the job is done. That is the right thing on a card about a
        FINISHED job: not what was swept, but where everything ended up. */
     jobVariables(rep.tasks) +
+    jobWorkbook(rep) +
     jobGraphs(rep.tasks, rep.rel_dir) +
     (rep.exact === false
       ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
@@ -1545,7 +1619,15 @@ function taskPanel(t, relDir){
         (ran != null ? `<span class="tpran">ran ${esc(hm(ran))}</span>`
                      : `<span class="tpran none">run time not recorded</span>`) +
       `</div>` +
-      reportButtons(t, relDir) +
+      /* 2026-09-17 -- THE FIVE REPORT BUTTONS ARE GONE FROM HERE. The job
+         workbook above the graphs carries every artifact they opened, for every
+         task at once, so a per-task strip repeated the whole job once per task.
+         The Active tab's timeline keeps its buttons: a RUNNING job is the case
+         where you may want one raw artifact before the job is done.
+
+         A parallel session restored the strip here on 2026-09-17; Trevor:
+         *"NO, i want your render."* Removed again. If the strip is ever wanted
+         back it is one line -- `reportButtons(t, relDir) +` right here. */
       /* NO GRAPH HERE ON THIS PAGE -- jobGraphs above already drew every curve
          this job has. The task card keeps drawing its own everywhere else, so
          the Active tab is unchanged. */
@@ -2034,6 +2116,50 @@ function reportButtons(r, relDir){
       : `<button type="button" class="rbtn pending" data-toggle>` +
         `${esc(PART_LABEL[p] || p)}</button>` +
         `<span class="rfile" hidden>${esc(files[p])}</span>`).join("") + '</div>';
+}
+
+/* THE JOB WORKBOOK -- one file, the whole job. Trevor, 2026-09-17: *"wire it
+   into the results tab. This will take out all the other report buttons."*
+
+   WHY IT REPLACES FIVE BUTTONS PER TASK RATHER THAN JOINING THEM. The workbook
+   already contains what every one of them opened: the MT5 result block for each
+   backtest side by side, the top passes of each sweep, the DeepDive's analytical
+   sections, the per-trade rows, and the excursion figures -- which no button
+   ever reached, because give-back is not in any single artifact. A seven-task
+   job was thirty-five buttons; it is one file.
+
+   NO BUTTON WHEN THERE IS NO WORKBOOK, and that is not the same as an empty one.
+   A job that finished before job_workbook existed has none, and the publisher
+   sends the field absent rather than a name that would 404. Same reasoning as
+   `reportButtons`' pending state, one level up.
+
+   The filename is the publisher's, never rebuilt here -- the builder owns it. */
+function jobWorkbook(rep){
+  const name = (rep || {}).workbook;
+  if(!name) return "";
+  let url = null;
+  if(FILE_BASE && rep.rel_dir){
+    /* Each segment encoded on its own, exactly as reportButtons does it, so a
+       slash inside a group name can never climb out of the directory. */
+    const dir = String(rep.rel_dir).split("/").map(encodeURIComponent).join("/");
+    url = FILE_BASE.replace(/\/+$/, "") + "/" + dir + "/" + encodeURIComponent(name);
+  }
+  const body = url
+    ? `<a class="rbtn wide" href="${esc(url)}" target="_blank" rel="noopener">`
+      + `Job workbook (.xlsx)</a>`
+    /* Unpublished: reveal the FILENAME, which is what you need to find it on the
+       desktop. The day a publisher fills the base in, this becomes a link with
+       no change here. */
+    : `<button type="button" class="rbtn wide pending" data-toggle>`
+      + `Job workbook (.xlsx)</button>`
+      + `<span class="rfile" hidden>${esc(name)}</span>`;
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">Reports</div>
+      <div class="rbtns">${body}</div>
+      <div class="sub" style="margin-top:6px">Every task in this job, in one
+        file - backtest stats side by side, top passes, excursion, what changed,
+        and the deep-dive sections.</div>
+    </div></div>`;
 }
 
 /* ---------- the task card ---------- */
