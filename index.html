@@ -247,6 +247,33 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .hcount.quiet{color:var(--faint);font-weight:600;}
 .hcount.warn{color:var(--warn);}
 
+/* ---------- to review ---------- */
+/* A finished job you have not opened yet. Smaller than a home BUTTON because it
+   is one item in a list rather than a place to go, but it carries the same
+   left-edge stripe so the regime reads at the same glance. */
+/* THE SHELL A CONDENSED CARD TRAVELS IN -- used by the home screen and by the
+   results list, because they are the same thing: a condensed job card that
+   navigates. The shell carries every attribute and draws nothing; the card
+   draws everything and carries nothing. */
+.jrow{
+  width:100%;text-align:left;font-family:inherit;color:var(--text);
+  background:transparent;border:0;padding:0;cursor:pointer;display:block;
+}
+.jrow:active{transform:translateY(1px);}
+.jrow:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
+/* An article shell is a row that cannot be opened -- it must not look tappable. */
+article.jrow{cursor:default;}
+/* THE CONDENSED CARD. Same card, tighter -- it is one item in a list rather than
+   the subject of a screen, so it gives back the vertical space the full one
+   spends on being the thing you came to read. */
+.jc-sm .card-in{padding:10px 12px;gap:8px;}
+.jc-sm .title{font-size:.9rem;}
+.jc-sm .meta{padding:7px 0;font-size:.72rem;}
+.jc-sm .row-pf{font-size:.72rem;}
+.jc-note{font-size:.67rem;color:var(--warn);line-height:1.4;}
+
+/* (the hand-built badge's own styles went with it) */
+
 /* ---------- job selector ---------- */
 .jrow .hstripe{background:var(--faint);}
 .jrow .hstripe.bull{background:var(--bull);}
@@ -371,6 +398,15 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .tst.center{background:rgba(95,190,149,.16);color:var(--good);}
 .tst.pinned{background:rgba(224,139,74,.20);color:#F0A05E;}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+/* THE SWEPT RANGE wears the filled chip without wearing a STATE. Gold-tinted
+   rather than one of the five lifecycle colours, because a range is not a
+   position in that lifecycle and must not be read as one. Mono, since it is a
+   pair of numbers and they should line up down a column. */
+.tst.grid{
+  background:rgba(224,180,87,.13);color:var(--gold);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  letter-spacing:0;text-transform:none;
+}
 /* RESOLUTION IS OUTLINED, NOT FILLED -- deliberately a different KIND of chip
    from the state beside it. Two filled chips in a row would read as two facts
    of equal weight, and they are not: the state is where the variable is, the
@@ -390,6 +426,48 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .tvr.coarse{color:#C8B78A;border-color:rgba(224,180,87,.30);}
 .tvr.full{color:var(--dim);}
+/* 🔴 THE SWEEP'S FINENESS CHIP IS READ, NOT SCANNED. Trevor, 2026-09-17: *"the
+   steps and resolutions is hard to read. it's not bright enough. too close to
+   the background."* He is right, and the reason is that this chip inherited a
+   style built for a different job: on the VARIABLES badge the resolution is a
+   quiet qualifier beside a loud state, and being recessive is the point. Here it
+   carries the actual numbers -- how many steps, what delta -- which is content,
+   not decoration. So it takes the body colour and a visible edge.
+
+   Three chips can outrun 375px once a variable name is long, so this row wraps
+   rather than squeezing them into unreadability. */
+/* NAME ON ITS OWN LINE, CHIPS ON THE NEXT. Three chips plus a name does not
+   fit 375px, and letting flex squeeze the name instead turned "Entry Total Score
+   Min" into three stacked words beside a tidy row of chips -- the least
+   important thing on the row taking the most space. Giving the name the full
+   first line costs one line and reads at a glance.
+
+   The VARIABLES badge keeps its single-line shape: two chips and a name do fit,
+   which is why this is a variant rather than a change to .tvar. */
+.tvar.swept{flex-wrap:wrap;row-gap:5px;}
+/* IN OR OUT OF THIS ROUND. Filled and gold when the sweep is moving it, hollow
+   and faint when it is being held -- the same loud/quiet split the state chips
+   use, applied to the more basic question. */
+.tmem{
+  font-size:.58rem;font-weight:700;letter-spacing:.06em;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;
+}
+.tmem.in{background:rgba(224,180,87,.18);color:var(--gold);}
+.tmem.held{background:transparent;color:var(--faint);border:1px solid var(--line);}
+/* A RIDER IS IN THE ROUND BUT NOT OF THE GROUP -- filled like SWEPT because it
+   is being moved, but blue rather than gold so a glance down the column never
+   mistakes one for a group variable. */
+.tmem.rider{background:rgba(111,168,212,.20);color:#7FB6DE;}
+/* Swept, not the group's, and nobody said it was a rider. That is two records
+   disagreeing and it gets the colour this app reserves for wrong. */
+.tmem.stray{background:rgba(224,104,90,.18);color:var(--bad);}
+.tvar.swept .tvn{flex:1 0 100%;}
+.tvar.swept .tvr{
+  color:var(--text);border-color:rgba(140,160,172,.45);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  letter-spacing:0;text-transform:none;min-width:0;
+}
 
 /* ---------- a variable is a button, and the graph is shared ---------- */
 /* THE NAME IS THE CONTROL. Trevor, 2026-09-17: *"The Words of the Variable
@@ -547,6 +625,30 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
    tap. Rendered as a div rather than a button for the same reason. */
 .mglgr.none{color:var(--faint);cursor:default;font-style:italic;}
 .mglgr:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+
+/* ---------- the pass table ---------- */
+/* A ROW IS A GRID, not a paragraph -- the columns are chosen at runtime, so the
+   template is set inline from however many are on. */
+.optr{
+  width:100%;display:grid;gap:8px;align-items:baseline;text-align:right;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.72rem;
+  font-variant-numeric:tabular-nums;color:var(--text);
+  background:transparent;border:0;border-top:1px solid var(--line);
+  padding:6px 3px;cursor:pointer;
+}
+.optr > span:first-child{text-align:left;}
+.optr:active{transform:translateY(1px);}
+.optr.on{background:rgba(224,180,87,.10);}
+.optr.on .optp{color:var(--gold);}
+.opth{
+  cursor:default;border-top:0;padding-bottom:2px;
+  font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:700;
+}
+.opth:active{transform:none;}
+.optp{font-weight:700;}
+/* OUT OF BAND, on the pass itself, so it survives whichever columns are shown. */
+.optp.oob{color:var(--warn);}
 .mglgr .nm{flex:1;min-width:0;color:var(--text);overflow-wrap:anywhere;}
 .mgdash{display:inline-block;width:11px;height:2px;border-radius:1px;flex:none;}
 /* The count of what is PLOTTED, on a group chip that is otherwise about what is
@@ -801,6 +903,12 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 }
 .row.jrowbtn:active{transform:translateY(1px);}
 .row-car{color:var(--faint);font-size:.95rem;line-height:1;padding-left:4px;}
+/* Which row you were sent to. Loud enough to find in a list of twenty, gone
+   again before it becomes decoration. On the SHELL, so it rings the whole card. */
+.jrow.flash .card{box-shadow:0 0 0 2px var(--gold);}
+@media (prefers-reduced-motion:no-preference){
+  .jrow .card{transition:box-shadow .25s ease;}
+}
 /* THE CONTROL ROW. The same chips as a results row, doing the other job: these
    say what the list is showing, and tapping one moves it on. Kept beside the
    count so the state of the list and the size of it are read together. */
@@ -1778,6 +1886,100 @@ function jobVariables(rep, openTask){
       `</div></div>`;
 }
 
+/* ---------- THE JOB CARD SCHEMA ----------
+   Trevor, 2026-09-17: *"Job card has a full version and a condensed version. The
+   condensed version is what I want to see on the home screen. The full version
+   is whenever I click on a Job, I see the job in the same way as the results tab
+   works."*
+
+   ONE DEFINITION, TWO DENSITIES -- which is the whole point of writing it down as
+   a schema. The home screen used to hand-build its own compact row, so the two
+   drifted the moment either changed: the badge showed a bucket PF the results
+   card had reformatted, and it opened jobs the results list refuses to open.
+   Every part of the card is now declared once and the density decides what is
+   drawn, never a second copy of the markup.
+
+   WHAT CONDENSED DROPS, and it is a list, not a judgement call:
+
+       Round number    the home screen is not a ledger index
+       Pass picked     a decision you inspect, not one you scan past
+       Passes          the size of a search you are not looking at yet
+
+   All three are answers you go to the FULL card for. What survives is what
+   decides whether to open it at all: which regime and bucket, which group, how
+   the PF moved, and how recently. Mode and Took stay because they qualify the PF
+   beside them -- an OHLC number and a real-tick number are not comparable, and a
+   two-hour job and a three-day job are different claims about the same delta. */
+const JOB_META_CONDENSED = ["Mode", "Took"];
+
+function jobCard(r, rep, condensed, hint, cadence){
+  const rc = REGIME_CLASS[r.regime] || "";
+  rep = rep || {};
+  const cells = [
+    ["Round", "r" + r.round_no],
+    ["Pass picked", r.picked_pass ?? null],
+    ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
+           : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
+    ["Passes", passesText(r)],
+    /* THE JOB'S OWN SPAN -- first report to last. Same evidence and the same
+       caveat as a task's: it is the gap between reports, so it misses whatever
+       ran before the first one. */
+    ["Took", jobSpan(rep.tasks)],
+  ].filter(c => !condensed || JOB_META_CONDENSED.indexOf(c[0]) >= 0);
+
+  const pfBlock = (lab, before, after) =>
+    `<div>
+       <div class="lab">${esc(lab)}</div>
+       <div class="pf"><b>${before ?? "\u2014"}</b>\u2192<b>${after ?? "\u2014"}</b>
+         ${deltaEl(before, after)}</div>
+     </div>`;
+
+  return `<article class="card${condensed ? " jc-sm" : ""}">
+      <div class="stripe ${esc(rc)}"></div>
+      <div class="card-in">
+        <div class="top">
+          ${r.failed ? `<span class="chip warn">FAILED</span>`
+            : r.regime ? `<span class="chip ${esc(rc)}">${esc(r.regime)}</span>` : ""}
+          ${bktEl(r.bucket_id)}
+          <span class="chip gold">${esc(r.machine)}</span>
+          ${r.seeded ? `<span class="chip gold">SEED</span>` : ""}
+          <span class="sp"></span>
+          <span class="when">${esc(fmtWhen(r.recorded_at))}</span>
+          ${condensed ? `<span class="hcar">\u203a</span>` : ""}
+        </div>
+        <div><div class="title">${esc(humanize(r.group_id))}</div></div>
+        ${metaRow(cells)}` +
+        /* A FAILED ROUND HAS NO PF TO SHOW and must not print a pair of dashes
+           where two measurements belong -- "it did not finish" and "it finished
+           at nothing" are different statements. The reason takes the space. */
+        (r.failed
+          ? `<div class="sub" style="padding:0">${
+               esc(r.fail_reason || "no reason recorded")}</div>`
+          : `<div class="row-pf">
+               ${pfBlock("Bucket PF", r.bucket_pf_before, r.bucket_pf_after)}
+               ${pfBlock("Portfolio PF", r.pf_before, r.pf_after)}
+             </div>`) +
+        /* THE HINT IS THE CALLER'S, NOT THE CARD'S. It said "opens the results
+           list" for ANY unopenable condensed card -- which reads as nonsense ON
+           the results list, where that is where you already are. Only the home
+           badge knows its tap goes somewhere else, so only it says so. */
+        (hint ? `<div class="jc-note">${esc(hint)}</div>` : "") +
+        /* THE TRADE BAND LIVES IN THE CARD NOW. Trevor, 2026-09-17: *"Insert the
+           Trade Band inside the uncondensed Job card."* It used to render bare
+           between the card and the badge below it -- a heading and two lines
+           floating on the page background, which read as something half-drawn.
+
+           STILL ONLY FOR A SWEEP, per the earlier call that it belongs with the
+           search rather than with a result: the caller passes a cadence only
+           when the open chip is one, so a backtest's card shows none. */
+        (cadence && !condensed
+          ? `<div class="tsec" style="margin-top:2px">
+               <div class="tlab">Trade band</div>` + taskBand(cadence) + `</div>`
+          : "") + `
+      </div>
+    </article>`;
+}
+
 function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
   const rc = REGIME_CLASS[r.regime] || "";
@@ -1801,42 +2003,11 @@ function renderResultsJob(r){
   const pass = String(rep.rel_dir || "").split("/").filter(Boolean).pop() || null;
   /* The task chips sit between the back button and the job -- Trevor: *"Right
      below (Back All Jobs)."* */
-  return back + chips + `
-    <article class="card">
-      <div class="stripe ${esc(rc)}"></div>
-      <div class="card-in">
-        <div class="top">
-          ${r.regime ? `<span class="chip ${esc(rc)}">${esc(r.regime)}</span>` : ""}
-          ${bktEl(r.bucket_id)}
-          <span class="chip gold">${esc(r.machine)}</span>
-          ${r.seeded ? `<span class="chip gold">SEED</span>` : ""}
-          <span class="sp"></span>
-          <span class="when">${esc(fmtWhen(r.recorded_at))}</span>
-        </div>
-        <div><div class="title">${esc(humanize(r.group_id))}</div></div>
-        ${metaRow([["Round", "r" + r.round_no],
-                   ["Pass picked", r.picked_pass ?? null],
-                   ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
-                          : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
-                   ["Passes", passesText(r)],
-                   /* THE JOB'S OWN SPAN -- first report to last. Same evidence
-                      and the same caveat as a task's: it is the gap between
-                      reports, so it misses whatever ran before the first one. */
-                   ["Took", jobSpan(rep.tasks)]])}
-        <div class="row-pf">
-          <div>
-            <div class="lab">Bucket PF</div>
-            <div class="pf"><b>${r.bucket_pf_before ?? "—"}</b>→<b>${r.bucket_pf_after ?? "—"}</b>
-              ${deltaEl(r.bucket_pf_before, r.bucket_pf_after)}</div>
-          </div>
-          <div>
-            <div class="lab">Portfolio PF</div>
-            <div class="pf"><b>${r.pf_before ?? "—"}</b>→<b>${r.pf_after ?? "—"}</b>
-              ${deltaEl(r.pf_before, r.pf_after)}</div>
-          </div>
-        </div>
-      </div>
-    </article>` +
+  /* A SWEEP'S BAND, and only a sweep's -- see the note in jobCard. */
+  const openTask = tasks[open];
+  const band = (openTask && !isBacktest(openTask) && openTask.detail)
+    ? openTask.detail.cadence : null;
+  return back + chips + jobCard(r, rep, false, null, band) +
     /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
        *"I want the Variables and their status info in here right below the PF
        numbers, above the Reports."*
@@ -1867,6 +2038,17 @@ function renderResultsJob(r){
             tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length)
         : "") +
     (tasks.length ? graphFull(tasks[open], rep) : "") +
+    /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
+       showing as a card that simply stops. The round happened -- its PF moved and
+       the ledger recorded it -- but nothing tied its report folder to it, so
+       there are no tasks to open and no metrics to read. */
+    (tasks.length ? "" : `<div class="card"><div class="card-in">
+        <div class="tlab">No reports linked</div>
+        <div class="soon">This round is in the ledger and its PF is above, but no
+          report folder was matched to it \u2014 so there are no tasks, no metrics
+          and no graphs to show. Rounds recorded before the pass number was
+          written on the row are the usual reason.</div>
+      </div></div>`) +
     (rep.exact === false
       ? `<div class="inexact">⚠️ These reports were matched to this round <b>by
            order</b>, not by key — it ran before the pass number was recorded on
@@ -1912,13 +2094,27 @@ function taskPanel(t, relDir, lift){
       taskCard(t, relDir, true, true, lift) + `</div>`;
 }
 
+/* DOES THIS ROUND OPEN INTO A JOB CARD. Extracted 2026-09-17 because the home
+   screen's review badge has to answer the SAME question: it was opening jobs the
+   results list refuses to open, landing on an Information card with nothing under
+   it and a back button -- a destination that exists nowhere else in the app.
+   Trevor: *"when i click on that job i want it to take me to the same place as
+   the results tab has."* One function, so the two cannot drift. */
+function hasJobCard(r){
+  return !!(r && r.reports && (r.reports.tasks || []).length);
+}
+
 function renderResultsList(){
   const rows = resultsRows().map(r => {
     const rc = REGIME_CLASS[r.regime] || "";
     /* THE WHOLE ROW OPENS THE JOB, and only when there is a job to open. A
        row whose reports never resolved has no tasks behind it, so it stays an
        inert card rather than a button that does nothing. */
-    const hasJob = !!(r.reports && (r.reports.tasks || []).length);
+    /* EVERY ROW OPENS NOW. It used to be a button only when reports had
+       resolved, which left inert cards in the list and a condensed card whose
+       behaviour depended on data the reader could not see. The full card carries
+       the Information badge whatever else is missing, and says what is missing --
+       that is a destination; an unclickable row is not. */
     /* 🔴 NOTHING INTERACTIVE MAY GO INSIDE THIS ROW. It is a <button>, and a
        button inside a button is invalid HTML: the parser CLOSES the outer one
        where the inner starts, so the rest of the row falls out of it and renders
@@ -1929,69 +2125,22 @@ function renderResultsList(){
        They belong on the detail card anyway. Trevor, 2026-09-16: *"The Results
        tab itself won't have the reports on it, Just the Bucket pf and Portfolio
        PF, along with the round counter, machine id, mode and pass picked."* */
-    return `
-    <${hasJob ? "button type=\"button\"" : "article"} class="row${
-        hasJob ? " jrowbtn" : ""}"${hasJob ? ` data-rjob="${esc(r.round_no)}"` : ""}>
-      <div class="row-top">
-        <span class="chip ${r.failed ? "warn" : rc}">${
-          r.failed ? "FAILED" : esc(r.regime)}</span>` +
-        /* WAS IT SEEDED. Trevor, 2026-09-16: *"I want to know if it was a
-           seed."* Derived upstream from the seed records, not from the ledger
-           row -- see app_snapshot._seeded_round_keys for why, and for the rule
-           that stops a group seeded once from marking every later round too. */
-        (r.seeded ? `<span class="chip gold">SEED</span>` : "") +
-        /* NO TASK CHIP HERE. Trevor, 2026-09-16: *"I added Optimize in the
-           results tab. That's not true, Each one of these are actual Jobs, not
-           a task."* A row is a whole job and a job runs several tasks, so
-           naming one of them on the row asserts something false about the other
-           three. The tasks are chips INSIDE the job, where they belong. */ `
-        <span class="row-grp">${
-          /* THE BUCKET, because a group name alone does not say which bucket
-             earned the round -- and buckets are the campaign's own unit. Its
-             own span so it stays legible when the name wraps beside it. */
-          bktEl(r.bucket_id, true)}${esc(humanize(r.group_id))}</span>` +
-        (hasJob ? `<span class="row-car">›</span>` : "") + `
-      </div>
-      ${r.failed ? `<div class="sub" style="padding:0 0 2px">${
-          esc(r.fail_reason || "no reason recorded")}</div>` : `
-      <div class="row-pf">
-        <div>
-          <div class="lab">Bucket PF</div>
-          <div class="pf"><b>${r.bucket_pf_before ?? "—"}</b>→<b>${r.bucket_pf_after ?? "—"}</b>
-            ${deltaEl(r.bucket_pf_before, r.bucket_pf_after)}</div>
-        </div>
-        <div>
-          <div class="lab">Portfolio PF</div>
-          <div class="pf"><b>${r.pf_before ?? "—"}</b>→<b>${r.pf_after ?? "—"}</b>
-            ${deltaEl(r.pf_before, r.pf_after)}</div>
-        </div>
-      </div>`}
-      ${/* THIS ROUND'S OWN REPORT FILES. Trevor, 2026-09-16, pointing between
-            the PF numbers and the meta line: *"I want the Report Buttons
-            inserted where the Green Line is."* The same buttons the timeline has
-            had, on the row for the round that produced them -- results is where
-            you are when you want to go and read one.
+    /* THE SAME CONDENSED CARD THE HOME SCREEN SHOWS. Trevor, 2026-09-17: *"The
+       Results tab also has all the condensed Job cards."* This used to be its own
+       hand-built row -- a second layout for the same record, which is how the
+       home badge and this list came to disagree about what a job looks like.
 
-            SAME FUNCTION, NOT A SECOND COPY. reportButtons() already handles
-            every case this needs: no files at all returns "" and the row closes
-            up, and a file with no URL yet reveals the FILENAME instead of
-            pretending to be a link. So a ledger row that carries nothing simply
-            has no button strip, which is what every row does today.
+       \u26a0\ufe0f THIS DROPS THE ROUND NUMBER AND THE PASS PICKED from the list, which
+       the 2026-09-16 row spec put there on purpose ("the round counter, machine
+       id, mode and pass picked"). Superseded deliberately: those are full-card
+       facts now, one tap away, and the condensed card is the same everywhere or
+       it is not a schema. `heavy` went the same way.
 
-            ⚠️ THE PUBLISHER DOES NOT FILL `files` ON LEDGER ROWS YET --
-            `_LEDGER_FIELDS` is a whitelist and reports are keyed by timestamp
-            under a PASS folder, not by round_no. Until app_snapshot attaches
-            them these stay empty on the live app; the format preview fills them
-            so the layout is real. */""}
-      <div class="row-foot">
-        <span>r${r.round_no}</span>
-        <span>${esc(r.machine)}</span>
-        <span>${r.ticks_mode === "real_ticks" ? "ticks" : "ohlc"}</span>
-        <span>pass ${r.picked_pass ?? "—"}</span>
-        ${r.heavy ? "<span>heavy</span>" : ""}
-        <span class="row-when">${esc(fmtWhen(r.recorded_at))}</span>
-      </div>
-    </${hasJob ? "button" : "article"}>`;
+       The SHELL keeps every attribute -- what opens, what is filtered, what gets
+       scrolled to -- and the card keeps every pixel. */
+    return `<button type="button" class="jrow" data-rrow="${esc(r.round_no)}"
+        data-rjob="${esc(r.round_no)}">` +
+      jobCard(r, r.reports, true) + `</button>`;
   }).join("") ||
     /* NARROWED TO NOTHING is not the same as having no results, and the
        difference is one tap away. */
@@ -3164,21 +3313,168 @@ function sessionBadge(t){
 /* WHICH SWEEP THIS IS, counted rather than named -- same reason as isBacktest.
    `nth` is how many sweeps this job has reached including this one, which the
    caller knows from the chip order and the renderer must not spell out. */
+/* ---------- the sweep's passes ----------
+   Trevor, 2026-09-17: *"I was thinking a little more like an excel cell idea
+   here. Click on Result, Profit, and two columns are sorted by Top 20 with the
+   left side taking the sort. Or click on Profit first, to get left master
+   sortable column."*
+
+   SO A COLUMN CHIP IS NOT A SORT, IT IS A COLUMN -- and the order you add them
+   is the order they sit in, left to right, with the leftmost doing the sorting
+   and the rest breaking its ties. That is how a spreadsheet behaves and it means
+   one gesture does two jobs: choosing what you can see, and choosing what ranks
+   it. Tapping a chip that is already on takes that column away again.
+
+   🔴 EACH COLUMN CARRIES ITS OWN DIRECTION, and drawdown is why. Ranking every
+   column descending would put the WORST drawdown at the top of "Top 20" -- a
+   list confidently offering the passes that dug the deepest hole. The third
+   entry is which end is GOOD; the fourth is how many decimals the figure wants.
+
+   THE BAND MARKER RIDES THE PASS NUMBER, not a trades column. Whether a pass
+   landed inside the trade band is the one fact you must not lose when you stop
+   looking at Trades -- so it colours the pass itself and survives any column
+   choice. */
+const OPT_COLS = [["result", "Result", 1, 3], ["profit", "Profit", 1, 0],
+                  ["trades", "Trades", 1, 0], ["dd", "Drawdown", -1, 0],
+                  ["payoff", "ExPayoff", 1, 2]];
+const OPT_SLICES = [["top", "Top 20"], ["bottom", "Bottom 20"],
+                    ["target", "Closest to target"]];
+const OPTSTATE = { slice: "top", cols: ["result"], open: false };
+/* The pass chosen on THIS card, until something sends it. Keyed by round so two
+   jobs open in one session cannot inherit each other's choice. */
+let OPT_PICK = {};
+
+const optColDef = k => OPT_COLS.find(x => x[0] === k) || OPT_COLS[0];
+
+function optFmt(p, k){
+  const def = optColDef(k);
+  const v = Number(p[k]);
+  if(!isFinite(v)) return "\u2014";
+  if(k === "trades") return v.toLocaleString();
+  return def[3] ? v.toFixed(def[3]) : Math.round(v).toLocaleString();
+}
+
+function optPasses(d){
+  const all = (d || {}).passes;
+  if(!Array.isArray(all) || !all.length) return null;
+  const rows = all.slice();
+  const cad = d.cadence || {};
+  const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
+  const mid = (isFinite(lo) && isFinite(hi)) ? (lo + hi) / 2 : null;
+
+  if(OPTSTATE.slice === "target" && mid != null){
+    /* Nearest the middle of the band, and the columns are deliberately not
+       consulted -- this slice IS a ranking, and it is the one the cadence gate
+       actually cares about. */
+    return rows.sort((a, b) =>
+      Math.abs(Number(a.trades) - mid) - Math.abs(Number(b.trades) - mid)).slice(0, 20);
+  }
+  /* MASTER FIRST, THEN THE REST AS TIEBREAKS -- left to right, exactly as they
+     are drawn. */
+  const cols = OPTSTATE.cols.map(optColDef);
+  rows.sort((a, b) => {
+    for(const c of cols){
+      const d2 = c[2] * (Number(b[c[0]]) - Number(a[c[0]]));
+      if(d2) return d2;
+    }
+    return 0;
+  });
+  /* 🔴 BOTTOM 20 IS THE BOTTOM OF THE WHOLE SHEET, not the tail of the top --
+     Trevor: *"Bottom 20 would give the bottom 20 of the entire optimize sheet."*
+     Worst first, because when you ask for the bottom the very worst is the row
+     you came to see. */
+  return OPTSTATE.slice === "bottom" ? rows.slice(-20).reverse() : rows.slice(0, 20);
+}
+
 function optimizeBadge(t, nth){
   const two = nth >= 2;
   const d = (t || {}).detail || {};
-  const band = d.cadence
-    ? `<div class="tsec"><div class="tlab">Trade band</div>` +
-      taskBand(d.cadence) + `</div>`
-    : "";
-  return band + soonBadge(two ? "Second pass" : "The sweep",
-    `<b>Not built yet.</b> ` + (two
-      ? `A second pass takes only what the first left PINNED, so this badge is
-         about a handful of variables and why each one was chosen — the effect
-         sizes behind the pick, not a grid.`
-      : `A sweep is a grid, not a result: this badge is about what was searched
-         — the cells, the step resolution per variable, how much of the space
-         the GA actually reached, and where the winning pass sat inside it.`));
+  const title = two ? "Second pass" : "The sweep";
+  const rows = optPasses(d);
+  if(!rows){
+    return soonBadge(title, `<b>No pass table published.</b> The sweep's own
+      results -- one row per pass with its result, profit and trade count -- are
+      in the optimization report the round produced. Nothing forwards them to the
+      app yet, so there is nothing here to rank or to choose from.`);
+  }
+
+  const cad = d.cadence || {};
+  const assigned = cad.pass_number != null ? String(cad.pass_number) : null;
+  const key = String((t || {}).at || title);
+  const chosen = OPT_PICK[key] != null ? String(OPT_PICK[key]) : assigned;
+  const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
+  const inBand = n => isFinite(lo) && isFinite(hi) && n >= lo && n <= hi;
+  const cols = OPTSTATE.cols;
+  /* auto for the pass, then an equal share each -- minmax(0,..) so a long number
+     shrinks its own column instead of pushing the row wider than the phone. */
+  const grid = `grid-template-columns:auto repeat(${cols.length},minmax(0,1fr))`;
+
+  const slices = '<div class="mgrp">' + OPT_SLICES.map(([k, label]) =>
+    `<button type="button" class="gch${OPTSTATE.slice === k ? " on" : ""}" ` +
+    `data-optslice="${k}">${esc(label)}</button>`).join("") + '</div>';
+
+  /* The chip shows its POSITION when it is on -- 1 is the master. Without that
+     the only way to know which column is sorting is to read the table and infer
+     it, which is the thing this design exists to avoid. */
+  const colChips = '<div class="mgrp">' + OPT_COLS.map(([k, label]) => {
+    const at = cols.indexOf(k);
+    return `<button type="button" class="gch${at >= 0 ? " on" : ""}" ` +
+      `data-optcol="${k}">${esc(label)}${
+        at >= 0 ? `<span class="n">${at + 1}</span>` : ""}</button>`;
+  }).join("") + '</div>';
+
+  const head = `<div class="optr opth" style="${grid}"><span>Pass</span>` +
+    cols.map(k => `<span>${esc(optColDef(k)[1])}</span>`).join("") + `</div>`;
+
+  const body = rows.map(p => {
+    const n = Number(p.trades);
+    const is = chosen != null && String(p.pass) === chosen;
+    return `<button type="button" class="optr${is ? " on" : ""}" style="${grid}" ` +
+      `data-optpick="${esc(key)}" data-optpass="${esc(p.pass)}">
+        <span class="optp${inBand(n) ? "" : " oob"}">${esc(p.pass)}</span>` +
+      cols.map(k => `<span>${esc(optFmt(p, k))}</span>`).join("") + `</button>`;
+  }).join("");
+
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">${esc(title)}${
+        assigned ? " \u00b7 pass " + esc(assigned) + " assigned" : ""}</div>` +
+    (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
+       the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
+    sweepVars(d.variables, d.swept) +
+    /* THE PICKER IS BEHIND A CHIP. Closed, the badge says what was searched and
+       which pass carries the round -- all you want most of the time. */
+    `<div class="mgrp"><button type="button" class="gch${
+        OPTSTATE.open ? " on" : ""}" data-optopen>${
+        /* TABLE. Trevor, 2026-09-17 -- and it is the better name: what the chip
+           opens is the optimize sheet, which you read as often as you pick from.
+           "Pick a different pass" named one of the two things it is for. */
+        OPTSTATE.open ? "Hide table" : "Table"}</button></div>` +
+    (!OPTSTATE.open ? "" :
+      slices + colChips + head + body +
+      (assigned && !rows.some(p => String(p.pass) === assigned)
+        ? `<div class="vhcap" style="margin-top:6px">Pass ${esc(assigned)}, the one
+             this round assigned, is not in this slice.</div>`
+        : "") +
+      `<div class="pickother">
+         <label for="optin-${esc(key)}">Or any pass</label>
+         <input class="pickin" id="optin-${esc(key)}" type="number" inputmode="numeric"
+                min="1" placeholder="\u2014" data-optin="${esc(key)}"
+                value="${chosen != null && !rows.some(p => String(p.pass) === chosen)
+                         ? esc(chosen) : ""}">
+       </div>` +
+      (chosen != null && chosen !== assigned
+        ? `<div class="pickdone">Pass ${esc(chosen)} chosen \u2014 not sent.
+             ${assigned ? "The round still has pass " + esc(assigned) + " assigned." : ""}</div>`
+        : "") +
+      `<div class="vhcap">Tap a column to add it; the leftmost one sorts and the
+        rest break its ties, so tapping <b>Profit</b> first ranks by profit. A
+        pass number in amber landed outside the trade band${
+        isFinite(lo) ? " (" + esc(lo.toLocaleString()) + "\u2013" +
+          esc(hi.toLocaleString()) + " trades)" : ""}. <b>Closest to target</b>
+        ignores the columns entirely \u2014 nearness to the band is its own ranking.
+        \u26a0\ufe0f Choosing changes nothing yet: applying a pass re-runs both backtests
+        from the pre-round snapshot, and the app has no channel to ask for that.</div>`) +
+    `</div></div>`;
 }
 
 /* ---------- the metrics badge: one graph, several metrics ---------- */
@@ -3402,16 +3698,138 @@ function taskVars(list, hist){
    sweep carries its own grid on the record, a rotation round sweeps its group's
    active variables at whatever resolution each is on. Same reason the publisher
    has two shapes -- see task_detail.swept_variables. */
-function taskSwept(list){
+/* THE SAME ROW THE VARIABLES BADGE USES. Trevor, 2026-09-17: *"The variable
+   names at the top of the badge needs to look like the variable Badge. But I
+   want resolution steps and range on the chips."*
+
+   It used to draw the name on one line and drop the whole grid spec onto a
+   second, full-width -- a different shape for the same idea, two badges apart on
+   one card. Now it is `taskVars`' layout exactly: name on the left, two chips on
+   the right, one filled and one outlined.
+
+   WHICH FACT GOES IN WHICH CHIP follows the badge it is copying. There the
+   FILLED chip is the state -- the thing worth scanning a column for -- and the
+   outlined one is the resolution, a qualifier. Here the filled chip is the
+   RANGE, because what a sweep searched is the fact you scan for, and the
+   outlined one is how finely it cut that range. Same grammar, different nouns.
+
+   A SECOND PASS CARRIES NEITHER. Its variables arrive as names and a resolution
+   word with no grid, because the grid does not exist until the pass is prepared
+   -- so that shape renders the word alone, in the outlined chip where a
+   resolution already belongs. */
+/* THE WHOLE GROUP, AND WHICH OF IT THIS SWEEP IS MOVING. Trevor, 2026-09-17,
+   on the second pass: *"the difference is which variables are being optimized so
+   I still want the whole list but I want another chip saying whether it's part
+   of this optimization or not."*
+
+   AND THAT IS THE SECOND PASS'S ENTIRE POINT. It takes only what the first pass
+   left PINNED and holds everything else at the value that was applied -- so a
+   list showing just the one variable it sweeps hides the very fact that makes it
+   a second pass. Showing four HELD beside one SWEPT says "this round is about
+   that one variable" in a way a single row cannot.
+
+   ⚠️ IT DOES THE SAME FOR THE FIRST PASS, which is a change to a card that was
+   already agreed. The justification is the same and the omission was the same:
+   the first pass of this job sweeps two of the group's five, and the card was
+   quietly showing two. A LOCKED variable is not absent from the round, it is
+   being held -- and that is worth a chip, not a silence.
+
+   THE MEMBERSHIP CHIP IS THE LOUD ONE. Everything else on the row qualifies a
+   variable; this says whether the round is touching it at all, which is the
+   question the badge exists to answer.
+
+   🔴 AND THERE ARE THREE ANSWERS, NOT TWO. Trevor, 2026-09-17: *"We also need to
+   add to the chip list, a Rider. We will have riders every once in a while."* A
+   RIDER is swept alongside the group without belonging to it -- the cadence
+   rider bolted onto a Round 1 sweep to drag a trade count toward its band. It is
+   in the round, so it is not HELD; it is not the group's, so calling it SWEPT
+   would quietly enlarge the group on screen and make the next reader wonder when
+   a fifth variable joined it.
+
+   ⚠️ IT IS READ FROM A FLAG, NOT INFERRED FROM ABSENCE. A swept variable missing
+   from the group list looks exactly like a rider and might instead be two
+   records disagreeing -- so absence alone gets the loud warning below rather
+   than a tidy label that would bury it. */
+function sweepVars(all, swept){
+  const grid = {};
+  (swept || []).forEach(v => { if(v && v.name) grid[v.name] = v; });
+  /* Anything swept that the group list does not carry is still shown -- a sweep
+     naming a variable the task did not list is a disagreement worth seeing, not
+     one to hide by iterating the shorter list. */
+  const names = (all || []).map(v => v.name);
+  (swept || []).forEach(v => { if(v && names.indexOf(v.name) < 0) names.push(v.name); });
+  if(!names.length) return "";
+
+  const by = {};
+  (all || []).forEach(v => { if(v && v.name) by[v.name] = v; });
+
+  return names.map(name => {
+    const v = by[name] || {name: name};
+    const g = grid[name];
+    const hasGrid = g && g.min != null && g.max != null;
+    const range = hasGrid ? `${esc(num(g.min))} → ${esc(num(g.max))}` : "";
+    const fine = hasGrid
+      ? (g.points ? `${esc(g.points)}` : "") +
+        (g.points && g.step ? " × " : "") +
+        (g.step ? `Δ${esc(num(g.step))}` : "")
+      : (g && g.resolution ? esc(g.resolution) : (v.resolution ? esc(v.resolution) : ""));
+    const rider = !!(g && g.rider);
+    /* Swept, not the group's, and not declared a rider: say so loudly. */
+    const stray = !!(g && !rider && !by[name]);
+    const mem = rider ? ["rider", "RIDER"]
+              : stray ? ["stray", "NOT IN GROUP"]
+              : g ? ["in", "SWEPT"] : ["held", "HELD"];
+    return `<div class="tvar swept">
+        <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>
+        <span class="tmem ${mem[0]}">${mem[1]}</span>` +
+      (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>` : "") +
+      (range ? `<span class="tst grid">${range}</span>` : "") +
+      (fine ? `<span class="tvr">${fine}</span>` : "") +
+      /* A RIDER CARRIES NO STATE, and that absence is correct rather than
+         missing data: DEFAULT/FLOATING/CENTER/PINNED/LOCKED describe a
+         variable's progress through ITS GROUP's rounds, and a rider is not on
+         that journey. Saying why beats leaving a gap where every other row has
+         a chip. */
+      (rider ? `<span class="tvr" style="border-color:transparent;color:var(--faint)">no group state</span>` : "") + `
+      </div>`;
+  }).join("");
+}
+
+function taskSwept(list, states){
   if(!(list || []).length) return "";
+  /* WHAT STATE IT WENT IN AS. Trevor, 2026-09-17: *"If we can have the Previous
+     Pinned, or Floating status in there too."* The sweep record carries a name
+     and a grid and nothing about the lifecycle, but the task's own variable list
+     carries the state -- so it is looked up by name rather than duplicated onto
+     the sweep record, the same way the live tile reads its states.
+
+     IT IS THE STATE GOING IN, not the one the round left behind. A sweep runs
+     BECAUSE a variable is PINNED or FLOATING; what it became is the variables
+     badge's business, one card down. Saying which is why the label reads "went
+     in as" rather than just showing the chip bare. */
+  const by = {};
+  (states || []).forEach(x => { if(x && x.name) by[x.name] = x; });
   return list.map(v => {
-    const grid = (v.min != null && v.max != null)
-      ? `${esc(v.min)} → ${esc(v.max)}` +
-        (v.points ? ` · ${esc(v.points)} steps` : "") +
-        (v.step ? ` · Δ ${esc(v.step)}` : "")
-      : (v.resolution ? esc(v.resolution) + " resolution" : "");
-    return `<div class="tvar"><span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span></div>` +
-           (grid ? `<div class="tvr" style="padding-left:2px">${grid}</div>` : "");
+    const st = by[v.name];
+    const hasGrid = v.min != null && v.max != null;
+    const range = hasGrid ? `${esc(num(v.min))} → ${esc(num(v.max))}` : "";
+    const fine = hasGrid
+      /* "9 x 0.05" rather than "9 steps - 0.05": the multiplication sign says
+         steps-of-that-size on its own, and the row has three chips to fit. */
+      ? (v.points ? `${esc(v.points)}` : "") +
+        (v.points && v.step ? " × " : "") +
+        (v.step ? `Δ${esc(num(v.step))}` : "")
+      : (v.resolution ? esc(v.resolution) : "");
+    return `<div class="tvar swept">
+        <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
+      (st && st.state
+        ? `<span class="tst ${stateClass(st.state)}">${esc(st.state)}</span>` : "") +
+      (range ? `<span class="tst grid">${range}</span>` : "") +
+      /* ALWAYS A BOX, even with nothing in it -- the same reason taskVars keeps
+         an empty one: an absent chip pulls the row's right edge out of line. */
+      `<span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
+         fine || "—"}</span>
+      </div>`;
   }).join("");
 }
 
@@ -3522,7 +3940,7 @@ function taskCard(r, relDir, open, skipGraph, lift){
     d.cadence ? `<div class="tsec"><div class="tlab">Trade band</div>` +
                 taskBand(d.cadence) + `</div>` : "",
     (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
-                             taskSwept(d.swept) + `</div>` : "",
+                             taskSwept(d.swept, d.variables) + `</div>` : "",
     (d.variables || []).length && !lift
       ? `<div class="tsec"><div class="tlab">${esc(SWEPT_LABEL[d.swept_source]
             || "Variables")}</div>` +
@@ -3690,12 +4108,101 @@ function homeButton(page, icon, name, subline, stripe){
     </button>`;
 }
 
+/* ---------- what you have not looked at yet ---------- */
+/* Trevor, 2026-09-17: *"When a new job is complete, I want the Job badge on the
+   home screen. Below Results Under TO REVIEW."*
+
+   THIS IS PER-DEVICE, AND IT HAS TO BE. "Have I read this" is a fact about the
+   person holding the phone, not about the round -- the snapshot is shared by
+   four machines and a flag in it would mean the desktop marking the phone's jobs
+   as read. localStorage is the only place that answer belongs.
+
+   ⚠️ THE FIRST RUN SEEDS ITSELF AND SHOWS NOTHING. Without that, opening the app
+   for the first time would present every completed round in the epoch as new --
+   fifteen badges saying "look at me" about work you did days ago, which teaches
+   you to ignore the section permanently. So the first load records what already
+   exists as seen, and only what lands AFTER that is ever flagged.
+
+   AND IT ONLY SEEDS ONCE THERE IS SOMETHING TO SEED. Seeding from an empty
+   ledger -- a snapshot that failed to load -- would bank "nothing has happened
+   yet" and then flag the entire history the moment a real one arrived. */
+const REVIEW_KEY = "gb.reviewed.v1";
+
+/* A Set of round numbers, or null when the key has never been written, or
+   undefined when storage cannot be reached at all. Three states, because they
+   mean three different things and only one of them is "you have seen nothing". */
+function reviewedSet(){
+  try{
+    const raw = localStorage.getItem(REVIEW_KEY);
+    if(raw == null) return null;
+    const a = JSON.parse(raw);
+    return new Set((Array.isArray(a) ? a : []).map(String));
+  }catch(e){
+    /* Private windows, blocked site data, a quota error -- all land here. The
+       section simply does not render; it never guesses. */
+    return undefined;
+  }
+}
+
+function saveReviewed(set){
+  try{ localStorage.setItem(REVIEW_KEY, JSON.stringify([...set])); }
+  catch(e){ /* nothing to do: the list is a convenience, not a record */ }
+}
+
+function markReviewed(no){
+  const seen = reviewedSet();
+  if(seen === undefined) return;
+  const set = seen || new Set();
+  set.add(String(no));
+  saveReviewed(set);
+}
+
+/* The completed jobs this device has not opened, newest first. */
+function toReview(){
+  const done = LEDGER.filter(completed);
+  if(!done.length) return [];
+  const seen = reviewedSet();
+  if(seen === undefined) return [];          // no storage: no claim either way
+  if(seen === null){                          // first ever load: bank the past
+    saveReviewed(new Set(done.map(r => String(r.round_no))));
+    return [];
+  }
+  return done.filter(r => !seen.has(String(r.round_no)))
+             .sort((a, b) => (b.round_no || 0) - (a.round_no || 0));
+}
+
+/* ONE BADGE. It carries both navigation attributes on purpose: [data-rjob]
+   opens the job and [data-go] moves to the tab it lives on, and both listeners
+   are document-level so one tap does both. [data-review] is this section's own,
+   and only takes the badge off the list. */
+function reviewBadge(r){
+  /* ALWAYS THE FULL CARD. Trevor, 2026-09-17: *"I want to click on the condensed
+     job card, and have it bring me to that particular Full Job Card."*
+
+     An earlier version sent rounds whose reports never resolved to the results
+     LIST instead, on the reasoning that the list refuses to open them. That was
+     the wrong end to fix: the answer is not to withhold the destination, it is to
+     let the destination say what it has. A condensed card opens its full card,
+     every time, and the full card is honest about an empty one. */
+  return `<button type="button" class="jrow" data-go="results"
+      data-rjob="${esc(r.round_no)}" data-review="${esc(r.round_no)}">` +
+    jobCard(r, r.reports, true) + `</button>`;
+}
+
 function renderHome(){
+  const news = toReview();
   return '<div class="home">'
     + homeButton("active", "▶", "Active", activeSummary())
     + homeButton("results", "✓", "Results",
         `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
         `completed · ${campaignProgress()}`, "var(--good)")
+    /* BELOW RESULTS, and only when there is something in it. An empty "To
+       review" heading is a heading that trains you to stop looking. */
+    + (news.length
+        ? '<div class="section-label" style="margin-top:9px">To review' +
+          `<span class="hcount" style="margin-left:6px">${news.length}</span>` +
+          '</div>' + news.map(reviewBadge).join("")
+        : "")
     + '</div>';
 }
 
@@ -3909,6 +4416,32 @@ document.addEventListener("click", e => {
      metric instead of plotting it. */
   if(e.target.closest("[data-gclose]")){ GFULL = false; repaintCards(); return; }
   if(e.target.closest("[data-gopen]")){ GFULL = true; repaintCards(); return; }
+  if(e.target.closest("[data-optopen]")){
+    OPTSTATE.open = !OPTSTATE.open; repaintCards(); return;
+  }
+  const os = e.target.closest("[data-optslice]");
+  if(os){ OPTSTATE.slice = os.getAttribute("data-optslice"); repaintCards(); return; }
+  const oc = e.target.closest("[data-optcol]");
+  if(oc){
+    const k = oc.getAttribute("data-optcol");
+    const at = OPTSTATE.cols.indexOf(k);
+    /* NEVER EMPTY. A table with no columns is a list of pass numbers, and the
+       way back from it is not obvious -- so the last one standing stays. */
+    if(at >= 0){ if(OPTSTATE.cols.length > 1) OPTSTATE.cols.splice(at, 1); }
+    else OPTSTATE.cols.push(k);
+    repaintCards();
+    return;
+  }
+  const op = e.target.closest("[data-optpick]");
+  if(op){
+    const k = op.getAttribute("data-optpick"), p = op.getAttribute("data-optpass");
+    /* Tapping the one already chosen clears it, which is the only way back to
+       "whatever the round assigned" without reloading. */
+    if(String(OPT_PICK[k]) === String(p)) delete OPT_PICK[k];
+    else OPT_PICK[k] = p;
+    repaintCards();
+    return;
+  }
   const sb = e.target.closest("[data-slope]");
   if(sb){
     const key = sb.getAttribute("data-slope");
@@ -4019,6 +4552,17 @@ if(document.readyState === "loading")
   document.addEventListener("DOMContentLoaded", stickTop);
 else stickTop();
 
+/* Typing a pass selects it; clearing the field hands the round back to whatever
+   it was assigned. Only the results page is repainted, so the field keeps focus
+   and the caret while the rows below it follow along. */
+document.addEventListener("input", e => {
+  const inp = e.target.closest("[data-optin]");
+  if(!inp) return;
+  const k = inp.getAttribute("data-optin"), v = inp.value.trim();
+  if(v === "") delete OPT_PICK[k]; else OPT_PICK[k] = v;
+  document.getElementById("page-results").innerHTML = renderResults();
+});
+
 function repaintCards(){
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("page-active").innerHTML = renderActive();
@@ -4035,6 +4579,16 @@ document.addEventListener("click", e => {
   RESULTS_TASK_OPEN = Number(t.dataset.rtask) || 0;
   document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
+});
+
+/* Taking it off the list is its own listener, so the two navigation handlers
+   stay exactly as they were -- a badge is a job link that happens to also be a
+   notification, not a third kind of control. */
+document.addEventListener("click", e => {
+  const v = e.target.closest("[data-review]");
+  if(!v) return;
+  markReviewed(v.dataset.review);
+  document.getElementById("page-home").innerHTML = renderHome();
 });
 
 document.addEventListener("click", e => {
