@@ -423,6 +423,44 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
   background:var(--bg);display:block;
 }
 .tgcap{font-size:.65rem;color:var(--faint);margin-top:3px;}
+/* ---- test results, 2026-09-17 ----
+   The card carried ONE of these (cadence.profit_factor). task_metrics publishes
+   the rest off the artifacts the task already wrote. */
+.mgrp{display:flex;flex-wrap:wrap;gap:4px;padding-bottom:5px;}
+.gch{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.6rem;font-weight:500;
+  padding:2px 7px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--dim);
+}
+.gch.on{background:var(--tonal);color:var(--gold);border-color:var(--gold);}
+.gch .n{opacity:.55;margin-left:3px;}
+.mhd{display:grid;grid-template-columns:1fr auto auto;gap:6px;
+     font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+     padding:0 3px 3px;text-align:right;font-family:"Roboto Mono",ui-monospace,monospace;}
+.mhd span:first-child{text-align:left;}
+.mrw{
+  width:100%;display:grid;grid-template-columns:1fr auto auto;gap:6px;
+  align-items:baseline;background:transparent;cursor:pointer;text-align:right;
+  border:0;border-top:1px solid var(--line);padding:4px 3px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.69rem;color:var(--dim);
+  font-variant-numeric:tabular-nums;
+}
+.mrw:hover{background:rgba(224,180,87,.06);}
+.mrw .nm{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+         border-bottom:1px dotted rgba(140,160,172,.35);}
+.mrw .vv{color:var(--text);font-weight:500;}
+.mrw.open .nm{color:var(--text);border-bottom-style:solid;}
+/* ARROW = which way it moved. COLOUR = whether that was good. A falling
+   drawdown is a GREEN down-arrow; collapsing the two would either colour an
+   improvement red or point the arrow the wrong way. */
+.mv{font-size:.55rem;font-weight:700;padding:2px 5px;border-radius:4px;
+    white-space:nowrap;display:inline-flex;gap:3px;align-items:center;
+    font-family:"Archivo","Segoe UI",system-ui,sans-serif;justify-self:end;}
+.mv.up{background:rgba(95,190,149,.16);color:var(--good);}
+.mv.dn{background:rgba(224,104,90,.16);color:var(--bad);}
+.mv.fl{background:rgba(140,160,172,.12);color:#8CA0AC;}
+.mdf{font-size:.66rem;color:var(--faint);line-height:1.45;padding:3px 3px 6px;}
+
 /* The state key. Indented under the list it explains, and quiet -- it is a
    reminder for the reader who has forgotten the vocabulary, not a finding. */
 /* The open task, standing on its own rather than inside a timeline row. */
@@ -2162,6 +2200,114 @@ function jobWorkbook(rep){
     </div></div>`;
 }
 
+/* TEST RESULTS. Trevor, 2026-09-17: *"Below the Graph. This is where I want
+   Test Results report numbers listed."* Published by task_metrics; absent on a
+   sweep, which writes no backtest, so the section simply does not appear.
+
+   THE COMPARISON IS THE PREVIOUS TASK OF THE SAME KIND in this job -- a second
+   pass re-runs both backtests, so the job holds an earlier one of each KIND.
+   Same kind only: a bucket reading against a full-range one
+   is not a comparison, it is the mix-up S9.1 exists to prevent. */
+const M_DEFS = [
+  ["Results", "pf", "Profit Factor", 3, 1], ["Results", "net", "Net Profit", 0, 1],
+  ["Results", "trades", "Total Trades", 0, 0], ["Results", "payoff", "Expected Payoff", 2, 1],
+  ["Results", "sharpe", "Sharpe Ratio", 2, 1], ["Results", "rec", "Recovery Factor", 2, 1],
+  ["Results", "dd", "Balance DD max", 0, -1], ["Results", "win", "Win rate %", 1, 1],
+  ["Results", "give", "Give-back %", 1, -1],
+  ["Sizes", "avgwin", "Avg win $", 2, 1], ["Sizes", "avgloss", "Avg loss $", 2, 1],
+  ["Sizes", "best", "Best trade $", 2, 1], ["Sizes", "worst", "Worst trade $", 2, 1],
+  ["Sizes", "bstreak", "Best streak $", 2, 1], ["Sizes", "wstreak", "Worst streak $", 2, 1],
+  ["Ledger", "top5", "Top 5 = % of net", 1, -1], ["Ledger", "slpct", "Exited on stop %", 1, 0],
+  ["Ledger", "hold", "Median hold (h)", 2, 0], ["Ledger", "inpos", "Time in a trade %", 1, 0],
+  ["Ledger", "posmon", "Months green %", 1, 1], ["Ledger", "uwater", "Underwater (days)", 0, -1],
+  ["Ledger", "swap", "Swap paid $", 2, 1],
+  ["MFE/MAE", "tmfe", "Time to peak %", 1, 0], ["MFE/MAE", "tmfew", "…winners %", 1, 0],
+  ["MFE/MAE", "tmae", "Time to worst %", 1, 0], ["MFE/MAE", "tmaew", "…winners %", 1, 0],
+  ["MFE/MAE", "espread", "Entry spread (p)", 2, -1],
+  ["MFE/MAE", "xspread", "Exit spread (p)", 2, -1],
+  ["Fitness", "score", "Final score", 3, 1], ["Fitness", "volr", "Vol ratio", 4, 0],
+  ["Fitness", "cadterm", "Cadence term", 4, 1], ["Fitness", "bcredit", "Band credit", 4, 1]
+];
+const M_WHAT = {
+  pf:"Gross profit over gross loss. 1.0 breaks even; the live gate wants 1.50.",
+  net:"Total profit in account currency, after swap.",
+  trades:"Closed positions. The trade band above judges whether it is the right number.",
+  payoff:"Net profit over trade count — the average trade, win or lose.",
+  sharpe:"Return per unit of volatility. MT5 computes it per trade, not annualised.",
+  rec:"Net profit over the maximum drawdown — what you made per unit of the worst dip.",
+  dd:"Deepest fall from an equity peak. Depth only; Underwater is the duration.",
+  win:"Share of closed trades that finished positive.",
+  give:"On WINNERS: how much of the peak was handed back, as a % of that peak.",
+  avgwin:"Average size of a winning trade.", avgloss:"Average size of a losing trade.",
+  best:"The single largest winner.", worst:"The single largest loser.",
+  bstreak:"Money made in the longest unbroken run of wins.",
+  wstreak:"Money lost in the longest unbroken run of losses.",
+  top5:"Share of net profit from the five biggest trades. High means the result leans on a handful.",
+  slpct:"Share of exits where MT5's comment was “sl” — the stop order itself was hit.",
+  hold:"Median time a position stayed open.",
+  inpos:"Share of the window with a position open. One at a time, so the rest is the slot idle.",
+  posmon:"Share of calendar months that closed positive.",
+  uwater:"Longest run of days below the previous equity peak. MT5 never reports this.",
+  swap:"Overnight financing. The ledger's profit is before it and net is after — this is the gap.",
+  espread:"Median spread crossing in, pips.", xspread:"Median spread crossing out.",
+  tmfe:"Where in the hold the best point happened, as a % of time open.",
+  tmfew:"The same, winners only — the number give-back is about.",
+  tmae:"Where in the hold the worst point happened.",
+  tmaew:"Winners only. Near zero means winners go against you at entry: the spread.",
+  score:"What OnTester() returned — what the optimizer ranked this pass on.",
+  volr:"Annualised trades over this regime's target. 1.0 is exactly on target.",
+  cadterm:"Cadence scored 1.0 at target to 0.0 at the band edge, times the class weight (0.50 DECISION, ZERO for SIGNAL), ADDED to the score.",
+  bcredit:"The edge-PENALTY switch. 1.0 deducts nothing. Below 1.0 is the ramp zone, costing up to 2.0. Outside the band is −999, a disqualification."
+};
+function mFmt(v, dp){
+  if(v == null) return "—";
+  const n = Number(v);
+  return dp === 0 ? Math.round(n).toLocaleString() : n.toFixed(dp);
+}
+function taskMetrics(d){
+  const m = d.metrics; if(!m) return "";
+  const prev = d.metrics_prev || null;
+  const have = M_DEFS.filter(x => m[x[1]] != null);
+  if(!have.length) return "";
+  const groups = [];
+  have.forEach(x => { if(groups.indexOf(x[0]) < 0) groups.push(x[0]); });
+  const sel = MSTATE.g, open = MSTATE.open;
+  const chips = '<div class="mgrp">' +
+    `<button type="button" class="gch${sel ? "" : " on"}" data-mg="">All` +
+    `<span class="n">${have.length}</span></button>` +
+    groups.map(g => {
+      const n = have.filter(x => x[0] === g).length;
+      return `<button type="button" class="gch${sel === g ? " on" : ""}" ` +
+             `data-mg="${esc(g)}">${esc(g)}<span class="n">${n}</span></button>`;
+    }).join("") + '</div>';
+  const rows = have.filter(x => !sel || x[0] === sel).map(([g, k, label, dp, better]) => {
+    const v = Number(m[k]);
+    let chip = "";
+    if(prev && prev[k] != null){
+      const dlt = v - Number(prev[k]);
+      const moved = Math.abs(dlt) >= Math.pow(10, -dp) / 2;
+      const cls = (!moved || better === 0) ? "fl" : ((dlt > 0) === (better > 0) ? "up" : "dn");
+      const arw = !moved ? "–" : (dlt > 0 ? "▲" : "▼");
+      chip = `<span class="mv ${cls}">${arw}${moved ? (dlt > 0 ? "+" : "−") +
+              mFmt(Math.abs(dlt), dp) : ""}</span>`;
+    }
+    const isOpen = open === k;
+    return `<button type="button" class="mrw${isOpen ? " open" : ""}" data-mk="${k}">` +
+           `<span class="nm">${esc(label)}</span>` +
+           `<span class="vv">${mFmt(v, dp)}</span>${chip}</button>` +
+           (isOpen ? `<div class="mdf">${esc(M_WHAT[k] || "")}</div>` : "");
+  }).join("");
+  return `<div class="tsec"><div class="tlab">Test results${
+      prev ? " · vs " + esc(fmtWhen(d.metrics_prev_at)) : ""}</div>` +
+    chips + `<div class="mhd"><span>Metric</span><span>This test</span>` +
+    `<span>${prev ? "Moved" : ""}</span></div>` + rows +
+    `<div class="mdf">Tap a row for what it means.${prev ? " The chip says which way " +
+      "it moved and whether that was good — a falling drawdown is a green ▼." : ""}</div></div>`;
+}
+/* One open row and one group at a time, page-wide. A per-card store would mean
+   a card remembering a filter you set on a different card. */
+const MSTATE = { g: "", open: "" };
+
 /* ---------- the task card ---------- */
 /* The four words for where a variable is up to, straight from the publisher --
    see task_detail.STATE_TEXT for what each one means. Lower-cased here only to
@@ -2330,6 +2476,7 @@ function taskCard(r, relDir, open, skipGraph){
              the pass before it leaves pinned, so this list does not exist
              until that one finishes.</div></div>`
         : "",
+    taskMetrics(d),
     skipGraph ? "" : taskGraphs(d.files, d.rel_dir || relDir, d.urls),
   ].filter(Boolean);
   /* A TASK WITH NOTHING TO SAY SAYS SO. A queued round has no seed, no count,
@@ -2687,6 +2834,23 @@ document.addEventListener("click", e => {
   RESULTS_JOB = null;              // a narrowed list has no job open
   document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
+});
+
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-mg]");
+  if(g){
+    MSTATE.g = g.getAttribute("data-mg");
+    MSTATE.open = "";
+    document.getElementById("page-results").innerHTML = renderResults();
+    return;
+  }
+  const k = e.target.closest("[data-mk]");
+  if(k){
+    const key = k.getAttribute("data-mk");
+    MSTATE.open = MSTATE.open === key ? "" : key;
+    document.getElementById("page-results").innerHTML = renderResults();
+    return;
+  }
 });
 
 document.addEventListener("click", e => {
