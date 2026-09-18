@@ -1164,6 +1164,18 @@ const EPOCH = "V3.0.0";
 // permanently -- deleting a file later does not remove it. Performance figures
 // and group/variable names are "how it is built", which is the half Trevor
 // wants private: people should copy the ACCOUNT, not rebuild the system.
+/* 🔴 WHICH BUILD IS THIS PHONE ACTUALLY RUNNING. 2026-09-18, after an hour of
+   guessing: a badge was missing, and neither of us could tell whether the code
+   was wrong or the page was stale. Every proxy test I invented was weaker than
+   it looked -- "you would see the old Skip button" failed because that button
+   only rendered while a machine was RUNNING, so its absence proved nothing.
+
+   The page is served from a public host with ordinary cache headers and there
+   is no service worker, so a stale copy is normal and expected. What was
+   missing is any way to SAY so. publish.py rewrites this line as it commits;
+   "dev" means the file was never published, which is what the preview shows. */
+const APP_BUILD = "20260918-105838";
+
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
    the top of the snapshot rather than repeated on every variable. {} until a
@@ -4955,7 +4967,10 @@ function paint(stamp){
   document.getElementById("page-home").innerHTML = renderHome();
   document.getElementById("page-active").innerHTML = renderActive();
   document.getElementById("page-results").innerHTML = renderResults();
-  document.getElementById("stamp").textContent = stamp;
+  /* The snapshot's age and the PAGE's build are different questions, and only
+     one of them was ever on screen. A stale snapshot under a current app and a
+     current snapshot under a stale app look identical without this. */
+  document.getElementById("stamp").textContent = stamp + " · app " + APP_BUILD;
   document.getElementById("hsub").textContent =
     FLEET.length + " running · " + campaignProgress();
   document.getElementById("banner").hidden = true;
