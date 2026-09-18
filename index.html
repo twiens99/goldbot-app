@@ -900,6 +900,25 @@ article.jrow{cursor:default;}
 .applyb:disabled{background:var(--card-2);color:var(--faint);cursor:default;}
 .applyb:active:not(:disabled){transform:translateY(1px);}
 .pickfoot{font-size:.68rem;color:var(--faint);line-height:1.45;}
+/* THE WAY IN. Full width with a chevron, because that is this app's own shape
+   for "this opens something" -- the same read as a home button or a results
+   row. Tonal rather than gold: it must be findable at a glance without
+   competing with the beacon warning that often sits right above it. */
+.opsopen{
+  width:100%;display:flex;align-items:center;gap:9px;
+  font-family:inherit;font-size:.8rem;font-weight:600;color:var(--text);
+  background:var(--card-2);border:1px solid var(--line);
+  border-radius:9px;padding:10px 12px;cursor:pointer;text-align:left;
+  margin-top:2px;
+}
+.opsopen:active{transform:translateY(1px);}
+.opsopen:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
+.opsopen.on{border-color:var(--gold);color:var(--gold);}
+.opsog{font-size:.95rem;line-height:1;color:var(--dim);}
+.opsopen.on .opsog{color:var(--gold);}
+.opsol{flex:1;min-width:0;}
+.opsoc{color:var(--faint);font-size:1rem;line-height:1;}
+
 /* ---------- the operations panel ---------- */
 .opsp{
   border-top:1px solid var(--line);margin-top:9px;padding-top:9px;
@@ -1174,7 +1193,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260918-105838";
+const APP_BUILD = "20260918-111617";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
@@ -2137,9 +2156,26 @@ function machineCard(f){
               rounds still READ as OHLC where they ran and the tier ladder keeps
               its no-real-ticks rung, because those are a record and a setting
               rather than an action. */
-          `<div class="mgrp"><button type="button" class="gch${
-            OPSTATE.open === opsKey(f) ? " on" : ""}" data-opsopen="${esc(opsKey(f))}">${
-            OPSTATE.open === opsKey(f) ? "Hide operations" : "Operations"}</button></div>`}
+          /* 🔴 IT OPENS STOP EVERYTHING, SO IT CANNOT LOOK LIKE A FILTER.
+             Trevor, 2026-09-18: *"still no setting badge"* -- and he was on the
+             current build, with the control rendering, on screen, unscrolled.
+             It was a `.gch` chip: 0.6rem, faint grey, hairline border, the same
+             shell the metric-GROUP filters wear -- sitting at the foot of a card
+             under a loud amber beacon warning. Every other way into a badge on
+             that screen is a full-width card with a title, so the eye reads this
+             one as leftover furniture and slides past it.
+
+             THE PASS TABLE'S CHIP IS NOT A PRECEDENT for it, which is where I
+             got this wrong: that chip sits INSIDE a badge that has already
+             announced itself with a heading. This one is the announcement. */
+          `<button type="button" class="opsopen${
+            OPSTATE.open === opsKey(f) ? " on" : ""}" data-opsopen="${esc(opsKey(f))}">
+             <span class="opsog">⚙</span>
+             <span class="opsol">${OPSTATE.open === opsKey(f)
+               ? "Hide operations" : "Operations"}</span>
+             <span class="opsoc">${OPSTATE.open === opsKey(f)
+               ? "‹" : "›"}</span>
+           </button>`}
         ${opsBadge(f)}
       </div>
     </article>`;
@@ -2337,6 +2373,14 @@ function renderResultsJob(r){
        screen. ⚠️ THE TRADE BAND AND THE SEED REASON WENT WITH IT -- neither has
        another home on this card yet, and both are worth one.
        `taskPanel` itself is untouched: the Active tab still uses it. */
+    /* WHY, FIRST. Trevor, 2026-09-18: *"If it was an optimize, I want the
+       Optimize badge under it. If it was a bucket or backtest, I want those
+       badges displayed also."* -- so the explanation leads and the kind-specific
+       set follows, whichever set that is. It is job-level, not task-level: the
+       seed explains why the whole job exists, so it does NOT change with the
+       chip, the same rule the Information badge above it follows. Read off the
+       first task for that reason, not off `tasks[open]`. */
+    whyBadge(tasks.length ? tasks[0] : null, r) +
     /* THE PER-CHIP BADGES. The panel above carries what belongs to the TASK
        and nothing else -- its header, what it picked, its trade band -- and
        these three carry the rest. A sweep gets its own badge instead, because
@@ -3490,6 +3534,71 @@ function graphFull(t, rep){
 
    The Information badge itself does NOT change with the chip -- it is the job's
    own row, uncondensed, and a job has one of those however many tasks it ran. */
+/* WHY THIS RAN, AND WHAT IT SETTLED. Trevor, 2026-09-18: *"I want to have an
+   explanation as another badge in the task card. Why the round was seeded, what
+   the round proved ... If it was an optimize, I want the Optimize badge under
+   it."* So it sits directly under the Information badge and ABOVE whichever
+   kind-specific set follows.
+
+   NOT NEW DATA. The tag, the sentence and the conclusion have travelled on the
+   seed record all along; what they lost was a home. The per-chip task panel
+   used to draw them and was removed on 2026-09-17 -- the note above the badge
+   block flags exactly this as worth restoring. This restores it as a BADGE
+   rather than rebuilding the panel, so `taskSeed` stays the ONE definition:
+   the Active tab still renders it inside the panel, where the panel IS the card.
+
+   FOUR THINGS, AND THEY ARE NOT THE SAME THING:
+     reason      the category, groupable -- see seeds.REASONS
+     note        why it cut in line, written when it was created
+     outcome     what HAPPENED, written by the MACHINE (a failure, a requeue)
+     finding     what it PROVED, written by a PERSON afterwards
+   The last two are separate on purpose: the machine overwrites `outcome`, and a
+   conclusion silently replaced by "requeued after a timeout" is worse than no
+   conclusion at all. See seeds.Seed.finding.
+
+   A ROTATION ROUND STILL GETS A LINE. Returning "" for anything unseeded would
+   render "the scheduler picked this in its normal order" and "the seed data
+   never reached the app" identically, and those are opposite problems. */
+function whyBadge(t, r){
+  const sd = ((t || {}).detail || {}).seed;
+  if(!sd){
+    /* 🔴 SEEDED, BUT THE REASON DID NOT TRAVEL. The ledger row carries
+       `seeded` as a BOOLEAN -- app_snapshot._seeded_round_keys works out which
+       rows a seed produced -- and the explanation itself rides on a TASK's
+       detail. A job whose reports never resolved has no tasks, so a round that
+       is plainly marked SEED can have nothing to show. That is the case where
+       the reason matters MOST: there is no data, so the why is all there is.
+       Say which of the two is happening rather than rendering the rotation line
+       over a gold SEED chip and contradicting the card above. Fixed properly by
+       putting `seed_id` on the ledger row -- publisher side, so it waits. */
+    if(r && r.seeded){
+      return `<div class="card"><div class="card-in">
+          <div class="tlab">Why — SEEDED</div>
+          <div class="tnote">This round was seeded, but no seed record is linked
+          to it, so the reason and the note did not travel. The row records only
+          THAT it was seeded, not which seed it was.</div>
+        </div></div>`;
+    }
+    return `<div class="card"><div class="card-in">
+        <div class="tlab">Why</div>
+        <div class="tnote">Not seeded — the scheduler picked this group in its
+        normal rotation, so there is no override to explain.</div>
+      </div></div>`;
+  }
+  const row = (lab, body) => `<div class="tsec"><div class="tlab">${esc(lab)}</div>
+      <div class="tnote">${body}</div></div>`;
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">Why — ${esc(sd.reason || "UNSPECIFIED")}</div>` +
+    (sd.reason_text ? `<div class="tnote">${esc(sd.reason_text)}</div>` : "") +
+    (sd.note ? row("Seeded because", "&ldquo;" + esc(sd.note) + "&rdquo;") : "") +
+    (sd.finding ? row("What it proved", esc(sd.finding)) : "") +
+    /* Only when there IS one. A blank machine outcome is the normal, healthy
+       case, and a row saying so would sit on every card forever. */
+    (sd.outcome ? row("What happened", esc(sd.outcome)) : "") +
+    (sd.created_by ? `<div class="tby">seeded by ${esc(sd.created_by)}</div>` : "") +
+    `</div></div>`;
+}
+
 function metricsBadge(t){
   const d = (t || {}).detail;
   if(!d || !d.metrics) return "";
@@ -5100,8 +5209,14 @@ const POLL_MS = 20000;
   setInterval(() => {
     if(document.hidden || !LAST_SNAPSHOT) return;
     const el = document.getElementById("stamp");
+    /* THE BUILD GOES HERE TOO, and forgetting it is why this ticker was a bug
+       the day the stamp shipped: the id appeared on load and vanished five
+       seconds later, so the one question it exists to answer -- which build is
+       this phone running -- could only be answered in the instant after a
+       refresh. Any writer of this element owes the whole line. */
     if(el) el.textContent = "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) +
-                            snapAge(LAST_SNAPSHOT) + " · epoch " + EPOCH;
+                            snapAge(LAST_SNAPSHOT) + " · epoch " + EPOCH +
+                            " · app " + APP_BUILD;
   }, 5000);
 })();
 
