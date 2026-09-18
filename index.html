@@ -5349,19 +5349,23 @@ document.addEventListener("input", e => {
   document.getElementById("page-results").innerHTML = renderResults();
 });
 
-function repaintCards(){
-  document.getElementById("page-results").innerHTML = renderResults();
-  /* 🔴 THE FORMAT PREVIEW PAINTS ITS OWN ACTIVE PAGE -- a gallery of one card
-     per operation, built by calling this page's real renderers with one machine
-     at a time. `renderActive()` would replace all of it with the two cards the
-     invented fleet really produces, so until today the first tap on that tab
-     wiped the page. Nothing there was tappable before the Operations panel, so
-     nothing ever found it.
+/* 🔴 ONE PLACE PAINTS THE ACTIVE PAGE, and there are two callers: a repaint
+   after new data, and opening or closing a job. The second used to write
+   `renderActive()` straight into the element -- correct in the app, and wrong in
+   the format preview, which paints its own Active page and lost its
+   invented-data warning on the way into a job detail made entirely of invented
+   numbers. That warning is the one line on this page that must never go missing.
 
-     The phone has no such hook and takes the normal path. */
+   THE PREVIEW DECLARES A HOOK; the phone has none and takes the plain path. */
+function paintActive(){
   if(typeof window !== "undefined" && typeof window.__PREVIEW_ACTIVE__ === "function")
     window.__PREVIEW_ACTIVE__();
   else document.getElementById("page-active").innerHTML = renderActive();
+}
+
+function repaintCards(){
+  document.getElementById("page-results").innerHTML = renderResults();
+  paintActive();
   stickTop();
   /* The card is a new element after a repaint, so the class has to be put back
      on it -- otherwise tapping a metric while scrolled down un-collapses the
@@ -5404,7 +5408,7 @@ document.addEventListener("click", e => {
     // "" is the back button. Repaints ONLY the Active page: opening a job is
     // navigation, not new data, so nothing else should flicker.
     ACTIVE_JOB = j.dataset.job || null;
-    document.getElementById("page-active").innerHTML = renderActive();
+    paintActive();
     window.scrollTo(0, 0);
   }
 });
