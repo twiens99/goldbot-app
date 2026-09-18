@@ -900,6 +900,63 @@ article.jrow{cursor:default;}
 .applyb:disabled{background:var(--card-2);color:var(--faint);cursor:default;}
 .applyb:active:not(:disabled){transform:translateY(1px);}
 .pickfoot{font-size:.68rem;color:var(--faint);line-height:1.45;}
+/* ---------- the operations panel ---------- */
+.opsp{
+  border-top:1px solid var(--line);margin-top:9px;padding-top:9px;
+  display:flex;flex-direction:column;gap:2px;
+}
+.opsst{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:.72rem;color:var(--dim);margin-bottom:4px;
+}
+.opsdot{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.opsdot.good{background:var(--good);}
+.opsdot.bad{background:var(--bad);}
+.opssep{color:var(--faint);}
+.opsage{color:var(--faint);font-size:.66rem;}
+.opsh{
+  font-size:.6rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:9px 0 5px;
+}
+.opsrow{display:flex;flex-wrap:wrap;gap:6px;}
+.opsb{
+  flex:1 1 auto;min-width:calc(50% - 3px);
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-family:inherit;font-size:.74rem;font-weight:600;
+  color:var(--text);background:var(--card-2);border:1px solid var(--line);
+  border-radius:8px;padding:9px 8px;cursor:pointer;
+}
+.opsb:active{transform:translateY(1px);}
+/* LOUD IS A BORDER, NOT A FILL. Three filled red buttons in one row read as an
+   error state rather than as three controls that happen to be serious. */
+.opsb.loud{color:var(--bad);border-color:rgba(224,104,90,.45);}
+.opsb.armed{
+  flex:1 1 100%;background:rgba(224,104,90,.14);border-color:var(--bad);
+  color:var(--bad);
+}
+/* The unarmed buttons stay visible while something is armed -- you must be able
+   to read what you did NOT pick -- but they cannot be mistaken for the live one. */
+.opsb.dim{opacity:.38;}
+.opsb.cancel{flex:1 1 100%;color:var(--dim);}
+.opsarm{
+  font-size:.72rem;color:var(--bad);line-height:1.45;
+  background:rgba(224,104,90,.10);border-radius:7px;padding:8px 10px;margin-top:6px;
+}
+.opsopt{
+  display:flex;align-items:baseline;gap:8px;
+  padding:6px 2px;font-size:.74rem;color:var(--dim);
+}
+.opsopt.on{color:var(--text);}
+.opsr{color:var(--faint);font-size:.7rem;}
+.opsopt.on .opsr{color:var(--gold);}
+.opsl{font-weight:600;min-width:98px;}
+.opsn{font-size:.66rem;color:var(--faint);}
+.opsunk{font-size:.66rem;color:var(--warn);padding:3px 2px 0;}
+.opsnote{font-size:.66rem;color:var(--faint);line-height:1.45;padding:4px 2px 0;}
+.opsdis{
+  font-size:.7rem;color:var(--warn);line-height:1.45;
+  background:rgba(224,139,74,.10);border-radius:7px;padding:8px 10px;margin-top:6px;
+}
 .pickdone{
   font-size:.75rem;color:var(--good);line-height:1.45;
   background:rgba(95,190,149,.10);border-radius:7px;padding:9px 10px;
@@ -1789,6 +1846,186 @@ function passPick(f){
 }
 
 /* ONE MACHINE, ONE CARD. Same reason as seedCard. */
+/* ---------- operations: a machine's own controls ----------
+   Trevor, 2026-09-18: *"Click on a machine. I want an Operations Badge here."*
+
+   🔴 BEHIND A CHIP, AND THAT IS NOT A SPACE DECISION. `Stop everything` and
+   `Kill current job` live in here. A control that ends a seventeen-day round
+   must not sit one stray thumb away on a card you are scrolling past.
+
+   🔴 AND ARMED BEFORE IT FIRES. Trevor: *"I want a confirm action. I don't
+   want to accidentally click restart. or stop."* The first tap arms one action
+   and names it back to you; the second commits. Only ONE can be armed at a
+   time, and arming dims the rest -- so a mis-tap while something is armed
+   cannot fire a different thing than the one you are reading.
+
+   🔴 PAUSE AND RESUME ARE NOT ARMED, deliberately. They are reversible by
+   pressing the other one, and putting a confirm in front of a harmless toggle
+   is how people learn to tap through confirms without reading them -- which
+   spends the safety exactly where it was needed.
+
+   🔴 THE WORDS ARE THE TRAY'S WORDS. "Pause after current job", not "Pause".
+   If the phone and the tray name the same action differently, the person
+   holding both has to work out whether they ARE the same action -- and for two
+   of these the honest answer is "nearly, but not in when it takes effect". The
+   tier and compute ladders are the engine's own tables for the same reason.
+
+   🔴 WITH ONE DELIBERATE EXCEPTION, AND IT IS NOT A RENAME. The tray's "Restart
+   current job" starts the whole ROUND again. Trevor, 2026-09-18: *"restart
+   actually means Restart, update, and then restart same task. (NOT JOB)"* --
+   take the pending update, come back up, and resume at the TASK that was
+   running, rather than throwing away the tasks that already finished. A round
+   is several tasks and its sweep can be days of them, so restarting the job to
+   recover one backtest is not a smaller version of the same action, it is a
+   much larger one.
+
+   ⚠️ SO THIS BUTTON HAS NO TRAY ITEM BEHIND IT YET. It is not `restart_current()`
+   under a friendlier name, and wiring it to that would do the destructive thing
+   while the card promised the careful one. It needs its own supervisor action;
+   until then the commit refuses like the rest.
+
+   WHAT IS IN THAT MENU AND DELIBERATELY NOT HERE. Trevor, 2026-09-18: the
+   tray's "Restart tray after current job" is *"not necessary anymore"*, and
+   "Update after current job" *"already automatically does that"*. Copying them
+   onto the phone would put back two controls the machine has stopped needing,
+   and a control for something that happens by itself is a control that can only
+   confuse the next reader about whether it happened. "Open Strategy Tester"
+   opens a window on the machine, which is no use from a phone.
+
+   🔴 NOTHING IS SENT YET, AND THE COMMIT IS WHERE THAT SURFACES. The page is
+   https on a public host; the machine's API is plain http on its own network,
+   which a secure page may not call. Disabling every button would have hidden
+   the arming behaviour that this badge mostly IS, so the buttons work, the
+   confirm works, and the commit reports honestly that it went nowhere. */
+const OPSTATE = { open: null, arm: null, said: null };
+
+/* The engine's ladders, not this card's -- machine_capabilities.TIERS and
+   compute_mode.MODE_LABELS, shown whole with the current rung marked. */
+const OPS_TIERS = [
+  ["realtick_20000", "Heavy", "real ticks, up to 20,000 passes"],
+  ["realtick_8000", "Regular", "real ticks, up to 8,000 passes"],
+  ["ohlc_only", "No real ticks", "takes no real-tick work at all"],
+];
+const OPS_COMPUTE = [
+  ["full", "Full", "all cores, normal priority"],
+  ["background", "Background", "all cores, idle priority"],
+  ["minimum", "Minimum", "one core, idle priority"],
+];
+/* key, icon, the tray's own label, loud, needs arming */
+const OPS_RUN = [
+  ["skip", "\u23ed", "Skip this group", false, true],
+  ["pause", "\u23f8", "Pause after current job", false, false],
+  ["resume", "\u25b6", "Resume", false, false],
+  ["restart", "\u21ba", "Restart this task", true, true],
+  ["kill", "\u2715", "Kill current job", true, true],
+  ["stop", "\u23f9", "Stop everything", true, true],
+];
+
+function opsKey(f){
+  return [f.machine, f.regime, f.bucket_id, f.group_id].join("|");
+}
+function opsLabel(k){
+  const r = OPS_RUN.find(x => x[0] === k);
+  return r ? r[2] : k;
+}
+
+/* 🔴 REACHABLE AND WORKING ARE TWO QUESTIONS, and one chip cannot hold both.
+   A machine paused on purpose is connected and not running -- neither "Running"
+   nor "Not responding" -- and a single three-way chip paints that as broken,
+   which is how a deliberate pause gets "fixed" by somebody at 7am. So the link
+   is one fact and the work is another, and both are always shown. */
+function opsStatus(f){
+  const st = stale(f);
+  const run = String(f.tray_state || "").toUpperCase();
+  /* 🔴 THE PHASE ALREADY SAYS PAUSED, so do not assert "Running" over it.
+     job_control has a paused-after-a-phase form, and phaseText renders it with
+     the word PAUSED ahead of the phase it stopped in. Prefixing THAT produced
+     "Running · " in front of a string beginning "PAUSED" -- the card
+     contradicting itself in four words. The PHASE is the authority on what the
+     machine is doing; tray_state only adds what a phase cannot express, like
+     STOPPED, and a machine on older code sends none at all. */
+  const phPaused = String(f.phase || "").toUpperCase().indexOf("PAUSED") === 0;
+  let work;
+  if(phPaused) work = phaseText(f.phase);
+  else if(run === "PAUSED") work = "Paused";
+  else if(run === "PAUSING") work = "Pausing after this job";
+  else if(run === "STOPPED") work = "Stopped";
+  else if(run === "RESTARTING") work = "Restarting";
+  else if(running(f)) work = "Running \u00b7 " + phaseText(f.phase);
+  else if(picking(f)) work = "Choosing a group";
+  else work = "Idle";
+  return `<div class="opsst">
+      <span class="opsdot ${st ? "bad" : "good"}"></span>${
+        st ? "Not responding" : "Connected"}
+      <span class="opssep">\u00b7</span><span>${esc(work)}</span>${
+      st ? `<span class="opsage">last beat ${esc(ago(f.age_seconds))}</span>` : ""}
+    </div>`;
+}
+
+/* One ladder, current rung marked. "What is it set to" and "what could it be"
+   are the two things you came here for and neither answers the other. */
+function opsLadder(rows, current, unknownText){
+  const cur = String(current || "").toLowerCase();
+  const known = cur && rows.some(r => r[0] === cur);
+  return rows.map(([k, label, note]) =>
+    `<div class="opsopt${known && k === cur ? " on" : ""}">
+       <span class="opsr">${known && k === cur ? "\u25cf" : "\u25cb"}</span>
+       <span class="opsl">${esc(label)}</span>
+       <span class="opsn">${esc(note)}</span>
+     </div>`).join("") +
+    (known ? "" : `<div class="opsunk">${esc(unknownText)}</div>`);
+}
+
+function opsBadge(f){
+  const key = opsKey(f);
+  if(OPSTATE.open !== key) return "";
+  /* \ud83d\udd34 THE KEY AND THE ACTION TRAVEL IN SEPARATE ATTRIBUTES. They were one
+     "key|action" string, and the key is itself machine|regime|bucket|group --
+     so splitting on "|" handed the action the REGIME, and confirming "Stop
+     everything" reported back "BULL was not sent". Two fields, no delimiter,
+     nothing to collide. */
+  const armed = OPSTATE.arm && OPSTATE.arm.key === key ? OPSTATE.arm.act : null;
+
+  const runRow = OPS_RUN.map(([k, ic, label, loud, needs]) => {
+    if(armed === k)
+      return `<button type="button" class="opsb loud armed" data-opsgo="${
+        esc(key)}" data-opsact="${esc(k)}">\u2713 Confirm \u2014 ${esc(label)}</button>`;
+    return `<button type="button" class="opsb${loud ? " loud" : ""}${
+      armed ? " dim" : ""}" data-ops${needs ? "arm" : "go"}="${esc(key)}" data-opsact="${
+      esc(k)}">${ic} ${esc(label)}</button>`;
+  }).join("") + (armed
+    ? `<button type="button" class="opsb cancel" data-opscancel>Cancel</button>` : "");
+
+  return `<div class="opsp">
+      ${opsStatus(f)}
+
+      <div class="opsh">Run state</div>
+      <div class="opsrow">${runRow}</div>
+      ${armed ? `<div class="opsarm">Armed. Press <b>Confirm</b> to send
+        \u201c${esc(opsLabel(armed))}\u201d, or Cancel.</div>` : ""}
+      ${OPSTATE.said ? `<div class="opsdis">${OPSTATE.said}</div>` : ""}
+      <div class="opsnote"><b>Skip this group</b> hands it back and takes the
+        next one. <b>Pause</b> waits for the current job to finish \u2014 nothing is
+        interrupted. <b>Restart this task</b> takes the pending update and comes
+        back up at the <i>task</i> that was running, so the tasks this round has
+        already finished are kept. <b>Kill</b> ends the running pass now and
+        releases the group so a peer can claim it. <b>Stop everything</b> ends
+        the job and the supervisor with it.</div>
+
+      <div class="opsh">This machine</div>
+      ${opsLadder(OPS_TIERS, f.tier, "This machine has not reported a tier.")}
+      <div class="opsnote">The ceiling on a real-tick sweep. A property of the
+        machine, not of the round \u2014 the scheduler reads it when deciding what
+        this one may be given.</div>
+
+      <div class="opsh">Compute</div>
+      ${opsLadder(OPS_COMPUTE, f.compute_mode,
+                  "This machine is not reporting its compute mode yet.")}
+      <div class="opsnote">Applied to the running processes, never written into
+        MT5 \u2014 reversible in one tap, and the round is unaffected either way.</div>
+    </div>`;
+}
+
 function machineCard(f){
     const rc = RC[f.regime] || "";
     const live = running(f);
@@ -1877,11 +2114,21 @@ function machineCard(f){
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
           `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
           `so this page cannot say what it is doing now.</span></div>` : ""}
-        ${live ? `<div class="acts">
-          <button type="button" class="primary">Skip</button>
-          <button type="button">To OHLC</button>
-          <button type="button">To Ticks</button>
-        </div>` : ""}
+        ${/* OPERATIONS, ON EVERY MACHINE AND NOT ONLY A RUNNING ONE. The three
+              buttons that used to sit here were live-and-inert and rendered only
+              while `live`, so a machine that had stopped -- the one you most want
+              to reach -- offered nothing at all.
+
+              TO OHLC AND TO TICKS ARE GONE. Trevor, 2026-09-18: *"We actually
+              don't have any OHLC anymore anyway."* A control that switches a
+              round into a mode no group runs in can only ever be wrong. Old
+              rounds still READ as OHLC where they ran and the tier ladder keeps
+              its no-real-ticks rung, because those are a record and a setting
+              rather than an action. */
+          `<div class="mgrp"><button type="button" class="gch${
+            OPSTATE.open === opsKey(f) ? " on" : ""}" data-opsopen="${esc(opsKey(f))}">${
+            OPSTATE.open === opsKey(f) ? "Hide operations" : "Operations"}</button></div>`}
+        ${opsBadge(f)}
       </div>
     </article>`;
 }
@@ -4917,6 +5164,37 @@ document.addEventListener("click", e => {
   if(e.target.closest("[data-optopen]")){
     OPTSTATE.open = !OPTSTATE.open; repaintCards(); return;
   }
+  /* OPENING OR CLOSING A PANEL DISARMS IT. An action armed on one machine must
+     not still be armed when you come back to that card later -- the whole point
+     of arming is that the confirm is read in the same breath as the tap. */
+  const oo = e.target.closest("[data-opsopen]");
+  if(oo){
+    const k = oo.getAttribute("data-opsopen");
+    OPSTATE.open = OPSTATE.open === k ? null : k;
+    OPSTATE.arm = null; OPSTATE.said = null; repaintCards(); return;
+  }
+  if(e.target.closest("[data-opscancel]")){
+    OPSTATE.arm = null; repaintCards(); return;
+  }
+  const oa = e.target.closest("[data-opsarm]");
+  if(oa){
+    OPSTATE.arm = {key: oa.getAttribute("data-opsarm"),
+                   act: oa.getAttribute("data-opsact")};
+    OPSTATE.said = null; repaintCards(); return;
+  }
+  const og = e.target.closest("[data-opsgo]");
+  if(og){
+    const k = og.getAttribute("data-opsgo"), act = og.getAttribute("data-opsact");
+    OPSTATE.arm = null;
+    /* THE COMMIT IS WHERE THE MISSING CHANNEL SURFACES, and it names the action
+       back rather than saying "not implemented" -- so what you confirmed and
+       what did not happen are the same sentence. */
+    OPSTATE.said = "\u26a0\ufe0f <b>" + esc(opsLabel(act)) + "</b> was not sent. This page "
+      + "reads a published snapshot and has no route back to "
+      + esc(String(k).split("|")[0]) + " yet \u2014 it needs the app served from the "
+      + "laptop rather than a public host.";
+    repaintCards(); return;
+  }
   const os = e.target.closest("[data-optslice]");
   if(os){ OPTSTATE.slice = os.getAttribute("data-optslice"); repaintCards(); return; }
   const oc = e.target.closest("[data-optcol]");
@@ -5073,7 +5351,17 @@ document.addEventListener("input", e => {
 
 function repaintCards(){
   document.getElementById("page-results").innerHTML = renderResults();
-  document.getElementById("page-active").innerHTML = renderActive();
+  /* 🔴 THE FORMAT PREVIEW PAINTS ITS OWN ACTIVE PAGE -- a gallery of one card
+     per operation, built by calling this page's real renderers with one machine
+     at a time. `renderActive()` would replace all of it with the two cards the
+     invented fleet really produces, so until today the first tap on that tab
+     wiped the page. Nothing there was tappable before the Operations panel, so
+     nothing ever found it.
+
+     The phone has no such hook and takes the normal path. */
+  if(typeof window !== "undefined" && typeof window.__PREVIEW_ACTIVE__ === "function")
+    window.__PREVIEW_ACTIVE__();
+  else document.getElementById("page-active").innerHTML = renderActive();
   stickTop();
   /* The card is a new element after a repaint, so the class has to be put back
      on it -- otherwise tapping a metric while scrolled down un-collapses the
