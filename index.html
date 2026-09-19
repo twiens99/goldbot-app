@@ -919,6 +919,27 @@ article.jrow{cursor:default;}
 .opsol{flex:1;min-width:0;}
 .opsoc{color:var(--faint);font-size:1rem;line-height:1;}
 
+/* What broke, on which machine, how long ago. Quiet: it qualifies the line
+   above it rather than competing with the group name. */
+.failwhy{
+  font-size:.68rem;color:var(--faint);line-height:1.45;margin-top:3px;
+  font-family:"Roboto Mono",ui-monospace,monospace;overflow-wrap:anywhere;
+}
+
+/* One surviving pass folder, and whether anything claims it. */
+.failrow{
+  display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  font-size:.72rem;padding:5px 2px;border-top:1px solid var(--line);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+}
+.failp{font-weight:700;color:var(--text);}
+.failr{color:var(--dim);}
+/* ORPHAN IS THE LOUD ONE. A claimed folder is already reachable from Results
+   and needs no attention; an unclaimed one is evidence nothing points at. */
+.failc{font-size:.63rem;margin-left:auto;}
+.failc.ok{color:var(--faint);}
+.failc.orphan{color:var(--warn);font-weight:700;}
+
 /* ---------- the operations panel ---------- */
 .opsp{
   border-top:1px solid var(--line);margin-top:9px;padding-top:9px;
@@ -1166,6 +1187,12 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     <section class="page" id="page-home"></section>
     <section class="page" id="page-active" hidden></section>
     <section class="page" id="page-results" hidden></section>
+    <!-- 🔴 NO TAB OF ITS OWN. Trevor, 2026-09-19: the Schedule is a badge under
+         Results on the home screen, not a section of Settings. A fifth tab would
+         buy a permanent seat in a four-icon bar for something you open when you
+         are changing the plan, which is rarely; a home badge costs nothing when
+         you are not. Reached from home, left by its own back button. -->
+    <section class="page" id="page-schedule" hidden></section>
     <section class="page" id="page-settings" hidden></section>
   </main>
 
@@ -1195,7 +1222,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260918-143610";
+const APP_BUILD = "20260919-150949";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
@@ -1574,7 +1601,7 @@ function jobsDone(regime, bucketId){
    hours_remaining -- so the renderer re-derives it rather than the publisher
    growing a field for a thing it already has the inputs for.
 
-   ANCHORED TO THE BEACON, NOT TO NOW. `percent` was true when the machine last
+   ANCHO🔴 TO THE BEACON, NOT TO NOW. `percent` was true when the machine last
    reported; adding the remaining hours to `now` would push every ETA later by
    the beacon's own age. That is seconds on a live card -- and it is the whole
    story on a stale one, which is why a STALE BEACON GETS NO ETA. Its percent is
@@ -1775,6 +1802,117 @@ function seedCard(sd){
    Parked (3 failures) is the one state that does not auto-revive: it is asking
    for a decision, which is exactly what this page should not make someone go
    looking for. */
+/* ---------- a failure, and what you can do about it ----------
+   Trevor, 2026-09-19: *"I'm trying to give the app the capability to deal with
+   the failure, rather than always having you to look into it."*
+
+   🔴 THE PANEL REUSES THE OPERATIONS VOCABULARY on purpose -- same opener,
+   same armed buttons, same honest commit. Two panels of machine actions that
+   looked different would be two things to learn for one idea, and the arming
+   rule matters more here than there: Delete is on this card.
+
+   🔴 WHAT SURVIVES IS USUALLY NOTHING, AND SAYING SO IS THE POINT. The failure
+   path already cleans up after itself, so most cards have no data to offer and
+   the honest line is that nothing was left behind -- not an empty list. The
+   case worth a decision is the other one: a finished sweep whose round never
+   closed out, leaving reports nothing points at. */
+const FAILSTATE = { open: null, arm: null, said: null };
+
+/* key, icon, label, loud, needs arming */
+const FAIL_ACTS = [
+  ["clear", "\u2713", "Clear this failure", false, true],
+  ["retry", "\u21bb", "Retry now", false, true],
+  ["count", "\u2261", "Set the count", false, true],
+  ["recover", "\u21e9", "Recover the round", false, true],
+  ["delete", "\u2715", "Delete the data", true, true],
+];
+
+function failKey(f){
+  return [f.regime, f.bucket_id, f.group_id].join("|");
+}
+function failActLabel(k){
+  const r = FAIL_ACTS.find(x => x[0] === k);
+  return r ? r[2] : k;
+}
+/* The orphans -- reports no round resolves to. `claimed` is the whole join:
+   a claimed folder belongs to a round you can already open from Results, so it
+   is not a decision and must not be offered as one. */
+function failOrphans(f){
+  return ((f || {}).data || []).filter(p => p && !p.claimed);
+}
+
+function failData(f){
+  const rows = (f || {}).data || [];
+  if(!rows.length)
+    return `<div class="opsnote"><b>Nothing was left behind.</b> An incomplete
+      round is cleaned up on the way out \u2014 the pass folder is removed and the
+      round counter rolled back, so the retry reuses the same number. There is
+      no data here to keep or discard.</div>`;
+  return rows.map(p => `<div class="failrow">
+      <span class="failp">${esc(p.pass)}</span>
+      <span class="failr">${esc(p.reports)} report${p.reports === 1 ? "" : "s"}</span>
+      <span class="failc ${p.claimed ? "ok" : "orphan"}">${
+        p.claimed ? "attached to a round" : "no round claims it"}</span>
+    </div>`).join("") +
+    `<div class="opsnote">${failOrphans(f).length
+      ? `A sweep that finished whose round never closed out. The reports are
+         real \u2014 often days of compute \u2014 and nothing points at them, which is
+         what <b>Recover the round</b> re-attaches.`
+      : `Every folder here already belongs to a round you can open from Results,
+         so there is nothing to decide.`}</div>`;
+}
+
+function failPanel(f){
+  const key = failKey(f);
+  if(FAILSTATE.open !== key) return "";
+  const armed = FAILSTATE.arm && FAILSTATE.arm.key === key ? FAILSTATE.arm.act : null;
+  const orphans = failOrphans(f).length;
+
+  const row = FAIL_ACTS.filter(([k]) =>
+      /* Recover and Delete are about DATA, so they appear only when there is
+         some. An action with nothing to act on is a control that can only
+         disappoint. */
+      (k !== "recover" && k !== "delete") || orphans)
+    .map(([k, ic, label, loud, needs]) => {
+      if(armed === k)
+        return `<button type="button" class="opsb loud armed" data-failgo="${
+          esc(key)}" data-failact="${esc(k)}">\u2713 Confirm \u2014 ${esc(label)}</button>`;
+      return `<button type="button" class="opsb${loud ? " loud" : ""}${
+        armed ? " dim" : ""}" data-fail${needs ? "arm" : "go"}="${esc(key)}" data-failact="${
+        esc(k)}">${ic} ${esc(label)}</button>`;
+    }).join("") + (armed
+      ? `<button type="button" class="opsb cancel" data-failcancel>Cancel</button>` : "");
+
+  return `<div class="opsp">
+      <div class="opsh">Why it failed</div>
+      <div class="opsnote">${f.failed_reason
+        ? `${esc(f.failed_reason).replace(/ -- /g, " \u2014 ")}${
+            f.failed_on ? ` \u00b7 on <b>${esc(f.failed_on)}</b>` : ""}${
+            f.failed_at ? ` \u00b7 ${esc(ago(Date.now() / 1000 - Number(f.failed_at)))}` : ""}`
+        : `<b>No reason was recorded.</b> This row predates the app storing one.
+           The next failure on this group will say what happened, on which
+           machine, and when.`}</div>
+      ${f.blocked ? `<div class="opsdis">\u26a0\ufe0f <b>Parked in two places.</b> The
+        failure count is one record and the scheduler's own block is another
+        \u2014 reason <b>${esc(f.blocked.reason || "unknown")}</b>. Clearing has to
+        remove both, or the app and the scheduler disagree about whether this
+        group may run.</div>` : ""}
+
+      <div class="opsh">What data exists</div>
+      ${failData(f)}
+
+      <div class="opsh">Actions</div>
+      <div class="opsrow">${row}</div>
+      ${armed ? `<div class="opsarm">Armed. Press <b>Confirm</b> to send
+        \u201c${esc(failActLabel(armed))}\u201d, or Cancel.</div>` : ""}
+      ${FAILSTATE.said ? `<div class="opsdis">${FAILSTATE.said}</div>` : ""}
+      <div class="opsnote"><b>Clear</b> wipes the count and the scheduler's block
+        together, so the group goes back into normal rotation. <b>Retry now</b>
+        puts it at the front without clearing its history. <b>Set the count</b>
+        moves it up or down the three-failure ladder by hand.</div>
+    </div>`;
+}
+
 function renderFailures(){
   if(!FAILURES.length) return "";
   return '<div class="section-label">Failing — needs a look</div>' +
@@ -1798,7 +1936,42 @@ function renderFailures(){
           <div>
             <div class="title">${esc(humanize(f.group_id) || "Unknown group")}</div>
             <div class="sub">${esc(why)}</div>
+            ${/* 🔴 WHAT HAPPENED, AND ON WHICH MACHINE. The count alone cannot
+                  tell three broken groups apart from one machine having a bad
+                  afternoon -- and the second is the common case: 2026-09-18 put
+                  three failures across two regimes on this screen inside
+                  fourteen minutes, and the only way to date them was the file
+                  mtimes on disk.
+
+                  ABSENT RATHER THAN INVENTED. Rows written before the reason
+                  was recorded carry none of this, so the line is simply not
+                  drawn. A card that said "unknown" for every old row would be
+                  three lines of noise saying nothing. */
+              (f.failed_reason || f.failed_at || f.failed_on)
+                ? `<div class="failwhy">${
+                    /* The publisher keeps these ASCII on purpose -- a reason is
+                       printed to a console too, and a cp1252 one raises on an
+                       em dash. So the dash is made pretty HERE, where the only
+                       consumer is a browser. */
+                    f.failed_reason
+                      ? esc(f.failed_reason).replace(/ -- /g, " — ")
+                      : "no reason recorded"}${
+                    f.failed_on ? " · on " + esc(f.failed_on) : ""}${
+                    f.failed_at
+                      ? " · " + esc(ago(Date.now() / 1000 - Number(f.failed_at)))
+                      : ""}</div>`
+                : ""}
           </div>
+          <button type="button" class="opsopen${
+            FAILSTATE.open === failKey(f) ? " on" : ""}" data-failopen="${
+            esc(failKey(f))}">
+            <span class="opsog">\u2699</span>
+            <span class="opsol">${FAILSTATE.open === failKey(f)
+              ? "Hide" : "Look into it"}</span>
+            <span class="opsoc">${FAILSTATE.open === failKey(f)
+              ? "\u2039" : "\u203a"}</span>
+          </button>
+          ${failPanel(f)}
         </div>
       </article>`;
     }).join("");
@@ -2621,7 +2794,7 @@ let ACTIVE_JOB = null;
    ACTIVE_JOB because the two tabs navigate independently -- opening a finished
    job must not close the running one you were watching. */
 let RESULTS_JOB = null;
-/* HOW THE RESULTS LIST IS ORDERED AND NARROWED. Trevor, 2026-09-16: the chips
+/* HOW THE RESULTS LIST IS ORDE🔴 AND NARROWED. Trevor, 2026-09-16: the chips
    on a row *"are going to sort the order of the list ... Regime cycles between
    the three and the bucket id will also cycle between all the bucket numbers
    available."*
@@ -3125,7 +3298,7 @@ function sgX(i, n, W){
 }
 
 /* series: [{colour, span, points:[{i, value, lo, hi, dot, square}]}]
-   labels: the x axis, SHARED by every series -- a round one variable was not
+   labels: the x axis, SHA🔴 by every series -- a round one variable was not
    swept in is still a column, so two variables tuned in different rounds stay
    aligned instead of one sliding along to fill the other's gaps. */
 function seriesGraph(labels, series, box){
@@ -3322,7 +3495,7 @@ function varHistoryGraph(hist, vars, big){
    keep is a split proposal with a number already attached.
 
    🔴 TRADE COUNT ALONE IS THE TRAP, AND THE EA SAYS SO IN ITS OWN COMMENTS.
-   Every ENTRY_FIRED row carries BucketD1Slope, so binning trades by slope looks
+   Every ENTRY_FI🔴 row carries BucketD1Slope, so binning trades by slope looks
    free -- and SampleBucketSlope() exists precisely because those samples are
    "CONDITIONED ON A TRADE HAVING FIRED", which is the quantity you are trying to
    normalise. A band holding 30% of the trades because the market SAT there 30%
@@ -3333,7 +3506,7 @@ function varHistoryGraph(hist, vars, big){
    WHERE THE TWO NUMBERS COME FROM. Trades and their slope: `EntryBucketSlope`,
    which rides the CLOSED record ALONGSIDE Profit, Pips and Duration -- so the
    slope and the money are already on one row and no join is needed. (An earlier
-   version of this note sent the reader to the ENTRY_FIRED lines, which carry the
+   version of this note sent the reader to the ENTRY_FI🔴 lines, which carry the
    slope but not the outcome; that would have been a join for nothing.)
    `closed_lines.py` keeps those rows as CLOSED.csv after the log is deleted, so
    this survives for every round from 2026-09-07 on and for none before it.
@@ -4454,7 +4627,7 @@ function taskVars(list, hist){
    would quietly enlarge the group on screen and make the next reader wonder when
    a fifth variable joined it.
 
-   ⚠️ IT IS READ FROM A FLAG, NOT INFERRED FROM ABSENCE. A swept variable missing
+   ⚠️ IT IS READ FROM A FLAG, NOT INFER🔴 FROM ABSENCE. A swept variable missing
    from the group list looks exactly like a rider and might instead be two
    records disagreeing -- so absence alone gets the loud warning below rather
    than a tidy label that would bury it. */
@@ -5074,6 +5247,12 @@ function renderHome(){
        The subline states what is APPLIED, never how many settings exist: a
        priority switched off and a priority nobody ever set are the same
        screen and very different situations. */
+    /* THE SCHEDULE, DIRECTLY UNDER RESULTS. Trevor, 2026-09-19: *"Below
+       Results we'll have another badge that says Schedule. We won't have this
+       section in with settings."* It was a badge on the Settings page, which
+       put the thing that decides WHAT RUNS NEXT behind the same tap as a
+       bucket-priority toggle. It is not a setting; it is the plan. */
+    + homeButton("schedule", "☷", "Schedule", scheduleSummary(), "var(--range)")
     + homeButton("settings", "⚙", "Settings", settingsSummary())
     /* BELOW RESULTS, and only when there is something in it. An empty "To
        review" heading is a heading that trains you to stop looking. */
@@ -5137,6 +5316,20 @@ function modeText(mode){
   return (SETTINGS_STATE.mode_text || {})[mode] || MODE_TEXT_FALLBACK[mode] || "";
 }
 
+function scheduleSummary(){
+  const sch = schedule();
+  const blocks = (sch.blocks || []).length;
+  if(!blocks) return "No blocks yet \u2014 nothing is queued";
+  const status = sch.status || "idle";
+  const cur = Number(sch.cursor || 0);
+  /* WHAT IT IS DOING FIRST, then how much there is of it. A count alone cannot
+     tell a schedule that is running from one that was built and never started,
+     and those are the two states worth telling apart from the home screen. */
+  return `<span class="hcount${status === "running" ? "" : " quiet"}">${
+      esc(status)}</span> \u00b7 ${blocks} block${blocks === 1 ? "" : "s"}` +
+    (status === "running" && blocks ? ` \u00b7 on ${cur + 1} of ${blocks}` : "");
+}
+
 function settingsSummary(){
   const bp = SETTINGS_STATE.bucket_priority || {};
   const bits = [];
@@ -5146,6 +5339,143 @@ function settingsSummary(){
   return bits.length ? bits.join(" \u00b7 ") : "Nothing overridden";
 }
 
+
+
+let SCHED_VIEW = false;
+
+/* THE BLOCKS ARE EDITED LOCALLY AND SAVED IN ONE GO.
+   🔴 A CHIP TAP IS NOT A SAVE, and that is deliberate. Building a block is
+   six or seven taps; POSTing each one would write six half-finished schedules
+   to a record the whole fleet reads, and a machine ticking mid-edit would pick
+   work from a block nobody had finished describing. So edits mutate a local
+   copy and `Save chain` is the only thing that writes. The badge says which
+   state it is in. */
+let SCHED_DRAFT = null;
+
+function schedDraft(){
+  if(!SCHED_DRAFT){
+    const sch = schedule();
+    SCHED_DRAFT = JSON.parse(JSON.stringify(sch.blocks || []));
+  }
+  return SCHED_DRAFT;
+}
+function schedDirty(){ return SCHED_DRAFT !== null; }
+
+/* The draft wins while one exists, so the page shows what you are building
+   rather than what is saved. */
+const _schedule_saved = schedule;
+schedule = function(){
+  const sch = SETTINGS_STATE.schedule || {};
+  if(SCHED_DRAFT) return Object.assign({}, sch, {blocks: SCHED_DRAFT});
+  return sch;
+};
+
+function schedFind(id){
+  return schedDraft().filter(function(b){ return b.id === id; })[0] || null;
+}
+
+function schedNewBlock(){
+  /* Mirrors schedule_builder.new_block's defaults. A block created here and one
+     created by the engine must be the same shape, or a chain saved from the
+     phone would behave differently from one written by a tool. */
+  return {
+    id: Math.random().toString(16).slice(2, 10),
+    name: "", buckets: [], regimes: [], select: "explicit", select_n: 1,
+    groups: "any", machines: [], until: {kind: "jobs", n: 3}, max_jobs: null,
+  };
+}
+
+function schedToggle(list, value){
+  const i = list.indexOf(value);
+  if(i >= 0) list.splice(i, 1); else list.push(value);
+  return list;
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest(
+    "[data-schedgo],[data-schedback],[data-schedadd],[data-schedsave],"
+    + "[data-schededit],[data-scheddel],[data-schedmove],[data-schedact],"
+    + "[data-schedsel],[data-schedreg],[data-schedbkt],[data-schedn],"
+    + "[data-schedgrp],[data-schedmac],[data-scheduntil],[data-schedval],"
+    + "[data-schedscope],[data-schedcap]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = t.dataset;
+  const pair = function(v){
+    const i = String(v).lastIndexOf(":");
+    return [String(v).slice(0, i), String(v).slice(i + 1)];
+  };
+
+  if(d.schedgo !== undefined){ SCHED_VIEW = true; return repaintSettings(); }
+  if(d.schedback !== undefined){ SCHED_VIEW = false; SCHED_EDIT = null; return repaintSettings(); }
+  if(d.schedadd !== undefined){ schedDraft().push(schedNewBlock()); return repaintSettings(); }
+  if(d.schededit !== undefined){
+    SCHED_EDIT = (SCHED_EDIT === d.schededit) ? null : d.schededit;
+    return repaintSettings();
+  }
+  if(d.scheddel !== undefined){
+    SCHED_DRAFT = schedDraft().filter(function(b){ return b.id !== d.scheddel; });
+    return repaintSettings();
+  }
+  if(d.schedmove !== undefined){
+    const [id, dir] = pair(d.schedmove);
+    const list = schedDraft();
+    const i = list.findIndex(function(b){ return b.id === id; });
+    const j = i + Number(dir);
+    if(i >= 0 && j >= 0 && j < list.length){
+      list.splice(j, 0, list.splice(i, 1)[0]);
+    }
+    return repaintSettings();
+  }
+  if(d.schedsave !== undefined){
+    const ok = await apiPost("/schedule", {action: "save",
+                                           name: schedule().name || "schedule",
+                                           blocks: schedDraft()});
+    if(ok) SCHED_DRAFT = null;      // saved -- the record is the truth again
+    return repaintSettings();
+  }
+  if(d.schedact !== undefined){
+    /* 🔴 START AND STOP GO STRAIGHT TO THE FLEET, unlike the edits. Starting
+       FREEZES every baseline the conditions are judged against, so it has to be
+       a deliberate act against what is SAVED -- starting a draft would freeze a
+       baseline for blocks the fleet has never seen. */
+    if(schedDirty()){
+      SETTINGS_ERROR = "save the chain before starting it";
+      return repaintSettings();
+    }
+    await apiPost("/schedule", {action: d.schedact});
+    return repaintSettings();
+  }
+
+  // ---- per-block edits, all local ----
+  const [id, val] = pair(d.schedsel || d.schedreg || d.schedbkt || d.schedn
+    || d.schedgrp || d.schedmac || d.scheduntil || d.schedval || d.schedscope
+    || d.schedcap || ":");
+  const b = schedFind(id);
+  if(!b) return;
+  if(d.schedsel !== undefined) b.select = val;
+  else if(d.schedreg !== undefined) schedToggle(b.regimes, val);
+  else if(d.schedbkt !== undefined) schedToggle(b.buckets, val);
+  else if(d.schedn !== undefined) b.select_n = Number(val);
+  else if(d.schedgrp !== undefined) b.groups = val;
+  else if(d.schedmac !== undefined) schedToggle(b.machines, val);
+  else if(d.scheduntil !== undefined){
+    /* THE VALUE IS DROPPED WITH THE KIND. "3" means jobs under one condition
+       and a PF under another; carrying it across would silently make "until PF
+       reaches 3" out of "until 3 jobs". */
+    b.until = {kind: val};
+  }
+  else if(d.schedval !== undefined){
+    const k = b.until.kind;
+    const field = (k === "jobs") ? "n"
+      : (k === "pinned_cleared" || k === "profit_up_pct") ? "percent" : "value";
+    b.until[field] = Number(val);
+  }
+  else if(d.schedscope !== undefined) b.until.scope = val;
+  else if(d.schedcap !== undefined) b.max_jobs = Number(val) || null;
+  repaintSettings();
+});
 
 /* ---------- the write client ----------
    🔴 THE BASE URL AND ITS TOKEN NEVER TRAVEL IN THE SNAPSHOT, and this is
@@ -5221,9 +5551,32 @@ async function refreshSettings(){
   }catch(e){ /* the badge keeps the snapshot's copy, which is still true */ }
 }
 
+function renderSchedule(){
+  /* The builder takes the whole page when it is open -- it is a form, and a
+     summary card above a form you are already inside is one more thing between
+     you and the field you came to change. Its own back control returns here. */
+  if(SCHED_VIEW) return renderScheduleBuilder();
+  return '<div class="home">'
+    + '<button type="button" class="backbtn" data-go="home">\u2039 Home</button>'
+    + '<div class="section-label">Schedule</div>'
+    + scheduleBadge()
+    + '</div>';
+}
+
+function repaintSchedule(){
+  const el = document.getElementById("page-schedule");
+  if(el) el.innerHTML = renderSchedule();
+}
+
 function repaintSettings(){
   const el = document.getElementById("page-settings");
   if(el) el.innerHTML = renderSettings();
+  /* 🔴 BOTH PAGES, and repaintCards learned this the same way. The schedule's
+     controls live on their own page now but still route through this one
+     function from eleven call sites -- and eleven call sites are eleven chances
+     to update ten of them. Repainting a hidden page costs nothing and cannot
+     drift; rewiring each caller could. */
+  repaintSchedule();
 }
 
 /* EVERY CONTROL ON THE PAGE, one listener. Registered on document rather than
@@ -5264,6 +5617,332 @@ document.addEventListener("change", async e => {
   if(!t) return;
   await apiPost("/priority", {focus_pct: Number(t.value)});
 });
+
+
+/* ==========================================================================
+   THE SCHEDULE BUILDER
+   ==========================================================================
+   Trevor, 2026-09-18: *"I want to 'Build' A Schedule ... I want to be able to
+   daisy chain several together. I also want an ETA on the blocks that can
+   actually be measured."*
+
+   THE VOCABULARY IS PUBLISHED, NOT KEPT HERE. Every option and every sentence
+   describing it comes from schedule_builder via the snapshot, for the reason
+   seeds.REASON_TEXT gives: a list of conditions here and a list of conditions
+   there drift, and the drift shows as a builder that describes one behaviour
+   while the fleet does another. The fallbacks below exist only for a snapshot
+   published before the vocabulary travelled.
+
+   🔴 THE ETA IS THE HONEST HALF, and the renderer must not flatten it.
+   Three kinds come off the engine and they are drawn differently:
+     exact      arithmetic -- N jobs x a measured median. Shown as a time.
+     projected  a rate seen so far. Shown as a time WITH the word estimate and
+                the rate it came from, never alone.
+     none       no defensible number exists. Shows elapsed and rounds spent and
+                says so outright.
+   Collapsing these into one number is precisely the mistake the standing rule
+   about MT5's time-remaining exists to stop: a plausible figure gets planned
+   around and then blamed. */
+let VOCAB = {};
+let SCHED_EDIT = null;        // block id being edited, or null
+
+const SCHED_FALLBACK = {
+  selects: ["explicit", "lowest_pf", "highest_pf", "highest_profit",
+            "worst_giveback", "most_defaults"],
+  groups: ["any", "pinned", "exit", "entry"],
+  untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits",
+           "profit_up_pct", "giveback_below"],
+  scopes: ["live", "frozen"],
+};
+
+const SCHED_LABEL = {
+  explicit: "Named", lowest_pf: "Lowest PF", highest_pf: "Highest PF",
+  highest_profit: "Most profit", worst_giveback: "Worst give-back",
+  most_defaults: "Most defaults",
+  any: "Any group", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
+  jobs: "N jobs", pf_at_least: "PF reaches", pinned_cleared: "Pins cleared",
+  bucket_splits: "It splits", profit_up_pct: "Profit up", giveback_below: "Give-back under",
+  live: "Whatever is targeted now", frozen: "The buckets it started on",
+};
+
+function vocab(name){
+  return (VOCAB[name] && VOCAB[name].length) ? VOCAB[name] : (SCHED_FALLBACK[name] || []);
+}
+function vocabText(kind, key){
+  return ((VOCAB[kind] || {})[key]) || "";
+}
+
+function schedule(){ return SETTINGS_STATE.schedule || {}; }
+
+function scheduleBadge(){
+  const sch = schedule();
+  const blocks = sch.blocks || [];
+  const status = sch.status || "idle";
+  const cur = Number(sch.cursor || 0);
+  return '<div class="card"><div class="card-in">'
+    + '<div class="trow"><span class="tlab">Schedule</span>'
+    + '<span class="chip ' + (status === "running" ? "gold" : "") + '">'
+    + esc(status) + '</span></div>'
+    + '<div class="tnote">A chain of blocks. Each one targets buckets, narrows to '
+    + 'certain groups and machines, and runs until its own condition is met \u2014 '
+    + 'then the next one starts.</div>'
+    + (blocks.length
+        ? '<div class="tnote" style="margin-top:8px">'
+          + esc(sch.name || "unnamed") + " \u00b7 " + blocks.length + " block"
+          + (blocks.length === 1 ? "" : "s")
+          + (status === "running" ? " \u00b7 on block " + (cur + 1) : "") + '</div>'
+        : '<div class="tnote" style="margin-top:8px">No blocks yet.</div>')
+    + '<div class="chips" style="margin-top:10px">'
+    + '<button type="button" class="chip" data-schedgo>Open builder</button>'
+    + (blocks.length && status !== "running"
+        ? '<button type="button" class="chip gold" data-schedact="start">Start</button>' : "")
+    + (status === "running"
+        ? '<button type="button" class="chip" data-schedact="stop">Stop</button>' : "")
+    + '</div></div></div>';
+}
+
+/* ---------- the builder page ---------- */
+function renderScheduleBuilder(){
+  const sch = schedule();
+  const blocks = sch.blocks || [];
+  const status = sch.status || "idle";
+  const cur = Number(sch.cursor || 0);
+  return '<div class="home">'
+    /* 2026-09-19 -- it said "Settings", which is where this used to live. The
+       builder is one level inside the Schedule page now, so back means back to
+       the schedule, not out to a page it no longer belongs to. */
+    + '<button type="button" class="chip" data-schedback>\u2039 Schedule</button>'
+    + '<div class="section-label" style="margin-top:8px">Schedule \u00b7 '
+    + esc(status) + '</div>'
+    + (blocks.length
+        ? blocks.map(function(b, i){
+            return schedBlockCard(b, i, status === "running" && i === cur,
+                                  sch, i < cur || status === "finished"); }).join("")
+        : '<div class="card"><div class="card-in"><div class="tnote">'
+          + 'Nothing here yet. A block is three choices \u2014 which buckets, which '
+          + 'groups and machines, and what ends it.</div></div></div>')
+    + (schedDirty()
+        ? '<div class="tnote" style="margin-top:10px"><b>Unsaved changes.</b> Nothing here reaches the fleet until you save the chain.</div>' : "")
+    + '<div class="chips" style="margin-top:10px">'
+    + '<button type="button" class="chip" data-schedadd>+ Add block</button>'
+    + (blocks.length ? '<button type="button" class="chip" data-schedsave>Save chain</button>' : "")
+    + '</div>'
+    + '<div class="tnote" style="margin-top:10px">' + '⚠️' + ' A change takes effect '
+    + 'at each machine\u2019s next tick. A round already running finishes on the '
+    + 'bucket it claimed.</div>'
+    + '</div>';
+}
+
+/* ONE BLOCK. Collapsed it states what it will do; the ACTIVE one also carries
+   what it has done so far, and the editor opens under whichever is being
+   changed. */
+function schedBlockCard(b, i, isActive, sch, isPast){
+  const editing = (SCHED_EDIT === b.id);
+  const hist = (sch.history || []).filter(function(h){ return h.block_id === b.id; });
+  const outcome = hist.length ? hist[hist.length - 1] : null;
+  return '<div class="card"><div class="card-in">'
+    + '<div class="trow">'
+    + '<span class="tname">' + (i + 1) + '. ' + esc(b.name || "block") + '</span>'
+    + (isActive ? '<span class="chip gold">running</span>' : "")
+    + (outcome ? '<span class="chip ' + (outcome.kind === "gave_up" ? "bad" : "")
+        + '">' + (outcome.kind === "gave_up" ? "gave up" : "met") + '</span>' : "")
+    + (isPast && !outcome ? '<span class="chip">done</span>' : "")
+    + '</div>'
+    + '<div class="tnote">' + schedSentence(b) + '</div>'
+    + (isActive ? schedProgress(b, sch) : "")
+    + (outcome && outcome.measured
+        ? '<div class="tnote" style="margin-top:6px">' + esc(outcome.measured) + '</div>' : "")
+    + '<div class="chips" style="margin-top:8px">'
+    + '<button type="button" class="chip' + (editing ? " on" : "") + '" data-schededit="'
+    + esc(b.id) + '">' + (editing ? "Close" : "Edit") + '</button>'
+    + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':-1">\u2191</button>'
+    + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':1">\u2193</button>'
+    + '<button type="button" class="chip" data-scheddel="' + esc(b.id) + '">Remove</button>'
+    + '</div>'
+    + (editing ? schedEditor(b) : "")
+    + '</div></div>';
+}
+
+/* THE BLOCK AS ONE SENTENCE. A builder that only shows chips makes you
+   reassemble the meaning in your head every time you read it. */
+function schedSentence(b){
+  const sel = b.select || "explicit";
+  let what;
+  if(sel === "explicit"){
+    const names = (b.buckets || []).map(function(k){ return k.replace("|", "/"); });
+    const regs = b.regimes || [];
+    what = names.length ? names.join(" + ")
+         : (regs.length ? regs.join(" + ") : "every bucket");
+  } else {
+    what = (SCHED_LABEL[sel] || sel) + " \u00d7 " + (b.select_n || 1)
+         + ((b.regimes || []).length ? " in " + b.regimes.join("/") : "");
+  }
+  const g = (b.groups && b.groups !== "any") ? ", " + SCHED_LABEL[b.groups] : "";
+  const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
+  return esc("Target " + what + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
+             + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "")) ;
+}
+
+function schedUntilPhrase(u){
+  const k = u.kind;
+  if(k === "jobs") return (u.n || 1) + " job" + ((u.n || 1) === 1 ? "" : "s");
+  if(k === "pf_at_least") return "PF reaches " + (u.value != null ? u.value : "?");
+  if(k === "pinned_cleared") return (u.percent != null ? u.percent : 50)
+      + "% of its pinned variables clear";
+  if(k === "bucket_splits") return "the bucket splits";
+  if(k === "profit_up_pct") return "profit is " + (u.percent != null ? u.percent : 10)
+      + "% higher";
+  if(k === "giveback_below") return "give-back drops under " + (u.value != null ? u.value : "?") + "%";
+  return "an unknown condition (" + esc(String(k)) + ")";
+}
+
+/* WHAT IT HAS DONE SO FAR. Elapsed and rounds spent ALWAYS -- Trevor asked for
+   both, and they are the two facts that are never in doubt. */
+function schedProgress(b, sch){
+  const st = sch.block_state || {};
+  const spent = Number(st.jobs_spent || 0);
+  const started = Number(st.started_at || 0);
+  const elapsed = started ? (Date.now() / 1000 - started) : 0;
+  const etaKind = (VOCAB.eta_kind || {})[(b.until || {}).kind] || "none";
+  return '<div class="tsec" style="margin-top:8px">'
+    + '<div class="trow">'
+    + '<span class="chip">' + spent + ' job' + (spent === 1 ? "" : "s") + ' spent</span>'
+    + '<span class="chip">' + esc(dur(elapsed)) + ' elapsed</span>'
+    + '</div>'
+    + '<div class="tnote" style="margin-top:6px">' + schedEtaLine(etaKind) + '</div>'
+    + '</div>';
+}
+
+/* 🔴 THE THREE KINDS, DRAWN DIFFERENTLY ON PURPOSE. The live measurement and
+   any projection come from the engine when the snapshot carries them; until
+   then this states which KIND of answer the condition can support, which is
+   itself the useful thing and is never wrong. */
+function schedEtaLine(kind){
+  if(kind === "exact")
+    return "<b>Countable.</b> This block ends after a set number of jobs, so its "
+         + "finish is arithmetic once a round has been timed.";
+  if(kind === "projected")
+    return "<b>Estimate only.</b> Any time shown for this block is the rate seen "
+         + "so far, extrapolated \u2014 not a deadline. Progress is the reliable part.";
+  return "<b>No ETA is possible.</b> Nobody can say how many rounds this takes. "
+       + "Rounds spent and time elapsed are what can be known.";
+}
+
+/* ---------- the editor ---------- */
+function schedEditor(b){
+  const u = b.until || {};
+  const chip = function(attr, val, on, label){
+    return '<button type="button" class="chip' + (on ? " on" : "") + '" data-'
+      + attr + '="' + esc(b.id) + ':' + esc(String(val)) + '">' + esc(label) + '</button>';
+  };
+  const buckets = (BUCKETS || []).filter(function(x){
+    return String(x.regime).toUpperCase() !== "GLOBALS"; });
+  return '<div class="tsec" style="margin-top:10px">'
+
+    + '<div class="section-label">Target</div>'
+    + '<div class="chips">'
+    + vocab("selects").map(function(v){
+        return chip("schedsel", v, (b.select || "explicit") === v,
+                    SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + esc(vocabText("select_text", b.select || "explicit")) + '</div>'
+    + '<div class="chips" style="margin-top:6px">'
+    + ["BULL", "BEAR", "RANGING"].map(function(r){
+        return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
+    + '</div>'
+    + ((b.select || "explicit") === "explicit"
+        ? '<div class="chips" style="margin-top:6px">'
+          + buckets.map(function(x){
+              const k = String(x.regime).toUpperCase() + "|" + x.bucket_id;
+              return chip("schedbkt", k, (b.buckets || []).indexOf(k) >= 0,
+                          k.replace("|", "/")); }).join("")
+          + '</div>'
+        : '<div class="chips" style="margin-top:6px">'
+          + [1, 2, 3].map(function(n){
+              return chip("schedn", n, Number(b.select_n || 1) === n, "top " + n); }).join("")
+          + '</div>')
+
+    + '<div class="section-label" style="margin-top:12px">Groups</div>'
+    + '<div class="chips">'
+    + vocab("groups").map(function(v){
+        return chip("schedgrp", v, (b.groups || "any") === v,
+                    SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + esc(vocabText("group_text", b.groups || "any")) + '</div>'
+
+    + '<div class="section-label" style="margin-top:12px">Machines</div>'
+    + '<div class="chips">'
+    /* `machine`, not `machine_id` -- the fleet row's own field name, and the
+       snapshot carries ONE ROW PER BEACON rather than one per machine, so the
+       list is deduped. Reading the wrong key put a chip labelled "undefined"
+       on the card and wrote the string "undefined" into the block, which the
+       scheduler would then have matched against no machine at all. */
+    + schedMachines().map(function(name){
+        return chip("schedmac", name, (b.machines || []).indexOf(name) >= 0,
+                    name); }).join("")
+    + '</div>'
+    + '<div class="tnote">None selected means any machine may take it.</div>'
+
+    + '<div class="section-label" style="margin-top:12px">Until</div>'
+    + '<div class="chips">'
+    + vocab("untils").map(function(v){
+        return chip("scheduntil", v, u.kind === v, SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + esc(vocabText("until_text", u.kind)) + '</div>'
+    + schedValueRow(b, u)
+
+    + (["pf_at_least", "giveback_below", "profit_up_pct"].indexOf(u.kind) >= 0
+        ? '<div class="section-label" style="margin-top:12px">Judged on</div>'
+          + '<div class="chips">'
+          + vocab("scopes").map(function(v){
+              return chip("schedscope", v, (u.scope || "live") === v,
+                          SCHED_LABEL[v] || v); }).join("")
+          + '</div>'
+          + '<div class="tnote">' + esc(vocabText("scope_text", u.scope || "live")) + '</div>'
+        : "")
+
+    + '<div class="section-label" style="margin-top:12px">Give up after</div>'
+    + '<div class="chips">'
+    + [0, 5, 10, 20, 50].map(function(n){
+        return chip("schedcap", n, Number(b.max_jobs || 0) === n,
+                    n ? n + " jobs" : "never"); }).join("")
+    + '</div>'
+    + '<div class="tnote">On reaching this the block moves on rather than '
+    + 'stopping the chain \u2014 and says loudly that it gave up.</div>'
+    + '</div>';
+}
+
+function schedMachines(){
+  const seen = {};
+  (FLEET || []).forEach(function(f){
+    const n = f && f.machine;
+    if(n) seen[n] = true;
+  });
+  return Object.keys(seen).sort();
+}
+
+/* The one number a condition needs, as chips rather than a keyboard: a phone
+   keyboard over a list like this is three taps and a dismiss. */
+function schedValueRow(b, u){
+  const opts = {
+    jobs: [1, 2, 3, 5, 10],
+    pf_at_least: [1.0, 1.2, 1.4, 1.6, 2.0],
+    pinned_cleared: [25, 50, 75, 100],
+    profit_up_pct: [5, 10, 25, 50],
+    giveback_below: [30, 40, 50],
+  }[u.kind];
+  if(!opts) return "";
+  const field = (u.kind === "jobs") ? "n"
+              : (u.kind === "pinned_cleared" || u.kind === "profit_up_pct") ? "percent"
+              : "value";
+  const cur = u[field];
+  return '<div class="chips" style="margin-top:6px">'
+    + opts.map(function(v){
+        return '<button type="button" class="chip' + (Number(cur) === v ? " on" : "")
+          + '" data-schedval="' + esc(b.id) + ':' + v + '">' + v
+          + (field === "percent" ? "%" : "") + '</button>'; }).join("")
+    + '</div>';
+}
 
 function renderSettings(){
   const ro = !apiBase();
@@ -5467,6 +6146,7 @@ function paint(stamp){
   document.getElementById("page-active").innerHTML = renderActive();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("page-settings").innerHTML = renderSettings();
+  repaintSchedule();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
@@ -5499,6 +6179,7 @@ function applySnapshot(d, source){
      rather than as "nothing is set": the badge says which. */
   LEASES = Array.isArray(d.leases) ? d.leases : [];
   if(d.settings && d.settings.bucket_priority) SETTINGS_STATE = d.settings;
+  if(d.settings && d.settings.schedule_vocab) VOCAB = d.settings.schedule_vocab;
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
@@ -5619,7 +6300,7 @@ const POLL_MS = 20000;
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
-const PAGES = ["home", "active", "results", "settings"];
+const PAGES = ["home", "active", "results", "schedule", "settings"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
@@ -5635,7 +6316,18 @@ document.querySelectorAll("nav button").forEach(btn => {
    tap -- otherwise the app would be on Active with Home still lit. */
 function go(page){
   const btn = document.querySelector(`nav button[data-p="${page}"]`);
-  if(btn) btn.click();
+  if(btn){ btn.click(); return; }
+  /* 🔴 A PAGE WITH NO TAB, and the tab bar keeps HOME lit while you are on it.
+     That is not a cosmetic choice: home is where you came from and what the
+     bar's own Home button returns you to, so lighting nothing would leave the
+     one escape hatch looking inactive. */
+  PAGES.forEach(p => {
+    const el = document.getElementById("page-" + p);
+    if(el) el.hidden = (p !== page);
+  });
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.p === "home")));
+  window.scrollTo(0, 0);
 }
 
 /* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
@@ -5704,6 +6396,31 @@ document.addEventListener("click", e => {
   }
   if(e.target.closest("[data-opscancel]")){
     OPSTATE.arm = null; repaintCards(); return;
+  }
+  const fo = e.target.closest("[data-failopen]");
+  if(fo){
+    const k = fo.getAttribute("data-failopen");
+    FAILSTATE.open = FAILSTATE.open === k ? null : k;
+    FAILSTATE.arm = null; FAILSTATE.said = null; repaintCards(); return;
+  }
+  if(e.target.closest("[data-failcancel]")){
+    FAILSTATE.arm = null; repaintCards(); return;
+  }
+  const fa = e.target.closest("[data-failarm]");
+  if(fa){
+    FAILSTATE.arm = {key: fa.getAttribute("data-failarm"),
+                     act: fa.getAttribute("data-failact")};
+    FAILSTATE.said = null; repaintCards(); return;
+  }
+  const fg = e.target.closest("[data-failgo]");
+  if(fg){
+    const act = fg.getAttribute("data-failact");
+    FAILSTATE.arm = null;
+    FAILSTATE.said = "\u26a0\ufe0f <b>" + esc(failActLabel(act)) + "</b> was not sent. "
+      + "This page reads a published snapshot and has no route back to the "
+      + "machines yet \u2014 it needs the app served from the laptop rather than a "
+      + "public host.";
+    repaintCards(); return;
   }
   const oa = e.target.closest("[data-opsarm]");
   if(oa){
