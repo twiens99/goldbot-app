@@ -336,6 +336,53 @@ article.jrow{cursor:default;}
 }
 .rfile[hidden]{display:none;}
 
+/* ---------- the schedule flowchart ---------- */
+/* Trevor, 2026-09-19: *"a page showing running and upcoming blocks as a bubble
+   diagram."*
+
+   A COLUMN, NOT A ROW OF BUBBLES ACROSS. This renders at 375px, and a chain of
+   six blocks laid out horizontally is either six unreadable dots or a sideways
+   scroll -- and a flowchart you have to scroll sideways to read has stopped
+   being a picture of the plan. Down the page it is the same shape `.tl`
+   already uses for a job's rounds, which is the point: the same colours mean
+   the same things. Good is done, gold is running now, faint has not started. */
+.fc{display:flex;flex-direction:column;gap:0;}
+.fcr{display:flex;gap:11px;position:relative;padding:0 0 15px;}
+.fcr:last-child{padding-bottom:0;}
+/* THE SPINE IS A PSEUDO-ELEMENT ON THE ROW, not an element drawn between rows,
+   so it cannot fall out of step with the bubbles it joins. */
+.fcr::before{
+  content:"";position:absolute;left:13px;top:30px;bottom:0;width:2px;
+  background:var(--line);
+}
+.fcr:last-child::before{display:none;}
+.fcr.done::before{background:var(--good);opacity:.4;}
+.fcb{
+  width:28px;height:28px;flex:none;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.72rem;font-weight:700;line-height:1;
+  border:2px solid var(--line);background:var(--card-2);color:var(--faint);
+  position:relative;z-index:1;
+}
+.fcr.done .fcb{border-color:var(--good);color:var(--good);}
+.fcr.active .fcb{
+  border-color:var(--gold);color:var(--gold);background:rgba(224,180,87,.15);
+  box-shadow:0 0 0 4px rgba(224,180,87,.12);
+}
+.fcbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;padding-top:3px;}
+.fch{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;}
+.fcn{font-size:.82rem;font-weight:700;letter-spacing:.01em;}
+.fcr.upcoming .fcn{color:var(--dim);font-weight:600;}
+.fcsay{font-size:.74rem;color:var(--dim);line-height:1.45;}
+.fcr.upcoming .fcsay{color:var(--faint);}
+/* The loop marker CLOSES the chain rather than leaving it dangling: a looping
+   schedule whose last bubble just ended would read as finished. */
+.fcloop{
+  display:flex;gap:11px;align-items:center;
+  font-size:.72rem;color:var(--faint);padding-top:2px;
+}
+.fcloop .fcb{border-style:dashed;}
+
 /* ---------- the task card ---------- */
 /* ONE ROUND, FULLY DESCRIBED. Trevor, 2026-09-16: *"build a Task Card ...
    clickable from any job card ... as much information about that particular
@@ -892,6 +939,9 @@ article.jrow{cursor:default;}
   font-variant-numeric:tabular-nums;
 }
 .pickin:focus{outline:none;border-color:var(--gold);}
+/* Narrower than the pass picker's: it sits at the end of a row of chips
+   rather than on a line of its own. */
+.schedin{width:82px;padding:4px 8px;font-size:.72rem;}
 .applyb{
   font-family:inherit;font-size:.8rem;font-weight:700;letter-spacing:.01em;
   border:0;border-radius:9px;padding:11px 12px;width:100%;
@@ -1222,7 +1272,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260919-150949";
+const APP_BUILD = "20260919-164559";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
@@ -1601,7 +1651,7 @@ function jobsDone(regime, bucketId){
    hours_remaining -- so the renderer re-derives it rather than the publisher
    growing a field for a thing it already has the inputs for.
 
-   ANCHO🔴 TO THE BEACON, NOT TO NOW. `percent` was true when the machine last
+   ANCHORED TO THE BEACON, NOT TO NOW. `percent` was true when the machine last
    reported; adding the remaining hours to `now` would push every ETA later by
    the beacon's own age. That is seconds on a live card -- and it is the whole
    story on a stale one, which is why a STALE BEACON GETS NO ETA. Its percent is
@@ -2794,7 +2844,7 @@ let ACTIVE_JOB = null;
    ACTIVE_JOB because the two tabs navigate independently -- opening a finished
    job must not close the running one you were watching. */
 let RESULTS_JOB = null;
-/* HOW THE RESULTS LIST IS ORDE🔴 AND NARROWED. Trevor, 2026-09-16: the chips
+/* HOW THE RESULTS LIST IS ORDERED AND NARROWED. Trevor, 2026-09-16: the chips
    on a row *"are going to sort the order of the list ... Regime cycles between
    the three and the bucket id will also cycle between all the bucket numbers
    available."*
@@ -3298,7 +3348,7 @@ function sgX(i, n, W){
 }
 
 /* series: [{colour, span, points:[{i, value, lo, hi, dot, square}]}]
-   labels: the x axis, SHA🔴 by every series -- a round one variable was not
+   labels: the x axis, SHARED by every series -- a round one variable was not
    swept in is still a column, so two variables tuned in different rounds stay
    aligned instead of one sliding along to fill the other's gaps. */
 function seriesGraph(labels, series, box){
@@ -3495,7 +3545,7 @@ function varHistoryGraph(hist, vars, big){
    keep is a split proposal with a number already attached.
 
    🔴 TRADE COUNT ALONE IS THE TRAP, AND THE EA SAYS SO IN ITS OWN COMMENTS.
-   Every ENTRY_FI🔴 row carries BucketD1Slope, so binning trades by slope looks
+   Every ENTRY_FIRED row carries BucketD1Slope, so binning trades by slope looks
    free -- and SampleBucketSlope() exists precisely because those samples are
    "CONDITIONED ON A TRADE HAVING FIRED", which is the quantity you are trying to
    normalise. A band holding 30% of the trades because the market SAT there 30%
@@ -3506,7 +3556,7 @@ function varHistoryGraph(hist, vars, big){
    WHERE THE TWO NUMBERS COME FROM. Trades and their slope: `EntryBucketSlope`,
    which rides the CLOSED record ALONGSIDE Profit, Pips and Duration -- so the
    slope and the money are already on one row and no join is needed. (An earlier
-   version of this note sent the reader to the ENTRY_FI🔴 lines, which carry the
+   version of this note sent the reader to the ENTRY_FIRED lines, which carry the
    slope but not the outcome; that would have been a join for nothing.)
    `closed_lines.py` keeps those rows as CLOSED.csv after the log is deleted, so
    this survives for every round from 2026-09-07 on and for none before it.
@@ -4627,7 +4677,7 @@ function taskVars(list, hist){
    would quietly enlarge the group on screen and make the next reader wonder when
    a fifth variable joined it.
 
-   ⚠️ IT IS READ FROM A FLAG, NOT INFER🔴 FROM ABSENCE. A swept variable missing
+   ⚠️ IT IS READ FROM A FLAG, NOT INFERRED FROM ABSENCE. A swept variable missing
    from the group list looks exactly like a rider and might instead be two
    records disagreeing -- so absence alone gets the loud warning below rather
    than a tidy label that would bury it. */
@@ -5287,7 +5337,8 @@ function renderHome(){
    same. */
 let SETTINGS_STATE = {bucket_priority: {mode: "off",
                                         regimes: ["BULL", "BEAR", "RANGING"],
-                                        pins: {}, focus_pct: 80, top_n: 3},
+                                        pins: {}, regime_pins: {},
+                                        focus_pct: 80, top_n: 3},
                       lease_extensions: {}};
 let LEASES = [];
 let BUCKET_SHARES = [];
@@ -5298,6 +5349,7 @@ const MODE_LABEL = {
   auto_top: "Targeting winners",
   auto_bottom: "Targeting losers",
   auto_defaults: "Targeting defaults",
+  regime: "Regime percentages",
 };
 
 /* The prose lives in app_settings.MODE_TEXT and is PUBLISHED with the settings,
@@ -5310,6 +5362,7 @@ const MODE_TEXT_FALLBACK = {
   auto_top: "Favours the best-performing buckets by Profit Factor, inside the regimes you have selected.",
   auto_bottom: "Favours the worst-performing buckets by Profit Factor -- the ones with the most left to gain.",
   auto_defaults: "Favours the buckets holding the most variables still at their compiled DEFAULT.",
+  regime: "You set the percentages per REGIME. A regime you pin keeps exactly that share and its buckets divide it between them; the rest split what is left.",
 };
 
 function modeText(mode){
@@ -5393,7 +5446,13 @@ function schedToggle(list, value){
 
 document.addEventListener("click", async e => {
   const t = e.target.closest(
+    /* 🔴 A HANDLER NOT LISTED HERE IS A HANDLER THAT NEVER RUNS. This dispatcher
+       gates on one closest() over the whole list, so adding a branch below
+       without adding its attribute here produces a button that looks right,
+       reports no error, and does nothing -- which is exactly how
+       `data-schedclear` shipped its first five minutes. */
     "[data-schedgo],[data-schedback],[data-schedadd],[data-schedsave],"
+    + "[data-schedclear],"
     + "[data-schededit],[data-scheddel],[data-schedmove],[data-schedact],"
     + "[data-schedsel],[data-schedreg],[data-schedbkt],[data-schedn],"
     + "[data-schedgrp],[data-schedmac],[data-scheduntil],[data-schedval],"
@@ -5410,6 +5469,18 @@ document.addEventListener("click", async e => {
   if(d.schedgo !== undefined){ SCHED_VIEW = true; return repaintSettings(); }
   if(d.schedback !== undefined){ SCHED_VIEW = false; SCHED_EDIT = null; return repaintSettings(); }
   if(d.schedadd !== undefined){ schedDraft().push(schedNewBlock()); return repaintSettings(); }
+  if(d.schedclear !== undefined){
+    /* THE NAME SURVIVES. It is the one field you wrote rather than picked, and
+       clearing what you chose is not the same as forgetting what you called it. */
+    const blk = schedDraft().find(function(x){ return x.id === d.schedclear; });
+    if(blk){
+      const fresh = schedNewBlock();
+      fresh.id = blk.id;
+      fresh.name = blk.name;
+      Object.keys(fresh).forEach(function(k){ blk[k] = fresh[k]; });
+    }
+    return repaintSettings();
+  }
   if(d.schededit !== undefined){
     SCHED_EDIT = (SCHED_EDIT === d.schededit) ? null : d.schededit;
     return repaintSettings();
@@ -5467,10 +5538,7 @@ document.addEventListener("click", async e => {
     b.until = {kind: val};
   }
   else if(d.schedval !== undefined){
-    const k = b.until.kind;
-    const field = (k === "jobs") ? "n"
-      : (k === "pinned_cleared" || k === "profit_up_pct") ? "percent" : "value";
-    b.until[field] = Number(val);
+    b.until[schedUntilField(b.until.kind)] = Number(val);
   }
   else if(d.schedscope !== undefined) b.until.scope = val;
   else if(d.schedcap !== undefined) b.max_jobs = Number(val) || null;
@@ -5560,6 +5628,8 @@ function renderSchedule(){
     + '<button type="button" class="backbtn" data-go="home">\u2039 Home</button>'
     + '<div class="section-label">Schedule</div>'
     + scheduleBadge()
+    + '<div class="section-label" style="margin-top:14px">Flow</div>'
+    + scheduleFlowchart()
     + '</div>';
 }
 
@@ -5583,7 +5653,8 @@ function repaintSettings(){
    per button because the whole badge is re-rendered after each change, and
    per-button listeners would be re-attached (or silently lost) each time. */
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-lease],[data-bpregime],[data-bpmode],[data-bppin],[data-bpreset]");
+  const t = e.target.closest("[data-lease],[data-bpregime],[data-bpmode],"
+    + "[data-bppin],[data-bprpin],[data-bpreset]");
   if(!t) return;
   e.preventDefault();
   e.stopPropagation();
@@ -5607,6 +5678,17 @@ document.addEventListener("click", async e => {
        different instruction ("never schedule this"), so they must not collapse. */
     await apiPost("/priority", {mode: "manual",
                                 pin: {key: key, percent: pct < 0 ? null : pct}});
+  } else if(d.bprpin !== undefined){
+    const i = String(d.bprpin).lastIndexOf(":");
+    const regime = String(d.bprpin).slice(0, i);
+    const pct = Number(String(d.bprpin).slice(i + 1));
+    /* Mode and pin in ONE post, the same as a bucket pin: setting a percentage
+       IS choosing the mode, and two posts would leave a window where the badge
+       shows a pin nothing is applying. -1 is Unpin; null rather than 0, because
+       a regime pinned at 0% is a real and different instruction. */
+    await apiPost("/priority", {mode: "regime",
+                                regime_pin: {regime: regime,
+                                             percent: pct < 0 ? null : pct}});
   } else if(d.bpreset !== undefined){
     await apiPost("/priority", {reset: true});
   }
@@ -5649,9 +5731,9 @@ let SCHED_EDIT = null;        // block id being edited, or null
 const SCHED_FALLBACK = {
   selects: ["explicit", "lowest_pf", "highest_pf", "highest_profit",
             "worst_giveback", "most_defaults"],
-  groups: ["any", "pinned", "exit", "entry"],
+  groups: ["any", "pinned", "exit", "entry", "ema", "moved_giveback"],
   untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits",
-           "profit_up_pct", "giveback_below"],
+           "profit_up_pct", "giveback_below", "epoch_done"],
   scopes: ["live", "frozen"],
 };
 
@@ -5660,8 +5742,10 @@ const SCHED_LABEL = {
   highest_profit: "Most profit", worst_giveback: "Worst give-back",
   most_defaults: "Most defaults",
   any: "Any group", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
+  ema: "EMA lane", moved_giveback: "Moved give-back",
   jobs: "N jobs", pf_at_least: "PF reaches", pinned_cleared: "Pins cleared",
   bucket_splits: "It splits", profit_up_pct: "Profit up", giveback_below: "Give-back under",
+  epoch_done: "Epoch done",
   live: "Whatever is targeted now", frozen: "The buckets it started on",
 };
 
@@ -5699,6 +5783,90 @@ function scheduleBadge(){
     + (status === "running"
         ? '<button type="button" class="chip" data-schedact="stop">Stop</button>' : "")
     + '</div></div></div>';
+}
+
+/* THE PLAN AS A PICTURE. Everything here is read straight off the stored
+   chain -- which block is active, what each one targets, what ends it.
+
+   \U0001F534 NO PERCENTAGE PER BLOCK, AND THAT IS DELIBERATE. `evaluate()`
+   computes the fraction and it runs in PYTHON; nothing publishes it, so the
+   only way to draw a bar here would be to re-derive every condition in
+   JavaScript. That is the second-formula mistake this project keeps writing
+   down -- the picture and the engine would drift, and the picture is the one
+   people would believe. Jobs spent and time elapsed ARE on the record, so
+   those are shown, and `schedEtaLine` says which kind of answer the condition
+   can even support. A real per-block bar needs one publisher field. */
+function scheduleFlowchart(){
+  const sch = schedule();
+  const blocks = sch.blocks || [];
+  const status = sch.status || "idle";
+  const cur = Number(sch.cursor || 0);
+  const running = (status === "running");
+  if(!blocks.length){
+    return '<div class="card"><div class="card-in">'
+      + '<div class="tlab">The plan</div>'
+      + '<div class="tnote">No blocks yet. The builder is where a chain is made'
+      + ' \u2014 each block targets buckets, narrows to certain groups and'
+      + ' machines, and runs until its own condition is met.</div>'
+      + '</div></div>';
+  }
+  return '<div class="card"><div class="card-in">'
+    + '<div class="trow"><span class="tlab">The plan</span>'
+    + '<span class="chip' + (running ? " gold" : "") + '">'
+    + (running ? "on block " + (cur + 1) + " of " + blocks.length
+               : esc(status)) + '</span></div>'
+    + '<div class="fc" style="margin-top:4px">'
+    + blocks.map(function(b, i){
+        /* IDLE MEANS NOTHING HAS RUN, not "block 1 is active". `cursor` is 0 on
+           a chain that was never started, so trusting it alone would light the
+           first bubble gold on a schedule sitting untouched -- a picture of
+           work in progress where there is none. */
+        const state = (status === "finished") ? "done"
+                    : !running ? "upcoming"
+                    : (i < cur) ? "done" : (i === cur) ? "active" : "upcoming";
+        const mark = state === "done" ? "\u2713"
+                   : state === "active" ? "\u25cf" : String(i + 1);
+        return '<div class="fcr ' + state + '">'
+          + '<div class="fcb">' + mark + '</div>'
+          + '<div class="fcbody">'
+          + '<div class="fch">'
+          + '<span class="fcn">' + esc(b.name || ("Block " + (i + 1))) + '</span>'
+          + (state === "active" ? '<span class="chip gold">running</span>' : "")
+          /* NO CAP CHIP HERE: schedSentence already ends with "(give up
+             after N jobs)", and a row stating the same number twice reads as
+             two different facts until you stop and check. */
+          + '</div>'
+          + '<div class="fcsay">' + schedSentence(b) + '</div>'
+          + (state === "active" ? schedFrozen(sch) + schedProgress(b, sch) : "")
+          + '</div></div>'; }).join("")
+    + '</div>'
+    + (sch.loop
+        ? '<div class="fcloop"><div class="fcb">\u21ba</div>'
+          + '<span>Loops back to block 1 when the last one finishes.</span></div>'
+        : "")
+    + '</div></div>';
+}
+
+/* WHAT THE ACTIVE BLOCK FROZE WHEN IT STARTED -- the denominators its condition
+   is judged against. Facts on the record, not anything re-derived here.
+
+   Worth the line because a frozen set is the one thing about a running block
+   that is visible nowhere else, and "79 groups owed" against nothing at all is
+   the difference between a block that is merely slow and a block that froze an
+   empty set and can therefore never finish. */
+function schedFrozen(sch){
+  const st = sch.block_state || {};
+  const bits = [];
+  const targets = (st.targets_at_start || []).length;
+  if(targets) bits.push(targets + " bucket" + (targets === 1 ? "" : "s"));
+  const owed = (st.owed_at_start || []).length;
+  if(owed) bits.push(owed + " groups owed");
+  const pinned = Object.keys(st.pinned_at_start || {}).reduce(
+    function(a, k){ return a + (st.pinned_at_start[k] || []).length; }, 0);
+  if(pinned) bits.push(pinned + " pinned at start");
+  if(!bits.length) return "";
+  return '<div class="fcsay" style="color:var(--faint)">Froze '
+    + esc(bits.join(" \u00b7 ")) + '.</div>';
 }
 
 /* ---------- the builder page ---------- */
@@ -5774,10 +5942,25 @@ function schedSentence(b){
     what = names.length ? names.join(" + ")
          : (regs.length ? regs.join(" + ") : "every bucket");
   } else {
-    what = (SCHED_LABEL[sel] || sel) + " \u00d7 " + (b.select_n || 1)
+    /* 🔴 NAMED WITH NOTHING TICKED IS "EVERY BUCKET", NOT "NOTHING".
+       Trevor, 2026-09-19: *"Named Target doesn't make any sense, other than
+       using it as a NO target -- which would be just the same thing as not
+       selecting a target."* He is reading the behaviour correctly, and the
+       engine agrees: it takes `set(block["buckets"] or [])`, and an empty set
+       restricts nothing. So Named is a FILTER that happens to be empty rather
+       than a mode that means something on its own -- and this sentence has
+       always said "every bucket" when it is. The confusion is in the CHIP,
+       which sits in a row of selection MODES and so reads like one.
+
+       🔴 MY FIRST ATTEMPT AT THIS WAS WORSE THAN THE PROBLEM. I put an
+       explicit-vs-counted branch inside the `else`, which only ever runs for
+       the COUNTED modes -- dead code that also claimed an empty Named "targets
+       nothing", the opposite of what the engine does. Reverted. */
+    what = (SCHED_LABEL[sel] || sel) + " × " + (b.select_n || 1)
          + ((b.regimes || []).length ? " in " + b.regimes.join("/") : "");
   }
-  const g = (b.groups && b.groups !== "any") ? ", " + SCHED_LABEL[b.groups] : "";
+  const g = (b.groups && b.groups !== "any")
+          ? ", " + (SCHED_LABEL[b.groups] || b.groups) : "";
   const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
   return esc("Target " + what + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
              + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "")) ;
@@ -5793,6 +5976,11 @@ function schedUntilPhrase(u){
   if(k === "profit_up_pct") return "profit is " + (u.percent != null ? u.percent : 10)
       + "% higher";
   if(k === "giveback_below") return "give-back drops under " + (u.value != null ? u.value : "?") + "%";
+  if(k === "epoch_done"){
+    const n = Number(u.passes || 1);
+    return "every group has run "
+         + (n === 1 ? "once" : n === 2 ? "twice" : n + " times");
+  }
   return "an unknown condition (" + esc(String(k)) + ")";
 }
 
@@ -5803,7 +5991,8 @@ function schedProgress(b, sch){
   const spent = Number(st.jobs_spent || 0);
   const started = Number(st.started_at || 0);
   const elapsed = started ? (Date.now() / 1000 - started) : 0;
-  const etaKind = (VOCAB.eta_kind || {})[(b.until || {}).kind] || "none";
+  const uk = (b.until || {}).kind;
+  const etaKind = (VOCAB.eta_kind || {})[uk] || ETA_KIND_FALLBACK[uk] || "none";
   return '<div class="tsec" style="margin-top:8px">'
     + '<div class="trow">'
     + '<span class="chip">' + spent + ' job' + (spent === 1 ? "" : "s") + ' spent</span>'
@@ -5817,6 +6006,20 @@ function schedProgress(b, sch){
    any projection come from the engine when the snapshot carries them; until
    then this states which KIND of answer the condition can support, which is
    itself the useful thing and is never wrong. */
+/* 🔴 A MISSING VOCABULARY MUST NOT BECOME "NO ETA IS POSSIBLE".
+   `eta_kind` is published with the settings, and every OTHER vocabulary in this
+   file already carries a fallback for the snapshot that predates it -- this one
+   did not, so an app yet to receive the vocab told you a job-count block could
+   never be estimated. That is not a missing answer, it is the opposite of the
+   right one, which is the exact wrongness this table exists to prevent. Found
+   by rendering the flowchart against a preview that has no VOCAB at all. */
+const ETA_KIND_FALLBACK = {
+  jobs: "exact", epoch_done: "exact",
+  pinned_cleared: "projected", pf_at_least: "projected",
+  profit_up_pct: "projected", giveback_below: "projected",
+  bucket_splits: "none",
+};
+
 function schedEtaLine(kind){
   if(kind === "exact")
     return "<b>Countable.</b> This block ends after a set number of jobs, so its "
@@ -5839,7 +6042,15 @@ function schedEditor(b){
     return String(x.regime).toUpperCase() !== "GLOBALS"; });
   return '<div class="tsec" style="margin-top:10px">'
 
-    + '<div class="section-label">Target</div>'
+    /* 🔴 CLEAR, NOT DELETE. Trevor, 2026-09-19: *"We need a Clear button
+       somewhere. That would clear all the selections without removing the block
+       completely."* Starting a block over meant removing it and adding another,
+       which loses its place in the chain -- so the only way to start over also
+       moved the thing you were not trying to move. */
+    + '<div class="trow" style="margin-bottom:2px">'
+    + '<span class="section-label" style="margin:0">Target</span>'
+    + '<button type="button" class="chip" data-schedclear="' + esc(b.id)
+    + '">Clear selections</button></div>'
     + '<div class="chips">'
     + vocab("selects").map(function(v){
         return chip("schedsel", v, (b.select || "explicit") === v,
@@ -5923,6 +6134,22 @@ function schedMachines(){
 
 /* The one number a condition needs, as chips rather than a keyboard: a phone
    keyboard over a list like this is three taps and a dismiss. */
+/* 🔴 ONE MAPPING, READ FROM THREE PLACES. The field a condition's number
+   lives under was written out as the same ternary in schedValueRow, in the
+   chip handler and in the custom-input handler. Adding a condition meant
+   editing three copies, and missing one writes a number to a field the engine
+   never reads -- no error, just a setting that does nothing. Same lesson
+   data-schedclear taught on 09-19 from the other end: a handler the dispatcher
+   cannot see never runs. */
+const SCHED_UNTIL_FIELD = {
+  jobs: "n", pinned_cleared: "percent", profit_up_pct: "percent",
+  epoch_done: "passes",
+};
+function schedUntilField(kind){ return SCHED_UNTIL_FIELD[kind] || "value"; }
+/* Counts are whole numbers and at least 1. A "1.5th pass" is not a thing, and
+   0 passes would complete the block the instant it activated. */
+function schedUntilIsCount(field){ return field === "n" || field === "passes"; }
+
 function schedValueRow(b, u){
   const opts = {
     jobs: [1, 2, 3, 5, 10],
@@ -5930,17 +6157,26 @@ function schedValueRow(b, u){
     pinned_cleared: [25, 50, 75, 100],
     profit_up_pct: [5, 10, 25, 50],
     giveback_below: [30, 40, 50],
+    /* ONCE is a full pass; TWICE is the first point at which anything CAN
+       lock, because a variable needs two consecutive middle wins. */
+    epoch_done: [1, 2, 3],
   }[u.kind];
   if(!opts) return "";
-  const field = (u.kind === "jobs") ? "n"
-              : (u.kind === "pinned_cleared" || u.kind === "profit_up_pct") ? "percent"
-              : "value";
+  const field = schedUntilField(u.kind);
   const cur = u[field];
   return '<div class="chips" style="margin-top:6px">'
     + opts.map(function(v){
         return '<button type="button" class="chip' + (Number(cur) === v ? " on" : "")
           + '" data-schedval="' + esc(b.id) + ':' + v + '">' + v
           + (field === "percent" ? "%" : "") + '</button>'; }).join("")
+    /* 🔴 THE PRESETS ARE A SHORTCUT, NOT THE RANGE. Trevor, 2026-09-19:
+       *"Until needs a text box next to it to have custom numbers."* Five chips
+       cannot say "run 40 jobs" or "PF reaches 1.35", and a builder that only
+       expresses the five numbers somebody guessed at is one you stop using the
+       first time you want a sixth. */
+    + '<input class="pickin schedin" type="number" inputmode="decimal" '
+    + 'step="any" min="0" placeholder="\u2014" data-schedvalin="' + esc(b.id)
+    + '" value="' + (cur === undefined || cur === null ? "" : esc(cur)) + '">'
     + '</div>';
 }
 
@@ -6036,7 +6272,12 @@ function bucketPriorityBadge(){
   const bp = SETTINGS_STATE.bucket_priority || {};
   const mode = bp.mode || "off";
   const regimes = bp.regimes || ["BULL", "BEAR", "RANGING"];
-  const auto = (mode !== "off" && mode !== "manual");
+  /* 🔴 `regime` IS NOT AN AUTO MODE, and this predicate is why that matters:
+     it gates the focus slider, which only the ranked modes read. Leaving it as
+     "anything but off and manual" would put a live slider in front of a field
+     MODE_REGIME never looks at -- a control that moves and changes nothing. */
+  const auto = (mode === "auto_top" || mode === "auto_bottom"
+                || mode === "auto_defaults");
   const modes = [["auto_top", "Top by PF"], ["auto_bottom", "Bottom by PF"],
                  ["auto_defaults", "Most defaults"], ["off", "Off"]];
   return '<div class="card"><div class="card-in">'
@@ -6073,6 +6314,9 @@ function bucketPriorityBadge(){
     + ' above. With one bucket per regime today, that narrowing is what makes'
     + ' &ldquo;top 3&rdquo; mean anything at all.</div>'
 
+    + '<div class="section-label" style="margin-top:14px">Regimes</div>'
+    + regimePriorityRows(bp)
+
     + '<div class="section-label" style="margin-top:14px">Buckets</div>'
     + bucketPriorityRows(bp)
     + '<div class="chips" style="margin-top:10px">'
@@ -6082,6 +6326,53 @@ function bucketPriorityBadge(){
     + ' at its next tick, not immediately. A round already running keeps the'
     + ' bucket it claimed.</div>'
     + '</div></div>';
+}
+
+/* ONE ROW PER REGIME. Trevor, 2026-09-19: priority percentages per regime as
+   well as per bucket.
+
+   🔴 THIS IS THE CONTROL THAT SURVIVES A SPLIT, and the note under it says so,
+   because today the two look identical. While each regime holds one bucket,
+   pinning BULL and pinning BULL|1600 do the same thing; the moment BULL becomes
+   three buckets a bucket pin silently means a third of what it used to, and
+   this one still means what it said. Somebody reading the card a month from now
+   needs to know which control to reach for BEFORE the split, not after. */
+function regimePriorityRows(bp){
+  const pins = bp.regime_pins || {};
+  /* The regime's CURRENT total, summed from the published bucket shares rather
+     than recomputed -- same reason bucketPriorityRows reads BUCKETS: a second
+     derivation of the same number is a second thing to be wrong. */
+  const rows = (BUCKETS || []).filter(b =>
+    String(b.regime || "").toUpperCase() !== "GLOBALS");
+  return ["BULL", "BEAR", "RANGING"].map(function(r){
+    const mine = rows.filter(b => String(b.regime).toUpperCase() === r);
+    const pinned = pins[r] != null;
+    /* An em dash, never 0%, for a regime with no published bucket -- see
+       fmtPct. "Nothing computed yet" and "given nothing" are different. */
+    const eff = mine.length
+      ? mine.reduce((a, b) => a + (Number(b.effective_pct) || 0), 0) : null;
+    return '<div class="tsec" style="margin-top:10px">'
+      + '<div class="trow">'
+      + '<span class="tname">' + esc(r)
+      + '<span class="dim"> / ' + mine.length
+      + (mine.length === 1 ? " bucket" : " buckets") + '</span></span>'
+      + '<span class="chip ' + (pinned ? "gold" : "") + '">'
+      + fmtPct(pinned ? pins[r] : eff) + '</span>'
+      + '</div>'
+      + '<div class="tnote">' + (pinned
+          ? "Pinned. Its buckets divide this between them; the other regimes "
+            + "split what is left, in their own proportions."
+          : "Computed share " + fmtPct(eff) + ".")
+      + '</div>'
+      + '<div class="chips" style="margin-top:6px">'
+      + [10, 25, 40, 60, 80].map(function(p){
+          return '<button type="button" class="chip '
+            + (pinned && Math.round(pins[r]) === p ? "on" : "")
+            + '" data-bprpin="' + r + ':' + p + '">' + p + '%</button>'; }).join("")
+      + (pinned ? '<button type="button" class="chip" data-bprpin="' + r
+          + ':-1">Unpin</button>' : "")
+      + '</div></div>';
+  }).join("");
 }
 
 /* ONE ROW PER BUCKET: what it would get, what you have pinned, and how far
@@ -6587,7 +6878,25 @@ else stickTop();
 /* Typing a pass selects it; clearing the field hands the round back to whatever
    it was assigned. Only the results page is repainted, so the field keeps focus
    and the caret while the rows below it follow along. */
+/* 🔴 A TYPED VALUE DOES NOT REPAINT. The preset chips beside this field would
+   re-render on every keystroke and take the caret with them, so the draft is
+   updated in place and the chips catch up at the next tap. The input already
+   shows what you typed; repainting only to agree with it costs the cursor. */
 document.addEventListener("input", e => {
+  const si = e.target.closest("[data-schedvalin]");
+  if(si){
+    const blk = schedDraft().find(function(x){
+      return x.id === si.getAttribute("data-schedvalin"); });
+    if(blk){
+      const u = blk.until || (blk.until = {kind: "jobs"});
+      const field = schedUntilField(u.kind);
+      const raw = si.value.trim();
+      if(raw === "") delete u[field];
+      else u[field] = schedUntilIsCount(field)
+                    ? Math.max(1, parseInt(raw, 10) || 1) : Number(raw);
+    }
+    return;
+  }
   const inp = e.target.closest("[data-optin]");
   if(!inp) return;
   const k = inp.getAttribute("data-optin"), v = inp.value.trim();
