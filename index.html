@@ -123,6 +123,11 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
    it is -- borrowed cores. */
 .agent-of{margin-left:14px;padding-left:12px;border-left:2px solid var(--line,#333);}
 .stripe.agent{background:var(--gold);opacity:.55;}
+.agmeter{display:flex;align-items:flex-end;gap:10px;margin-top:2px;}
+.agbars{display:flex;align-items:flex-end;gap:3px;height:22px;}
+.agbar{display:flex;align-items:flex-end;width:9px;height:100%;background:rgba(255,255,255,.06);border-radius:2px;}
+.agbar i{display:block;width:100%;background:var(--gold);opacity:.75;border-radius:2px;}
+.agnote{font-size:12px;opacity:.65;}
 .card-in{padding:13px 14px 14px;display:flex;flex-direction:column;gap:11px;}
 
 .top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
@@ -1279,9 +1284,12 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260921-152240";
+const APP_BUILD = "20260921-162735";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
+/* Per-agent lending hours per day, and why it was not lending the rest of
+   the time. {} until a machine has actually lent something. */
+let AGENTEFF = {};
 /* The four words for where a variable is up to, explained -- published once at
    the top of the snapshot rather than repeated on every variable. {} until a
    snapshot carrying it arrives, which is what an older publisher sends. */
@@ -2316,6 +2324,41 @@ function opsBadge(f){
    agent runs no round of its own. Reusing it would draw a machine that
    looks broken. What an agent HAS is: who it serves, how many of its
    cores are lent right now, and why they are or are not running. */
+/* SEVEN DAYS OF LENDING, and the reason for the gaps.
+
+   Trevor, 2026-09-21: *"how much time it's running per day, i want to
+   monitor if the kids have forgotten to plug thier laptops in."*
+
+   Bars are hours lent, scaled to the busiest day rather than to 24 -- a
+   laptop that is only ever home in the evenings would otherwise draw seven
+   identical stubs and tell you nothing about which evening it missed.
+
+   NO PERCENTAGE, deliberately. Hours over 24 reads as a score, and a laptop
+   at school SHOULD be at zero; the honest facts are the hours and the
+   reason, and what counts as good is the reader's call. */
+function agentMeter(machine){
+  const rows = (AGENTEFF && AGENTEFF[machine]) || [];
+  if(!rows.length) return "";
+  const days = rows.slice(0, 7).reverse();
+  const peak = Math.max(1, ...days.map(r => r.lending_h || 0));
+  const bars = days.map(r => {
+    const h = r.lending_h || 0;
+    const pct = Math.round((h / peak) * 100);
+    const top = Object.entries(r.stopped_h || {})
+                      .sort((x, y) => y[1] - x[1])[0];
+    const tip = `${r.day}: ${h}h lent` + (top ? ` · ${top[0]} ${top[1]}h` : "");
+    return `<span class="agbar" title="${esc(tip)}">`
+         + `<i style="height:${Math.max(pct, 3)}%"></i></span>`;
+  }).join("");
+  const today = days[days.length - 1] || {};
+  const worst = Object.entries(today.stopped_h || {})
+                      .sort((a2, b2) => b2[1] - a2[1])[0];
+  return `<div class="agmeter"><div class="agbars">${bars}</div>`
+       + `<div class="agnote">${esc(String(today.lending_h || 0))}h today`
+       + (worst ? ` · ${esc(worst[0])} ${esc(String(worst[1]))}h` : "")
+       + `</div></div>`;
+}
+
 function agentCard(f){
   const a = f.agents || {};
   const on = a.state === "RUN";
@@ -2332,6 +2375,7 @@ function agentCard(f){
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div class="sub">${esc(String(a.running == null ? "?" : a.running))} of ${esc(String(a.installed == null ? "?" : a.installed))} core(s) · ${esc(a.why || (on ? "running" : "stopped"))}</div>
+        ${agentMeter(f.machine)}
       </div>
     </article>`;
 }
@@ -6544,6 +6588,7 @@ function applySnapshot(d, source){
   if(!d || d.kind !== "goldbot.app.snapshot") return false;
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = d.fleet;
+  AGENTEFF = d.agent_efficiency || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
