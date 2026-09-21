@@ -128,6 +128,13 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .agbar{display:flex;align-items:flex-end;width:9px;height:100%;background:rgba(255,255,255,.06);border-radius:2px;}
 .agbar i{display:block;width:100%;background:var(--gold);opacity:.75;border-radius:2px;}
 .agnote{font-size:12px;opacity:.65;}
+.contrib{display:flex;flex-direction:column;gap:6px;}
+.cbrow{display:grid;grid-template-columns:58px 1fr auto;gap:8px;align-items:center;font-size:12px;}
+.cbname{opacity:.85;font-weight:600;}
+.cbbar{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;}
+.cbbar i{display:block;height:100%;background:var(--gold);opacity:.8;}
+.cbnum{opacity:.7;white-space:nowrap;}
+.cbwhy{grid-column:2 / -1;font-size:11px;opacity:.55;}
 .card-in{padding:13px 14px 14px;display:flex;flex-direction:column;gap:11px;}
 
 .top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
@@ -1284,12 +1291,14 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260921-162735";
+const APP_BUILD = "20260921-163605";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
+/* Who fed each controller, keyed by controller machine name. */
+let AGENTCONTRIB = {};
 /* The four words for where a variable is up to, explained -- published once at
    the top of the snapshot rather than repeated on every variable. {} until a
    snapshot carrying it arrives, which is what an older publisher sends. */
@@ -2380,6 +2389,44 @@ function agentCard(f){
     </article>`;
 }
 
+/* WHO FED THIS MACHINE, and how much of their potential they delivered.
+
+   Trevor, 2026-09-21: *"I want to know how much Each machine contributed to
+   it. And it's efficiency ... how many core's it's thrown out, vs what it
+   should have for the amount of time it's been working."*
+
+   Drawn on the CONTROLLER, not the agent: the agent's own card already
+   carries its seven-day history, and this is the other question -- what did
+   this job actually receive, and from whom.
+
+   THE REASON IS NEVER OMITTED. 25% with `away 20h` is a laptop that went to
+   school, which is its job. 25% with `on battery 34h` is a charger nobody
+   plugged in. Same number, different meaning -- so the percentage never
+   appears on its own. */
+function contribCard(machine){
+  const rep = AGENTCONTRIB && AGENTCONTRIB[machine];
+  if(!rep || !rep.machines || !Object.keys(rep.machines).length) return "";
+  const rows = Object.entries(rep.machines)
+    .sort((a2, b2) => (b2[1].core_hours || 0) - (a2[1].core_hours || 0))
+    .map(([m, v]) => {
+      const share = v.share_pct == null ? 0 : v.share_pct;
+      const eff = v.efficiency_pct == null ? "-" : v.efficiency_pct + "%";
+      const top = Object.entries(v.by_reason || {})
+                        .sort((x, y) => y[1] - x[1])[0];
+      return `<div class="cbrow">`
+           + `<span class="cbname">${esc(m)}</span>`
+           + `<span class="cbbar"><i style="width:${share}%"></i></span>`
+           + `<span class="cbnum">${esc(String(v.core_hours))}ch`
+           + ` · eff ${esc(String(eff))}</span>`
+           + (top ? `<span class="cbwhy">${esc(top[0])} ${esc(String(top[1]))}h</span>` : "")
+           + `</div>`;
+    }).join("");
+  return `<div class="contrib">`
+       + `<div class="section-label">Cores received`
+       + ` · ${esc(String(rep.total_core_hours))} core-hours</div>`
+       + rows + `</div>`;
+}
+
 function machineCard(f){
     const rc = RC[f.regime] || "";
     const live = running(f);
@@ -2499,6 +2546,7 @@ function machineCard(f){
              <span class="opsoc">${OPSTATE.open === opsKey(f)
                ? "‹" : "›"}</span>
            </button>`}
+        ${contribCard(f.machine)}
         ${opsBadge(f)}
       </div>
     </article>`;
@@ -6589,6 +6637,7 @@ function applySnapshot(d, source){
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = d.fleet;
   AGENTEFF = d.agent_efficiency || {};
+  AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
