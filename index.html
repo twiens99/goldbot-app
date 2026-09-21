@@ -116,6 +116,13 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .stripe.bear{background:var(--bear);}
 .stripe.range{background:var(--range);}
 .stripe.warn{background:var(--warn);}
+/* AN AGENT IS DRAWN UNDER THE MACHINE IT SERVES. The rail is the whole
+   point: an agent runs no round, so its card carries none of the progress
+   a machine card normally leads with, and side by side with real machines
+   it reads as an idle box. Indented under its controller it reads as what
+   it is -- borrowed cores. */
+.agent-of{margin-left:14px;padding-left:12px;border-left:2px solid var(--line,#333);}
+.stripe.agent{background:var(--gold);opacity:.55;}
 .card-in{padding:13px 14px 14px;display:flex;flex-direction:column;gap:11px;}
 
 .top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
@@ -1272,7 +1279,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260920-192026";
+const APP_BUILD = "20260921-152240";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* The four words for where a variable is up to, explained -- published once at
@@ -2037,8 +2044,27 @@ function renderRounds(){
   // EVERY machine, not just the ones with a round. A machine that vanishes from
   // this page when it goes idle hides exactly the thing worth knowing -- that is
   // how a manually launched sweep read as a dead Laptop for three hours.
-  return FLEET.map(f => machineCard(fleetWithSeed(f, seedOnMachine(f.machine))))
-              .join("");
+  // AGENTS HANG OFF THE MACHINE THEY SERVE, and the machine says which --
+  // `agents.agent_for` is declared BY THE AGENT on its own beacon. The page
+  // never infers the relationship: the only other source is the Strategy
+  // Tester farm list, which lives on the controller and nothing here reads.
+  const under = {};
+  FLEET.forEach(f => {
+    const who = f.agents && f.agents.agent_for;
+    if(who) (under[who] = under[who] || []).push(f);
+  });
+  const names = new Set(FLEET.map(f => f.machine));
+  const card = f => machineCard(fleetWithSeed(f, seedOnMachine(f.machine)));
+  // An agent whose controller is not reporting is shown at the TOP LEVEL
+  // rather than dropped. A machine that vanishes from this page is the
+  // failure this list already exists to prevent.
+  const orphan = f => f.agents && f.agents.agent_for
+                   && !names.has(f.agents.agent_for);
+  return FLEET
+    .filter(f => !(f.agents && f.agents.agent_for) || orphan(f))
+    .map(f => card(f) + (under[f.machine] || [])
+        .map(a => `<div class="agent-of">${agentCard(a)}</div>`).join(""))
+    .join("");
 }
 
 /* PICK A PASS, ON THE PHONE. Mockup; see the .pick CSS for what does not
@@ -2281,6 +2307,33 @@ function opsBadge(f){
       <div class="opsnote">Applied to the running processes, never written into
         MT5 \u2014 reversible in one tap, and the round is unaffected either way.</div>
     </div>`;
+}
+
+/* A COMPACT CARD FOR A MACHINE THAT LENDS CORES.
+
+   Deliberately NOT machineCard(). Every field that card leads with --
+   regime, bucket, group, percentage -- is empty on an agent, because an
+   agent runs no round of its own. Reusing it would draw a machine that
+   looks broken. What an agent HAS is: who it serves, how many of its
+   cores are lent right now, and why they are or are not running. */
+function agentCard(f){
+  const a = f.agents || {};
+  const on = a.state === "RUN";
+  const st = stale(f);
+  return `
+    <article class="card">
+      <div class="stripe ${st ? "warn" : "agent"}"></div>
+      <div class="card-in">
+        <div class="top">
+          <span class="chip gold">${esc(f.machine)}</span>
+          <span class="chip">${on ? "lending" : "idle"}</span>
+          <span class="sp"></span>
+          <span class="when">${f.age_seconds != null
+            ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
+        </div>
+        <div class="sub">${esc(String(a.running == null ? "?" : a.running))} of ${esc(String(a.installed == null ? "?" : a.installed))} core(s) · ${esc(a.why || (on ? "running" : "stopped"))}</div>
+      </div>
+    </article>`;
 }
 
 function machineCard(f){
