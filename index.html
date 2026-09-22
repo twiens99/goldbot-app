@@ -135,6 +135,7 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .cbbar i{display:block;height:100%;background:var(--gold);opacity:.8;}
 .cbnum{opacity:.7;white-space:nowrap;}
 .cbwhy{grid-column:2 / -1;font-size:11px;opacity:.55;}
+.cbint{grid-column:2 / -1;font-size:11px;color:var(--warn);opacity:.9;}
 .card-in{padding:13px 14px 14px;display:flex;flex-direction:column;gap:11px;}
 
 .top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
@@ -1291,7 +1292,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260921-163605";
+const APP_BUILD = "20260921-182129";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
@@ -2402,7 +2403,18 @@ function agentCard(f){
    THE REASON IS NEVER OMITTED. 25% with `away 20h` is a laptop that went to
    school, which is its job. 25% with `on battery 34h` is a charger nobody
    plugged in. Same number, different meaning -- so the percentage never
-   appears on its own. */
+   appears on its own.
+
+   AND NEITHER ARE THE INTERRUPTIONS, for a sharper reason: the percentage
+   CANNOT SEE THEM. It measures whether a machine was lending, not whether the
+   work survived -- so an agent bounced mid-pass loses that pass, the
+   controller re-queues it from zero, and the hours spent recomputing it count
+   as delivered. 2026-09-21: three tray restarts threw away twelve of one
+   agent's in-flight passes and efficiency read 99.8% throughout. The count
+   is drawn
+   next to the number it contradicts, never folded into it -- pricing a lost
+   pass needs a mean pass length nobody measures, and a guessed one would be
+   the MT5 ETA mistake with a decimal point. */
 function contribCard(machine){
   const rep = AGENTCONTRIB && AGENTCONTRIB[machine];
   if(!rep || !rep.machines || !Object.keys(rep.machines).length) return "";
@@ -2413,12 +2425,23 @@ function contribCard(machine){
       const eff = v.efficiency_pct == null ? "-" : v.efficiency_pct + "%";
       const top = Object.entries(v.by_reason || {})
                         .sort((x, y) => y[1] - x[1])[0];
+      const ints = v.interruptions || 0;
+      const lost = v.cores_interrupted || 0;
+      // "up to", deliberately: cores_interrupted counts the cores that were
+      // lending, and a core is not certain to have had a pass in flight. An
+      // upper bound stated as one is honest; stated as a fact it is a number
+      // somebody would plan against.
+      const intTxt = ints
+        ? `${ints} interruption${ints === 1 ? "" : "s"}`
+          + ` · up to ${lost} pass${lost === 1 ? "" : "es"} lost`
+        : "";
       return `<div class="cbrow">`
            + `<span class="cbname">${esc(m)}</span>`
            + `<span class="cbbar"><i style="width:${share}%"></i></span>`
            + `<span class="cbnum">${esc(String(v.core_hours))}ch`
            + ` · eff ${esc(String(eff))}</span>`
            + (top ? `<span class="cbwhy">${esc(top[0])} ${esc(String(top[1]))}h</span>` : "")
+           + (intTxt ? `<span class="cbint">${esc(intTxt)}</span>` : "")
            + `</div>`;
     }).join("");
   return `<div class="contrib">`
