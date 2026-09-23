@@ -464,6 +464,9 @@ article.jrow{cursor:default;}
 .tst.floating{background:rgba(111,168,212,.16);color:#7FB6DE;}
 .tst.center{background:rgba(95,190,149,.16);color:var(--good);}
 .tst.pinned{background:rgba(224,139,74,.20);color:#F0A05E;}
+/* A PIN UNDER 2σ -- same amber, turned down. Still a PINNED chip, because the
+   streak is real; quieter, because the evidence behind it is not. */
+.tst.pinned.weak{background:rgba(224,139,74,.09);color:rgba(240,160,94,.62);}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
 /* THE SWEPT RANGE wears the filled chip without wearing a STATE. Gold-tinted
    rather than one of the five lifecycle colours, because a range is not a
@@ -1292,7 +1295,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260921-182129";
+const APP_BUILD = "20260922-223310";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
@@ -1432,7 +1435,7 @@ function varList(vars, states){
         return `<div class="tvar">
           <span class="tvn">${esc(spaceOut(stripRegime(v)))}</span>` +
           (st && st.state
-            ? `<span class="tst ${stateClass(st.state)}">${esc(st.state)}</span>` +
+            ? stateChip(st) +
               `<span class="tvr ${stateClass(st.resolution)}">${
                  st.resolution ? esc(st.resolution) : "—"}</span>`
             : "") + `</div>`;
@@ -4756,6 +4759,36 @@ function metricGraph(d, big){
    pick a CSS class; the label shown is the publisher's own. */
 function stateClass(s){ return String(s || "").toLowerCase(); }
 
+/* THE STATE CHIP, one renderer for every place a variable's state is drawn.
+   Trevor, 2026-09-22: *"show the σ on the chip."* A PINNED carries which edge
+   and how hard -- "PINNED ↑ 2.6σ" -- because the word alone made a pin a second
+   pass chases look the same as a best pass that happened to sit at the edge.
+
+   2σ IS THE LINE, and it is not this page's number: it is the bar
+   decision_engine.select_second_pass_variables uses to decide whether a pin is
+   worth a second pass. Below it the chip is drawn QUIETER, because the one
+   thing that bar says is "this edge could be noise". Absent a sigma (a pin
+   recorded before 2026-09-22, or a sweep too thin to measure one) the chip is
+   the bare word, exactly as before -- never a guessed number. */
+const SIGMA_BAR = 2.0;
+function stateChip(v){
+  if(!v || !v.state) return "";
+  const st = String(v.state);
+  let label = esc(st), weak = false, tip = "";
+  if(st === "PINNED"){
+    const arrow = v.edge === "UPPER" ? " ↑" : v.edge === "LOWER" ? " ↓" : "";
+    const sig = (v.sigma != null && isFinite(Number(v.sigma))) ? Number(v.sigma) : null;
+    label += arrow + (sig != null ? " " + esc(sig.toFixed(1)) + "σ" : "");
+    if(sig != null){
+      weak = sig < SIGMA_BAR;
+      tip = weak ? "Below 2σ -- the edge may be noise; no second pass chases it."
+                 : "2σ or more -- a real pin; a second pass chases it.";
+    }
+  }
+  return `<span class="tst ${stateClass(st)}${weak ? " weak" : ""}"${
+    tip ? ` title="${esc(tip)}"` : ""}>${label}</span>`;
+}
+
 /* EXPLAIN ONLY THE STATES ON SCREEN. Printing all five every time is a
    glossary; printing the ones this task actually has is an answer. Ordered
    PINNED first, matching notify.py's own ordering and for the same reason --
@@ -4784,8 +4817,7 @@ function taskVars(list, hist){
              vhColour(v.name)}"` : "") +
           ` data-vh="${esc(v.name)}">${esc(spaceOut(stripRegime(v.name)))}</button>`
         : `<span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>`) +
-      (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>`
-               : "") +
+      stateChip(v) +
       /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
          otherwise pull the state chip right and break the column. */
       `<span class="tvr ${stateClass(v.resolution)}">${
@@ -5022,7 +5054,7 @@ function sweepVars(all, swept){
     return `<div class="tvar swept">
         <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>
         <span class="tmem ${mem[0]}">${mem[1]}</span>` +
-      (v.state ? `<span class="tst ${stateClass(v.state)}">${esc(v.state)}</span>` : "") +
+      stateChip(v) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
       (fine ? `<span class="tvr">${fine}</span>` : "") +
       /* A RIDER CARRIES NO STATE, and that absence is correct rather than
@@ -5083,8 +5115,7 @@ function taskSwept(list, states){
       : (v.resolution ? esc(v.resolution) : "");
     return `<div class="tvar swept">
         <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
-      (st && st.state
-        ? `<span class="tst ${stateClass(st.state)}">${esc(st.state)}</span>` : "") +
+      stateChip(st) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
       /* ALWAYS A BOX, even with nothing in it -- the same reason taskVars keeps
          an empty one: an absent chip pulls the row's right edge out of line. */
