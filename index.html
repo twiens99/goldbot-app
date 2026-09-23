@@ -468,6 +468,39 @@ article.jrow{cursor:default;}
    streak is real; quieter, because the evidence behind it is not. */
 .tst.pinned.weak{background:rgba(224,139,74,.09);color:rgba(240,160,94,.62);}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+/* 2026-09-23 -- THE BALANCE OVERLAY. The wrapper is the crosshair's frame. */
+.eqwrap{position:relative;}
+.eqsvg{width:100%;height:auto;display:block;touch-action:pan-y;}
+.eqtip{position:absolute;top:2px;pointer-events:none;z-index:2;
+  background:var(--bg);border:1px solid var(--line);border-radius:7px;
+  padding:5px 8px;font-size:11px;line-height:1.45;color:var(--dim);
+  white-space:nowrap;}
+.eqtip b{color:var(--text);font-weight:600;}
+.eqtip .eqsw{display:inline-block;width:9px;height:2px;margin-right:5px;
+  vertical-align:middle;border-radius:1px;}
+.eqleg{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim);}
+.eqleg .eqrow{display:flex;flex-direction:row;align-items:center;gap:7px;min-width:0;}
+.eqleg .eqsw{flex:0 0 14px;height:3px;border-radius:2px;}
+.eqleg .eqnm{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.eqleg .eqsp{flex:1;}
+.eqstep{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
+.eqstep button{min-width:32px;height:28px;border-radius:7px;border:1px solid var(--line);
+  background:var(--card-2);color:var(--text);font-size:13px;}
+.eqstep button:disabled{opacity:.35;}
+.eqstep .n{font-size:11px;color:var(--faint);min-width:44px;text-align:center;}
+.eqlist{display:flex;flex-direction:column;gap:2px;margin-top:2px;}
+.eqlist button{display:flex;gap:8px;align-items:baseline;text-align:left;
+  background:transparent;border:0;border-radius:6px;padding:5px 6px;color:var(--dim);
+  font-size:12px;}
+.eqlist button.on{background:var(--tonal);color:var(--text);}
+.eqlist .d{color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums;}
+.eqlist .g{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* 2026-09-23 -- a sweep from before tasks recorded their own states. Outlined,
+   not filled: it is the absence of a state, and must not read as a sixth one. */
+.tst.unrec{background:transparent;color:var(--faint);
+  box-shadow:inset 0 0 0 1px rgba(140,160,172,.28);}
+.tst.chased{background:transparent;color:#F0A05E;
+  box-shadow:inset 0 0 0 1px rgba(224,139,74,.35);}
 /* THE SWEPT RANGE wears the filled chip without wearing a STATE. Gold-tinted
    rather than one of the five lifecycle colours, because a range is not a
    position in that lifecycle and must not be read as one. Mono, since it is a
@@ -1295,9 +1328,10 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260922-223310";
+const APP_BUILD = "20260923-172855";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
+let CURVES = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
@@ -1894,7 +1928,12 @@ function seedCard(sd){
    the honest line is that nothing was left behind -- not an empty list. The
    case worth a decision is the other one: a finished sweep whose round never
    closed out, leaving reports nothing points at. */
-const FAILSTATE = { open: null, arm: null, said: null };
+/* `sent` is per card: {key: {act, after, park}} for a write fleet_api
+   accepted. The card keeps saying so until a snapshot without the row
+   arrives -- the write lands on the shared JSON at once, but THIS page reads a
+   published snapshot, and a card that vanished on 202 would claim the
+   scheduler had already seen it. */
+const FAILSTATE = { open: null, arm: null, said: null, busy: null, sent: {} };
 
 /* key, icon, label, loud, needs arming */
 const FAIL_ACTS = [
@@ -1904,6 +1943,76 @@ const FAIL_ACTS = [
   ["recover", "\u21e9", "Recover the round", false, true],
   ["delete", "\u2715", "Delete the data", true, true],
 ];
+
+/* \ud83d\udd34 WHAT HAS A ROUTE (2026-09-23). Until today NONE of these did -- every
+   Confirm on this card printed "was not sent", Clear included, and Set the
+   count had no number to send. fleet_api's POST /failure takes these three.
+   Recover and Delete stay unwired ON PURPOSE: both DO something (apply a
+   round's parameters; remove reports), and the write endpoint only ever
+   leaves a note for the tick loop. See fleet_api's banner. */
+const FAIL_WIRED = { clear: true, retry: true, count: true };
+
+/* The ladder, as round_failures.OPERATOR_RUNGS defines it. The picker offers
+   exactly these; fleet_api refuses anything else. */
+const FAIL_RUNGS = [
+  [0, "clear"],
+  [1, "retry now"],
+  [2, "after one other round"],
+  [3, "park"],
+];
+
+function failSentLine(s){
+  const a = s.after || {};
+  const park = s.park === "lifted" ? " The scheduler\u2019s park was lifted with it."
+    : s.park === "parked" ? " The scheduler parks it too, so the two agree."
+    : "";
+  const head = s.act === "clear"
+    ? "<b>Cleared.</b> Back in normal rotation."
+    : s.act === "retry"
+      ? `<b>Retry sent.</b> Due now, at ${esc(a.failures)} failure${
+          a.failures === 1 ? "" : "s"}. Due is not first \u2014 what runs is
+         still filtered by regime, lease and machine.`
+      : `<b>Count set to ${esc(a.failures)}.</b> ${esc(
+          (FAIL_RUNGS.find(r => r[0] === a.failures) || [0, ""])[1])}.`;
+  return `\u2713 ${head}${park} The scheduler reads it at its next tick;
+    this card updates on the next snapshot.`;
+}
+
+function failSendError(act, err){
+  const what = "<b>" + esc(failActLabel(act)) + "</b>";
+  if(err === "read-only")
+    return "\u26a0\ufe0f " + what + " was not sent. This page is served from a "
+      + "public host and has no route to the Laptop \u2014 the write endpoint "
+      + "answers only on the tailnet, to a page served from there. Nothing changed.";
+  if(err === "unreachable")
+    return "\u26a0\ufe0f " + what + " was not sent \u2014 the Laptop\u2019s write "
+      + "endpoint did not answer. It may not be running. Nothing changed.";
+  return "\u26a0\ufe0f " + what + " was refused: " + esc(err) + ". Nothing changed.";
+}
+
+async function failSend(key, act, n){
+  if(!FAIL_WIRED[act]){
+    FAILSTATE.said = "\u26a0\ufe0f <b>" + esc(failActLabel(act)) + "</b> was not "
+      + "sent. It has no route, on purpose: it does something rather than "
+      + "leaving a note, and the write endpoint only leaves notes. Ask for it "
+      + "in a session.";
+    repaintCards(); return;
+  }
+  const parts = String(key).split("|");
+  const body = {regime: parts[0], bucket_id: Number(parts[1]),
+                group_id: parts[2], action: act, by: "app"};
+  if(act === "count") body.failures = Number(n);
+  FAILSTATE.busy = key; FAILSTATE.said = null;
+  repaintCards();
+  const res = await apiCall("/failure", body);
+  FAILSTATE.busy = null;
+  if(res.ok){
+    FAILSTATE.sent[key] = {act: act, after: res.out.after, park: res.out.park};
+  }else{
+    FAILSTATE.said = failSendError(act, res.error);
+  }
+  repaintCards();
+}
 
 function failKey(f){
   return [f.regime, f.bucket_id, f.group_id].join("|");
@@ -1946,12 +2055,25 @@ function failPanel(f){
   const armed = FAILSTATE.arm && FAILSTATE.arm.key === key ? FAILSTATE.arm.act : null;
   const orphans = failOrphans(f).length;
 
+  const sent = FAILSTATE.sent[key];
+  const busy = FAILSTATE.busy === key;
   const row = FAIL_ACTS.filter(([k]) =>
       /* Recover and Delete are about DATA, so they appear only when there is
          some. An action with nothing to act on is a control that can only
          disappoint. */
       (k !== "recover" && k !== "delete") || orphans)
     .map(([k, ic, label, loud, needs]) => {
+      /* SET THE COUNT CONFIRMS BY CHOOSING THE RUNG. It had one Confirm and
+         no number, so even with a route there was nothing to send. Arming it
+         now offers the ladder; tapping a rung is the commit. The current rung
+         is shown and not offered -- setting it to what it is would be a write
+         that changes nothing and says it did. */
+      if(armed === k && k === "count")
+        return FAIL_RUNGS.map(([n, what]) => n === (f.failures || 0)
+          ? `<span class="opsb dim">${n} \u00b7 ${esc(what)} (now)</span>`
+          : `<button type="button" class="opsb loud armed" data-failgo="${
+              esc(key)}" data-failact="count" data-failn="${n}">${n} \u00b7 ${
+              esc(what)}</button>`).join("");
       if(armed === k)
         return `<button type="button" class="opsb loud armed" data-failgo="${
           esc(key)}" data-failact="${esc(k)}">\u2713 Confirm \u2014 ${esc(label)}</button>`;
@@ -1980,14 +2102,20 @@ function failPanel(f){
       ${failData(f)}
 
       <div class="opsh">Actions</div>
-      <div class="opsrow">${row}</div>
-      ${armed ? `<div class="opsarm">Armed. Press <b>Confirm</b> to send
-        \u201c${esc(failActLabel(armed))}\u201d, or Cancel.</div>` : ""}
+      ${sent ? `<div class="opsnote">${failSentLine(sent)}</div>`
+        : busy ? `<div class="opsnote">Sending\u2026</div>`
+        : `<div class="opsrow">${row}</div>`}
+      ${armed && !sent && !busy ? `<div class="opsarm">Armed. ${armed === "count"
+        ? "Tap a rung to set the count"
+        : `Press <b>Confirm</b> to send \u201c${esc(failActLabel(armed))}\u201d`},
+        or Cancel.</div>` : ""}
       ${FAILSTATE.said ? `<div class="opsdis">${FAILSTATE.said}</div>` : ""}
-      <div class="opsnote"><b>Clear</b> wipes the count and the scheduler's block
-        together, so the group goes back into normal rotation. <b>Retry now</b>
-        puts it at the front without clearing its history. <b>Set the count</b>
-        moves it up or down the three-failure ladder by hand.</div>
+      <div class="opsnote"><b>Clear</b> wipes the count and the scheduler's
+        third-failure park together, so the group goes back into normal
+        rotation. <b>Retry now</b> makes it due without clearing its history
+        \u2014 due, not first; a parked group comes back with one life.
+        <b>Set the count</b> moves it up or down the three-failure ladder by
+        hand.</div>
     </div>`;
 }
 
@@ -2598,11 +2726,21 @@ function jobSpan(tasks){
    any, which is every job whose reports never resolved. */
 function jobVariables(rep, openTask){
   const tasks = (rep || {}).tasks || [];
-  let vars = null;
+  /* "WHERE THEY STAND" IS A LIVE QUESTION. Since 2026-09-23 a finished sweep
+     carries its OWN states (or none, if it predates the record), so the last
+     task with a list is no longer necessarily the bucket as it is now. Prefer
+     the last LIVE list -- a backtest's -- and fall back to any list only on a
+     job that has no live one yet. A snapshot from before `states_at` existed
+     has no such field on any task, which reads as live, exactly as before. */
+  let vars = null, live = null;
   tasks.forEach(t => {
-    const v = (t.detail || {}).variables;
-    if(v && v.length) vars = v;
+    const d = t.detail || {};
+    const v = d.variables;
+    if(!(v && v.length)) return;
+    vars = v;
+    if(!d.states_at || d.states_at === "live") live = v;
   });
+  vars = live || vars;
   if(!vars) return "";
   /* THE GRAPH FOLLOWS THE CHIP AT THE TOP. On a sweep there is nothing to plot
      that the card is not already showing, so the badge falls back to the plain
@@ -2783,7 +2921,8 @@ function renderResultsJob(r){
        these three carry the rest. A sweep gets its own badge instead, because
        none of the three says anything true about a grid. */
     (tasks.length && isBacktest(tasks[open])
-      ? graphBadge(tasks[open], rep) + jobVariables(rep, tasks[open]) +
+      ? equityBadge(tasks[open], rep) +
+        graphBadge(tasks[open], rep) + jobVariables(rep, tasks[open]) +
         metricsBadge(tasks[open]) + slopeBadge(tasks[open]) +
         sessionBadge(tasks[open])
       : tasks.length
@@ -3783,6 +3922,289 @@ function slopeMetric(d){
    see. The other selection is emptied rather than remembered -- a graph that
    silently restored four metric lines when you removed your last variable would
    be answering a question you had already moved on from. */
+/* ---------- THE BALANCE OVERLAY (2026-09-23) ----------
+   Trevor: *"I want a graph showing the current Equity graph along with the
+   previous equity graph. All on the same graph ... I also want to be able to
+   change the historic line. with an arrow up or down ... Bucket test historic
+   line will show previous buckettests that other groups have tested. FullTest
+   will show previous fulltests from any regime. Make sure that they are shown in
+   historic order."* And: *"I would expect some Flat areas as there are times
+   when that bucket isnt actually trading. Can we infer those on the equity line
+   too?"*
+
+   🔴 BALANCE, NOT EQUITY, and the badge says so. The line is MT5's closed deals
+   (equity_curves.py) -- floating P&L on an open trade is not in the report.
+   STEPS, NOT A SLOPE. Balance moves only when a position closes; a line drawn
+   point to point would slope across a fortnight in which nothing traded, which
+   is exactly the flat Trevor expected to see. SHADED: the stretches of 5+ days
+   with NO POSITION OPEN, from the deals' own in/out -- a fact about the trades,
+   not a claim about the bucket's gate, and labelled that way.
+   ONE Y AXIS. Both runs start from the same deposit, so a shared scale is what
+   makes "this one ended higher" readable -- never each line scaled to itself,
+   which is what seriesGraph does and why this is not seriesGraph.
+   THE COLOURS are the reference palette's dark yellow / dark blue, validated on
+   --card 2026-09-23 (lightness band, chroma floor, CVD dE 27.4, normal-vision
+   dE 30.7, contrast >= 3:1). The page's own gold and blue failed the band and
+   the chroma floor on this surface. Text stays in ink colours; the swatch
+   beside it carries identity. */
+const EQ_CUR = "#c98500", EQ_HIST = "#3987e5";
+const EQ_IDLE = "rgba(140,160,172,.11)";
+const EQSTATE = {};   // {current curve id: index into its history}
+const EQLIST = {};    // {current curve id: true} -- the list of earlier runs is open
+const EQ_REG = {};    // {current curve id: {cur, hist, t0, t1}} -- for the crosshair
+const EQ_W = 340, EQ_H = 180, EQ_PAD = {l: 40, r: 8, t: 10, b: 20};
+
+function curveFor(t, rep){
+  const main = ((t || {}).files || {}).MAIN;
+  const rel = String((rep || {}).rel_dir || ((t || {}).detail || {}).rel_dir || "")
+    .replace(/\/+$/, "");
+  if(!main || !rel) return null;
+  const id = rel + "/" + main;
+  return CURVES.find(c => c.id === id) || null;
+}
+
+/* THE SCOPE IS bucket_progress.previous_report's, so this line and the Telegram
+   picture compare against the same run: a bucket test against its own bucket's
+   earlier bucket tests from ANY group; a full test against every earlier full
+   test, whichever regime ran it. Oldest first -- CURVES arrives in stamp order.
+   ⚠️ `scope` comes from the publisher ("bucket" / "all"): this file is a PUBLIC
+   repo and its leak scan refuses the report style names, so no comparison here
+   is spelled with them -- the same reason isBacktest reads the data. */
+function curveHistory(cur){
+  return CURVES.filter(c => c.style === cur.style && c.stamp && c.stamp < cur.stamp &&
+    (cur.scope === "all" ||
+      (c.regime === cur.regime && String(c.bucket) === String(cur.bucket))));
+}
+
+function eqDate(min){ return new Date(min * 60000).toISOString().slice(0, 10); }
+function eqMoney(v){ return "$" + Math.round(v).toLocaleString("en-US"); }
+function eqK(v){
+  return "$" + (Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : String(Math.round(v)));
+}
+function eqWhen(c){
+  const s = String(c.stamp || "");
+  return s.length >= 8 ? s.slice(0, 4) + "-" + s.slice(4, 6) + "-" + s.slice(6, 8) : "";
+}
+function eqWho(c){
+  /* A full test's predecessor can be any regime's, so the regime is part of
+     WHICH run it was; within one bucket it would only repeat the card. */
+  return (c.scope === "all" && c.regime ? c.regime + " · " : "") +
+    humanize(c.group);
+}
+function eqNums(c){
+  return [c.pf != null ? "PF " + Number(c.pf).toFixed(2) : "",
+          c.trades != null ? Number(c.trades).toLocaleString("en-US") + " trades" : ""]
+    .filter(Boolean).join(" · ");
+}
+
+/* The value a STEP line holds at time t: the last point at or before it. */
+function eqAt(c, t){
+  const ts = c.t;
+  if(!ts || !ts.length || t < ts[0]) return null;
+  let lo = 0, hi = ts.length - 1;
+  while(lo < hi){
+    const mid = (lo + hi + 1) >> 1;
+    if(ts[mid] <= t) lo = mid; else hi = mid - 1;
+  }
+  return c.v[lo];
+}
+
+function equityChart(cur, hist){
+  const W = EQ_W, H = EQ_H, P = EQ_PAD;
+  const all = hist ? [cur, hist] : [cur];
+  const t0 = Math.min.apply(null, all.map(c => c.t[0]));
+  const t1 = Math.max.apply(null, all.map(c => c.t[c.t.length - 1]));
+  let v0 = Math.min.apply(null, all.map(c => Math.min.apply(null, c.v)));
+  let v1 = Math.max.apply(null, all.map(c => Math.max.apply(null, c.v)));
+  const pad = Math.max(1, (v1 - v0) * 0.06);
+  v0 -= pad; v1 += pad;
+  const x = t => P.l + (W - P.l - P.r) * ((t - t0) / Math.max(1, t1 - t0));
+  const y = v => P.t + (H - P.t - P.b) * (1 - (v - v0) / (v1 - v0));
+  const step = c => {
+    let d = "M" + x(c.t[0]).toFixed(1) + "," + y(c.v[0]).toFixed(1);
+    for(let i = 1; i < c.t.length; i++)
+      d += "H" + x(c.t[i]).toFixed(1) + "V" + y(c.v[i]).toFixed(1);
+    return d;
+  };
+  const bands = (cur.idle || []).map(s =>
+    `<rect x="${x(s[0]).toFixed(1)}" y="${P.t}" width="${
+      Math.max(1, x(s[1]) - x(s[0])).toFixed(1)}" height="${H - P.t - P.b}" fill="${
+      EQ_IDLE}"></rect>`).join("");
+  const grid = [0, 0.5, 1].map(f => {
+    const v = v0 + pad + (v1 - v0 - 2 * pad) * f, yy = y(v);
+    return `<line x1="${P.l}" x2="${W - P.r}" y1="${yy.toFixed(1)}" y2="${
+      yy.toFixed(1)}" stroke="rgba(140,160,172,.14)" stroke-width="1"></line>` +
+      `<text x="${P.l - 5}" y="${(yy + 3).toFixed(1)}" fill="#5F727E" font-size="9" ` +
+      `text-anchor="end">${esc(eqK(v))}</text>`;
+  }).join("");
+  const ends = `<text x="${P.l}" y="${H - 5}" fill="#5F727E" font-size="9">${
+      esc(eqDate(t0).slice(0, 7))}</text>` +
+    `<text x="${W - P.r}" y="${H - 5}" fill="#5F727E" font-size="9" text-anchor="end">${
+      esc(eqDate(t1).slice(0, 7))}</text>`;
+  /* The historic line goes UNDER, with a 2px card-coloured casing on the
+     current line, so where they cross the current one reads as on top. */
+  const lines = (hist ? `<path d="${step(hist)}" fill="none" stroke="${EQ_HIST}" ` +
+      `stroke-width="2" stroke-linejoin="round"></path>` : "") +
+    `<path d="${step(cur)}" fill="none" stroke="#141E26" stroke-width="5" ` +
+      `stroke-linejoin="round"></path>` +
+    `<path d="${step(cur)}" fill="none" stroke="${EQ_CUR}" stroke-width="2" ` +
+      `stroke-linejoin="round"></path>`;
+  /* DIRECT LABELS at each line's own end, in ink, nudged apart if they would
+     collide -- two series is inside the "label them as well" rule. */
+  const lab = [{c: cur, word: "this test"}].concat(hist ? [{c: hist, word: "earlier"}] : [])
+    .map(o => ({word: o.word, x: x(o.c.t[o.c.t.length - 1]),
+                y: y(o.c.v[o.c.v.length - 1])}));
+  /* The upper line's label sits ABOVE its end, the lower one's BELOW, so the
+     two never stack on each other or on the other line. */
+  if(lab.length === 2){
+    const hi = lab[0].y <= lab[1].y ? 0 : 1;
+    lab[hi].dy = -6; lab[1 - hi].dy = 12;
+  }
+  const labels = lab.map(l => `<text x="${(Math.min(l.x, W - P.r) - 3).toFixed(1)}" y="${
+      Math.min(H - P.b - 2, Math.max(P.t + 8, l.y + (l.dy || -6))).toFixed(1)}" ` +
+      `fill="#8CA0AC" font-size="9" text-anchor="end">${esc(l.word)}</text>`).join("");
+  EQ_REG[cur.id] = {cur: cur, hist: hist, t0: t0, t1: t1};
+  return `<div class="eqwrap" data-eqbox="${esc(cur.id)}">` +
+    `<svg class="eqsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Balance over time, ` +
+    `this test${hist ? " against an earlier one" : ""}">` + bands + grid + lines +
+    labels + ends +
+    `<line class="eqx" x1="0" x2="0" y1="${P.t}" y2="${H - P.b}" stroke="#8CA0AC" ` +
+    `stroke-width="1" visibility="hidden"></line></svg>` +
+    `<div class="eqtip" hidden></div></div>`;
+}
+
+function equityBadge(t, rep){
+  const title = "Balance — this test against an earlier one";
+  const cur = curveFor(t, rep);
+  if(!cur){
+    return soonBadge("Balance", CURVES.length
+      ? `<b>No balance line for this test.</b> A backtest that took no trades
+         writes no trade ledger, and the line is drawn from that ledger.`
+      : `<b>Not published yet.</b> The balance lines ride the snapshot from the
+         publish after 2026-09-23; this one came from an older publisher.`);
+  }
+  const hist = curveHistory(cur);
+  let at = EQSTATE[cur.id];
+  if(at == null || at < 0 || at >= hist.length) at = hist.length - 1;
+  const prev = hist.length ? hist[at] : null;
+  const scope = cur.scope === "all" ? "earlier full tests, any regime"
+    : "this bucket’s earlier bucket tests, any group";
+  const legend = `<div class="eqleg">
+      <div class="eqrow"><span class="eqsw" style="background:${EQ_CUR}"></span>
+        <span class="eqnm">This test</span><span>${esc(eqNums(cur))}</span></div>` +
+    (prev
+      ? `<div class="eqrow"><span class="eqsw" style="background:${EQ_HIST}"></span>
+           <span class="eqnm">${esc(eqWhen(prev))} · ${esc(eqWho(prev))}</span>
+           <span class="eqsp"></span>
+           <span class="eqstep">
+             <button type="button" data-eqstep="${esc(cur.id)}" data-eqd="1" ${
+               at >= hist.length - 1 ? "disabled" : ""} title="Newer"
+               aria-label="Newer earlier run">▲</button>
+             <span class="n">${at + 1} of ${hist.length}</span>
+             <button type="button" data-eqstep="${esc(cur.id)}" data-eqd="-1" ${
+               at <= 0 ? "disabled" : ""} title="Older"
+               aria-label="Older earlier run">▼</button>
+           </span></div>
+         <div class="eqrow" style="padding-left:21px"><span>${esc(eqNums(prev))}</span></div>`
+      : `<div class="eqrow"><span class="eqsw" style="background:transparent"></span>
+           <span>No earlier run to compare — this is the first of its kind here.</span></div>`) +
+    `</div>`;
+  const list = !hist.length ? "" :
+    `<div class="mgrp"><button type="button" class="gch${EQLIST[cur.id] ? " on" : ""}" ` +
+      `data-eqlist="${esc(cur.id)}">${EQLIST[cur.id] ? "Hide" : "All"} ${hist.length} earlier</button></div>` +
+    (!EQLIST[cur.id] ? "" : `<div class="eqlist">` + hist.map((c, i) =>
+      `<button type="button" class="${i === at ? "on" : ""}" data-eqpick="${esc(cur.id)}" ` +
+      `data-eqi="${i}"><span class="d">${esc(eqWhen(c))}</span>` +
+      `<span class="g">${esc(eqWho(c))}</span><span>${esc(eqNums(c))}</span></button>`)
+      .join("") + `</div>`);
+  return `<div class="card"><div class="card-in">
+      <div class="tlab">${esc(title)}</div>` + legend + equityChart(cur, prev) +
+    `<div class="vhcap">Closed-trade balance from MT5’s own deal list — the
+       report carries no equity line, so a trade’s floating P&amp;L is not in
+       it. Steps, because the balance only moves when a trade closes.
+       <span style="background:${EQ_IDLE};padding:0 4px;border-radius:3px">Shaded</span>:
+       5+ days with no position open in this test. ▲ ▼ step through
+       ${esc(scope)}, oldest to newest.</div>` + list + `</div></div>`;
+}
+
+document.addEventListener("click", e => {
+  const s = e.target.closest("[data-eqstep]");
+  if(s){
+    const id = s.getAttribute("data-eqstep");
+    const cur = CURVES.find(c => c.id === id);
+    if(!cur) return;
+    const n = curveHistory(cur).length;
+    const at = EQSTATE[id] != null ? EQSTATE[id] : n - 1;
+    EQSTATE[id] = Math.max(0, Math.min(n - 1, at + Number(s.getAttribute("data-eqd"))));
+    repaintCards(); return;
+  }
+  const p = e.target.closest("[data-eqpick]");
+  if(p){
+    EQSTATE[p.getAttribute("data-eqpick")] = Number(p.getAttribute("data-eqi"));
+    repaintCards(); return;
+  }
+  const l = e.target.closest("[data-eqlist]");
+  if(l){
+    const id = l.getAttribute("data-eqlist");
+    EQLIST[id] = !EQLIST[id];
+    repaintCards();
+  }
+});
+
+/* THE CROSSHAIR FINDS THE DATE. Built with textContent -- a group name is data,
+   and it goes nowhere near innerHTML here. */
+function eqHover(box, clientX){
+  const reg = EQ_REG[box.getAttribute("data-eqbox")];
+  const svg = box.querySelector("svg"), tip = box.querySelector(".eqtip");
+  if(!reg || !svg || !tip) return;
+  const r = svg.getBoundingClientRect();
+  const vx = Math.max(EQ_PAD.l, Math.min(EQ_W - EQ_PAD.r,
+    (clientX - r.left) / r.width * EQ_W));
+  const t = reg.t0 + (vx - EQ_PAD.l) / (EQ_W - EQ_PAD.l - EQ_PAD.r) * (reg.t1 - reg.t0);
+  const line = svg.querySelector(".eqx");
+  line.setAttribute("x1", vx.toFixed(1)); line.setAttribute("x2", vx.toFixed(1));
+  line.setAttribute("visibility", "visible");
+  tip.textContent = "";
+  const add = (colour, value, name) => {
+    const d = document.createElement("div");
+    if(colour){
+      const sw = document.createElement("span");
+      sw.className = "eqsw"; sw.style.background = colour; d.appendChild(sw);
+    }
+    const b = document.createElement("b"); b.textContent = value; d.appendChild(b);
+    if(name) d.appendChild(document.createTextNode(" " + name));
+    tip.appendChild(d);
+  };
+  add(null, eqDate(Math.round(t)), "");
+  const vc = eqAt(reg.cur, t);
+  add(EQ_CUR, vc == null ? "—" : eqMoney(vc), "this test");
+  if(reg.hist){
+    const vh = eqAt(reg.hist, t);
+    add(EQ_HIST, vh == null ? "—" : eqMoney(vh), "earlier");
+  }
+  if((reg.cur.idle || []).some(s => t >= s[0] && t <= s[1]))
+    add(null, "no position", "open in this test");
+  tip.hidden = false;
+  const bw = box.getBoundingClientRect().width, tw = tip.offsetWidth;
+  const px = vx / EQ_W * bw;
+  tip.style.left = Math.max(0, Math.min(bw - tw, px > bw / 2 ? px - tw - 8 : px + 8)) + "px";
+}
+document.addEventListener("pointermove", e => {
+  const box = e.target.closest && e.target.closest("[data-eqbox]");
+  if(box) eqHover(box, e.clientX);
+});
+document.addEventListener("pointerdown", e => {
+  const box = e.target.closest && e.target.closest("[data-eqbox]");
+  if(box) eqHover(box, e.clientX);
+});
+document.addEventListener("pointerout", e => {
+  const box = e.target.closest && e.target.closest("[data-eqbox]");
+  if(!box || (e.relatedTarget && box.contains(e.relatedTarget))) return;
+  const tip = box.querySelector(".eqtip"), line = box.querySelector(".eqx");
+  if(tip) tip.hidden = true;
+  if(line) line.setAttribute("visibility", "hidden");
+});
+
 function graphBadge(t, rep){
   const d = (t || {}).detail;
   if(!d) return "";
@@ -4337,7 +4759,8 @@ function optimizeBadge(t, nth){
         assigned ? " \u00b7 pass " + esc(assigned) + " assigned" : ""}</div>` +
     (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
        the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
-    sweepVars(d.variables, d.swept) +
+    statesAtNote(d) +
+    sweepVars(taskRows(d), d.swept) +
     /* THE PICKER IS BEHIND A CHIP. Closed, the badge says what was searched and
        which pass carries the round -- all you want most of the time. */
     `<div class="mgrp"><button type="button" class="gch${
@@ -4772,6 +5195,12 @@ function stateClass(s){ return String(s || "").toLowerCase(); }
    the bare word, exactly as before -- never a guessed number. */
 const SIGMA_BAR = 2.0;
 function stateChip(v){
+  /* NOT RECORDED is not a state, it is the lack of one -- a sweep that ran
+     before tasks recorded what they left behind (2026-09-23). Drawn so the row
+     keeps its shape, and never as today's state borrowed for the occasion. */
+  if(v && !v.state && v.unrec)
+    return `<span class="tst unrec" title="This task ran before per-task states `
+      + `were recorded (2026-09-23).">not recorded</span>`;
   if(!v || !v.state) return "";
   const st = String(v.state);
   let label = esc(st), weak = false, tip = "";
@@ -4786,7 +5215,36 @@ function stateChip(v){
     }
   }
   return `<span class="tst ${stateClass(st)}${weak ? " weak" : ""}"${
-    tip ? ` title="${esc(tip)}"` : ""}>${label}</span>`;
+    tip ? ` title="${esc(tip)}"` : ""}>${label}</span>` +
+    /* CHASED -- a first-pass pin the round's own second pass took over in the
+       same apply. The PINNED beside it is what this task left it in; where it
+       ended up is on the second pass's chip. */
+    (v.chased_by ? `<span class="tst chased" title="The second pass in this `
+      + `round swept it next.">→ ${esc(v.chased_by)}</span>` : "");
+}
+
+/* WHOSE STATES THESE ARE -- task_detail.build's `states_at`. Rows of a sweep
+   that predates the record are flagged so stateChip draws "not recorded". */
+function taskRows(d){
+  const unrec = (d || {}).states_at === "unrecorded";
+  return ((d || {}).variables || []).map(v =>
+    unrec && v && !v.state ? Object.assign({unrec: true}, v) : v);
+}
+function statesAtNote(d){
+  const at = (d || {}).states_at;
+  const live = String((d || {}).status || "").toLowerCase();
+  const txt = at === "task"
+      ? "The state this task left each variable in."
+    : at === "unrecorded"
+      ? "What this task swept, from its own report. It ran before tasks recorded "
+        + "their own states (2026-09-23), so none is shown — today’s "
+        + "would describe a different moment."
+    : at === "live" && (live === "running" || live === "queued")
+      ? "The state each variable went in with — this task has not finished."
+    : at === "live"
+      ? "Where each variable stands now. This task’s own record was not found."
+    : "";
+  return txt ? `<div class="vhcap" style="margin:0 0 4px">${esc(txt)}</div>` : "";
 }
 
 /* EXPLAIN ONLY THE STATES ON SCREEN. Printing all five every time is a
@@ -5138,6 +5596,9 @@ const SWEPT_LABEL = {
   applied: "Swept last round",
   group: "Variables",
   undecided: "Variables",
+  /* 2026-09-23 -- a finished sweep's own set, from its record or its report. */
+  task: "Swept this task",
+  report: "Swept this task",
 };
 
 function taskBand(c){
@@ -5235,8 +5696,8 @@ function taskCard(r, relDir, open, skipGraph, lift){
                              taskSwept(d.swept, d.variables) + `</div>` : "",
     (d.variables || []).length && !lift
       ? `<div class="tsec"><div class="tlab">${esc(SWEPT_LABEL[d.swept_source]
-            || "Variables")}</div>` +
-        taskVars(d.variables) + taskStateKey(d.variables) + `</div>`
+            || "Variables")}</div>` + statesAtNote(d) +
+        taskVars(taskRows(d)) + taskStateKey(d.variables) + `</div>`
       /* NOT DECIDED YET is a real answer and the only honest one for a queued
          sweep: a second pass takes whatever the first leaves PINNED, so its
          variable list does not exist until the first one finishes. */
@@ -5774,14 +6235,15 @@ function apiBase(){
 let SETTINGS_BUSY = false;
 let SETTINGS_ERROR = "";
 
-async function apiPost(path, body){
+/* ONE POST, SHARED BY EVERY WRITE ON THE PAGE. Split out of apiPost on
+   2026-09-23 when the failure card got a route: apiPost also owns the Settings
+   badge's busy flag and repaint, and a failure card borrowing those would
+   spin the wrong badge. Resolves {ok, out, error}; never throws.
+   error is "read-only" (no base), "unreachable" (no answer), or the
+   endpoint's own refusal. */
+async function apiCall(path, body){
   const base = apiBase();
-  if(!base){
-    SETTINGS_ERROR = "read-only";
-    return false;
-  }
-  SETTINGS_BUSY = true;
-  SETTINGS_ERROR = "";
+  if(!base) return {ok: false, out: {}, error: "read-only"};
   try{
     const r = await fetch(base + path, {
       method: "POST",
@@ -5790,17 +6252,31 @@ async function apiPost(path, body){
     });
     const out = await r.json().catch(() => ({}));
     /* 202 IS THE SUCCESS CODE HERE, not 200 -- fleet_api answers "accepted, not
-       applied" on purpose and the badge must not upgrade that to "done". */
-    if(r.status !== 202){
-      SETTINGS_ERROR = out.error || ("HTTP " + r.status);
+       applied" on purpose and no control may upgrade that to "done". */
+    if(r.status !== 202)
+      return {ok: false, out: out, error: out.error || ("HTTP " + r.status)};
+    return {ok: true, out: out, error: ""};
+  }catch(e){
+    return {ok: false, out: {}, error: "unreachable"};
+  }
+}
+
+async function apiPost(path, body){
+  if(!apiBase()){
+    SETTINGS_ERROR = "read-only";
+    return false;
+  }
+  SETTINGS_BUSY = true;
+  SETTINGS_ERROR = "";
+  try{
+    const res = await apiCall(path, body);
+    if(!res.ok){
+      SETTINGS_ERROR = res.error;
       return false;
     }
-    if(out.bucket_priority) SETTINGS_STATE.bucket_priority = out.bucket_priority;
+    if(res.out.bucket_priority) SETTINGS_STATE.bucket_priority = res.out.bucket_priority;
     else await refreshSettings();
     return true;
-  }catch(e){
-    SETTINGS_ERROR = "unreachable";
-    return false;
   }finally{
     SETTINGS_BUSY = false;
     repaintSettings();
@@ -6703,6 +7179,9 @@ function applySnapshot(d, source){
   if(d.settings && d.settings.schedule_vocab) VOCAB = d.settings.schedule_vocab;
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
+  /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
+     snapshot from an older publisher, which leaves the badge saying so. */
+  CURVES = Array.isArray(d.curves) ? d.curves : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
@@ -6935,13 +7414,10 @@ document.addEventListener("click", e => {
   }
   const fg = e.target.closest("[data-failgo]");
   if(fg){
-    const act = fg.getAttribute("data-failact");
     FAILSTATE.arm = null;
-    FAILSTATE.said = "\u26a0\ufe0f <b>" + esc(failActLabel(act)) + "</b> was not sent. "
-      + "This page reads a published snapshot and has no route back to the "
-      + "machines yet \u2014 it needs the app served from the laptop rather than a "
-      + "public host.";
-    repaintCards(); return;
+    failSend(fg.getAttribute("data-failgo"), fg.getAttribute("data-failact"),
+             fg.getAttribute("data-failn"));
+    return;
   }
   const oa = e.target.closest("[data-opsarm]");
   if(oa){
