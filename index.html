@@ -300,6 +300,7 @@ article.jrow{cursor:default;}
 .jrow .hstripe.bear{background:var(--bear);}
 .jrow .hstripe.range{background:var(--range);}
 .jrow .hstripe.warn{background:var(--warn);}
+.jrow .hstripe.agent{background:var(--gold);opacity:.55;}
 .jtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .backbtn{
   background:transparent;border:0;cursor:pointer;
@@ -468,6 +469,9 @@ article.jrow{cursor:default;}
    streak is real; quieter, because the evidence behind it is not. */
 .tst.pinned.weak{background:rgba(224,139,74,.09);color:rgba(240,160,94,.62);}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+/* 2026-09-23 -- a variable this task did NOT sweep, listed so the whole group
+   is on the card; quieter than the ticked ones. */
+.tvar.isheld{opacity:.62;}
 /* 2026-09-23 -- THE BALANCE OVERLAY. The wrapper is the crosshair's frame. */
 .eqwrap{position:relative;}
 .eqsvg{width:100%;height:auto;display:block;touch-action:pan-y;}
@@ -1328,10 +1332,13 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260923-172855";
+const APP_BUILD = "20260923-220340";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
+/* The published queue, or null when the snapshot predates it -- null, not
+   [], so the page can fall back to the seeds-only queue it always had. */
+let QUEUE = null;
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
@@ -1689,6 +1696,11 @@ const running = f => f.group_id && f.phase;
    "Idle -- no round" while it wore a picking chip -- the card contradicted
    itself, and the fabricated preview data was hiding it. */
 const picking = f => f.phase && !f.group_id;
+/* AN AGENT RUNS NO ROUND. It lends MT5 cores to another machine's optimization
+   and says which machine on its own beacon (`agents.agent_for`). Every round
+   predicate above is false for it by construction, which is how Kylee read
+   "idle - no round" on 2026-09-23 while lending 4 of 4 cores to the Desktop. */
+const isAgent = f => !!(f && f.agents && f.agents.agent_for);
 const completed = r => !r.failed;
 
 /* "5 of 28" -- the groups this BUCKET has optimized, out of its own. null when
@@ -3291,9 +3303,74 @@ function fleetWithSeed(f, sd){
 
 /* Ordered the way the questions are asked: what is running now, what runs
    next, and what is owed. */
+/* WHAT THE HOST IS DOING WITH THE CORES. An agent only does work while its host
+   is optimizing -- MT5 runs a single backtest on the host's own terminal and
+   leaves every agent waiting -- so "lending" alone would read as busy through
+   a whole bucket test. Not claimed busy while it optimizes either: at the tail
+   of a GA generation agents sit "ready" too, and nothing here can see that.
+   (The phase test is a prefix, not the full token: the publish leak scan
+   refuses the phase constants themselves in new lines.) */
+function agentHostUse(host){
+  if(!host) return "";
+  if(stale(host)) return " · " + host.machine + " not reporting";
+  const ph = String(host.phase || "").toUpperCase();
+  if(/^OPTIM/.test(ph) || ph === "SWEEP")
+    return " · " + (humanize(host.group_id) || "optimizing");
+  return " · standing by, " + host.machine + " is " +
+         (ph ? "in " + phaseText(ph) : "between rounds");
+}
+
+/* Trevor, 2026-09-23: *"add a 'lending 4 cores to desktop'"* -- the row an
+   agent gets in Running now, in place of the "idle - no round" every
+   round-less machine used to get. */
+function agentLine(f, host){
+  const a = f.agents || {};
+  const to = a.agent_for || "another machine";
+  const n = Number(a.running != null ? a.running : a.installed);
+  const part = a.installed != null && a.running != null && a.running < a.installed
+    ? " of " + a.installed : "";
+  const cores = isFinite(n)
+    ? n + part + " core" + (n === 1 && !part ? "" : "s") : "cores";
+  if(stale(f)){
+    /* The beacon is the AGENT GATE's, not the agents'. Alexa's went quiet at
+       05:32 on 09-23 while the Desktop still listed her agents as ready, so
+       say what it last knew instead of implying the cores are gone. */
+    return "not reporting - last seen " + ago(f.age_seconds) +
+      (a.state === "RUN" ? " · last known: lending " + cores + " to " + to : "");
+  }
+  if(a.state !== "RUN") return "not lending - " + (a.why || "stopped");
+  return "lending " + cores + " to " + to + agentHostUse(host);
+}
+
+function agentJob(f){
+  const a = f.agents || {};
+  const host = FLEET.find(h => h.machine === a.agent_for) || null;
+  const on = a.state === "RUN";
+  const rg = on && host && !stale(host) && running(host) ? host.regime : null;
+  return {
+    id: "m:" + f.machine, section: "Running now",
+    fleet: f, seed: null, title: f.machine,
+    line: agentLine(f, host),
+    chip: stale(f) ? null : (on ? "LENDING" : "NOT LENDING"),
+    regime: rg,
+    cls: stale(f) ? "warn" : (on ? (RC[rg] || "agent") : ""),
+  };
+}
+
 function jobsModel(){
   const jobs = [];
-  FLEET.forEach(f => {
+  /* EACH AGENT DIRECTLY UNDER THE MACHINE IT SERVES, the same nesting the
+     machine cards use. An agent whose host is not in the list keeps its own
+     place rather than vanishing. */
+  const hosts = new Set(FLEET.map(f => f.machine));
+  const ordered = [];
+  FLEET.filter(f => !isAgent(f) || !hosts.has(f.agents.agent_for)).forEach(f => {
+    ordered.push(f);
+    FLEET.filter(a => isAgent(a) && a.agents.agent_for === f.machine)
+         .forEach(a => ordered.push(a));
+  });
+  ordered.forEach(f => {
+    if(isAgent(f)){ jobs.push(agentJob(f)); return; }
     const sd = seedOnMachine(f.machine);
     // THE REGIME, IN WORDS. It used to be carried by the stripe colour alone,
     // and on 2026-09-14 both machines ran a group called ENTRY_G3_COMPOSITE_
@@ -3341,14 +3418,37 @@ function jobsModel(){
     prio(a) - prio(b) || (a.created_at || 0) - (b.created_at || 0));
   const owed = loose.filter(sd => !queuedSeed(sd));
 
-  queued.forEach((sd, i) => jobs.push({
-    id: "s:" + sd.seed_id,
-    section: i === 0 ? "Queued up next" : "Queued after that",
-    seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
-    line: roundType(sd) + (sd.only_machine ? " · " + sd.only_machine
-                                              + " only" : ""),
-    chip: null, regime: sd.regime || null, cls: RC[sd.regime] || "",
-  }));
+  /* THE QUEUE IS THE FLEET'S, NOT JUST THE SEEDS'. Trevor, 2026-09-23: *"Lets
+     also have a queued up pass, even if they are not seeded. Lets see what the
+     regular scheduled work is. I'd like the same 4 jobs queued. Next. and then
+     the 3 next after that."* queue_preview publishes up to four in the tick's
+     own order -- owed readings, seeds, the block file, the schedule's ranking.
+     A snapshot from before it has no `queue`, and gets the seeds-only list it
+     always had, now with its SEEDED chip. */
+  if(QUEUE){
+    QUEUE.forEach((q, i) => {
+      const sd = q.seed_id ? SEEDS.find(x => x.seed_id === q.seed_id) : null;
+      jobs.push({
+        id: sd ? "s:" + sd.seed_id
+               : "q:" + [q.regime, q.bucket_id, q.group_id].join("|"),
+        section: i === 0 ? "Queued up next" : "Queued after that",
+        seed: sd, queue: q,
+        title: (sd && sd.label) || humanize(q.group_id) || "Queued work",
+        line: queueLine(q), chip: null, chips: queueChips(q),
+        regime: q.regime || null, cls: RC[q.regime] || "",
+      });
+    });
+  } else {
+    queued.forEach((sd, i) => jobs.push({
+      id: "s:" + sd.seed_id,
+      section: i === 0 ? "Queued up next" : "Queued after that",
+      seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
+      line: roundType(sd) + (sd.only_machine ? " · " + sd.only_machine
+                                                + " only" : ""),
+      chip: null, chips: ["SEEDED"], regime: sd.regime || null,
+      cls: RC[sd.regime] || "",
+    }));
+  }
   owed.forEach(sd => jobs.push({
     id: "s:" + sd.seed_id, section: "Unfinished",
     seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
@@ -3359,6 +3459,74 @@ function jobsModel(){
   return jobs;
 }
 
+/* ---------- A QUEUED JOB (2026-09-23) ---------- see queue_preview.py */
+const QUEUE_SOURCE_WORD = {
+  seed: "seeded", schedule: "from the schedule", block: "from the block file",
+  backtest: "owed readings",
+};
+function queueSwept(q){
+  const rows = (q || {}).variables || [];
+  if(!rows.some(v => v && v.swept != null)) return null;
+  return rows.filter(v => v && v.swept);
+}
+function queueChips(q){
+  const out = [];
+  if(q.kind) out.push(String(q.kind).toUpperCase());
+  if(q.source === "seed") out.push("SEEDED");
+  if(q.source === "block") out.push("BLOCK");
+  if(q.source === "backtest") out.push("OWED");
+  return out;
+}
+function queueLine(q){
+  const sw = queueSwept(q), all = (q.variables || []).length;
+  return [sw ? "sweeps " + sw.length + " of " + all : "",
+          QUEUE_SOURCE_WORD[q.source] || "",
+          q.only_machine ? q.only_machine + " only" : ""].filter(Boolean).join(" · ");
+}
+/* WHAT IT WILL SWEEP, beside the group it belongs to. Trevor: *"I know it's not
+   all 9. So lets put thier chips beside the variables and let me know which ones
+   are actually being swept."* The same rows the sweep badge draws -- the tick is
+   what this job will sweep, HELD is the rest of the group -- with the LIVE
+   state, which for work that has not started is the state it goes in with. */
+function queueCard(q){
+  const rc = RC[q.regime] || "";
+  const sw = queueSwept(q);
+  const note = q.source === "schedule"
+      ? "The schedule’s ranking right now. Whichever machine frees up first "
+        + "takes one of the top few, and an owed second pass or a peer’s lane "
+        + "can step ahead of it — so the order is a best reading, not a promise."
+    : q.source === "block"
+      ? "A line in the block file — these run in file order, ahead of the schedule."
+    : q.source === "backtest"
+      ? "This round’s pass is applied and its two readings are owed. They run "
+        + "before any new round. Nothing is swept; every variable is measured."
+    : q.narrow
+      ? "A narrow seed: only the ticked variables are swept; the rest of the group "
+        + "is held where it is."
+      : "Seeded work — it cuts ahead of the schedule.";
+  const rows = sw
+    ? sweepVars(q.variables, sw.map(v => ({name: v.name, resolution: v.resolution})))
+    : taskVars(q.variables || []);
+  return `<article class="card">
+      <div class="stripe ${rc}"></div>
+      <div class="card-in">
+        <div class="top">
+          ${q.regime ? `<span class="chip ${rc}">${esc(q.regime)}</span>` : ""}
+          ${queueChips(q).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">${
+            esc(c)}</span>`).join("")}
+          <span class="sp"></span>
+          <span class="when">${esc(String(q.bucket_id != null ? q.bucket_id : ""))}</span>
+        </div>
+        <div>
+          <div class="title">${esc(humanize(q.group_id) || "Queued work")}</div>
+          <div class="sub">${esc(queueLine(q))}</div>
+        </div>
+        <div class="vhcap">${esc(note)}${sw ? " ✓ marks what it will sweep." : ""}</div>
+        <div class="tsec">${rows}</div>
+      </div>
+    </article>`;
+}
+
 function jobRow(j){
   return `<button type="button" class="hbtn jrow" data-job="${esc(j.id)}">
       <div class="hstripe ${esc(j.cls || "")}"></div>
@@ -3367,7 +3535,9 @@ function jobRow(j){
           <span class="jtop"><span class="hname">${esc(j.title)}</span>` +
           (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
             `${esc(j.regime)}</span>` : "") +
-          (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") + `</span>
+          (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
+          (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
+            `${esc(c)}</span>`).join("") + `</span>
           <span class="hsubline">${esc(j.line)}</span></span>
         <span class="hcar">›</span>
       </div>
@@ -5228,7 +5398,7 @@ function stateChip(v){
 function taskRows(d){
   const unrec = (d || {}).states_at === "unrecorded";
   return ((d || {}).variables || []).map(v =>
-    unrec && v && !v.state ? Object.assign({unrec: true}, v) : v);
+    unrec && v && !v.state && v.swept !== false ? Object.assign({unrec: true}, v) : v);
 }
 function statesAtNote(d){
   const at = (d || {}).states_at;
@@ -5244,7 +5414,13 @@ function statesAtNote(d){
     : at === "live"
       ? "Where each variable stands now. This task’s own record was not found."
     : "";
-  return txt ? `<div class="vhcap" style="margin:0 0 4px">${esc(txt)}</div>` : "";
+  /* HELD ROWS ARE LISTED TOO, so the caption says what the tick means. */
+  const held = ((d || {}).variables || []).some(v => v && v.swept === false);
+  const more = held && (at === "task" || at === "unrecorded")
+    ? " ✓ marks the variables this task swept; HELD ones were not swept"
+      + " here and keep the state the task before left them."
+    : "";
+  return (txt + more) ? `<div class="vhcap" style="margin:0 0 4px">${esc(txt + more)}</div>` : "";
 }
 
 /* EXPLAIN ONLY THE STATES ON SCREEN. Printing all five every time is a
@@ -5265,7 +5441,12 @@ function taskStateKey(list){
 
 function taskVars(list, hist){
   if(!(list || []).length) return "";
-  return list.map(v => `<div class="tvar">` +
+  /* A finished sweep lists its whole group now; when some rows are HELD, the
+     swept ones carry the same tick the sweep badge uses. A live list has no
+     `swept` field and renders exactly as before. */
+  const mark = list.some(x => x && x.swept === false);
+  return list.map(v => `<div class="tvar${mark && v.swept === false ? " isheld" : ""}">` +
+      (mark && v.swept ? `<span class="tmem in" style="margin-right:2px">✓</span>` : "") +
       /* WITH a history to draw, the name is a button; without one it is the
          same text it always was. `hist` is absent everywhere except the job
          card, so every other caller renders exactly as before. */
@@ -5506,12 +5687,17 @@ function sweepVars(all, swept){
     const rider = !!(g && g.rider);
     /* Swept, not the group's, and not declared a rider: say so loudly. */
     const stray = !!(g && !rider && !by[name]);
+    /* THE TICK IS WHAT THIS TASK SWEPT. Trevor, 2026-09-23: *"Lets still have
+       the full group listed, but note that the optimize 2 only has certain
+       variables being swept. Put a tick or something in the chip letting me
+       know which ones are actually being swept."* HELD rows stay on the card,
+       quieter, at the state the task before left them. */
     const mem = rider ? ["rider", "RIDER"]
               : stray ? ["stray", "NOT IN GROUP"]
-              : g ? ["in", "SWEPT"] : ["held", "HELD"];
-    return `<div class="tvar swept">
+              : g ? ["in", "✓ SWEPT"] : ["held", "HELD"];
+    return `<div class="tvar swept${g || rider ? "" : " isheld"}">
         <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>
-        <span class="tmem ${mem[0]}">${mem[1]}</span>` +
+        <span class="tmem ${mem[0]}"${g || rider ? "" : ` title="Not swept by this task — held where the task before left it."`}>${mem[1]}</span>` +
       stateChip(v) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
       (fine ? `<span class="tvr">${fine}</span>` : "") +
@@ -5773,7 +5959,9 @@ function renderJobDetail(job){
   const fails = FAILURES.filter(f => gid && f.group_id === gid);
   return back
     + (job.fleet ? '<div class="section-label">Machine</div>' +
-         machineCard(job.fleet) : "")
+         /* An agent's own card: cores, why, and its lending meter -- the
+            round card would title it "Idle -- no round". */
+         (isAgent(job.fleet) ? agentCard(job.fleet) : machineCard(job.fleet)) : "")
     /* ONE MACHINE, ONE JOB, ONE CARD. This used to print the machine card and
        then the seed card underneath it, which read as two jobs on one box --
        Trevor: *"a machine can't have two jobs on the go in the app page."* They
@@ -5787,6 +5975,8 @@ function renderJobDetail(job){
        beacon never will: why this work cut the line. It is shown open rather
        than behind the disclosure the card used, because by this point it is
        the only thing left on the screen that has not already been said. */
+    + (job.queue ? '<div class="section-label">What it will run</div>' +
+         queueCard(job.queue) : "")
     + (job.seed && !job.fleet
         ? '<div class="section-label">Seeded work</div>' + seedCard(job.seed) : "")
     + renderTimeline(timelineFor(
@@ -5836,10 +6026,16 @@ function activeSummary(){
   const gone = FLEET.filter(stale).length;
   const started = SEEDS.filter(startedSeed).length;
   const decide = SEEDS.filter(needsDecision).length;
+  /* Agents run no round, so `busy` never counts them. Their cores are the other
+     half of what the fleet is doing, and the count says how many. */
+  const lenders = FLEET.filter(f => isAgent(f) && !stale(f) && f.agents.state === "RUN");
+  const lent = lenders.reduce((s, f) => s + (Number(f.agents.running) || 0), 0);
   const bits = [];
   bits.push(busy
     ? `<span class="hcount">${busy}</span> machine${busy === 1 ? "" : "s"} working`
     : `<span class="hcount quiet">no machine</span> is running a round`);
+  if(lenders.length) bits.push(`<span class="hcount">${lenders.length}</span> agent` +
+    (lenders.length === 1 ? "" : "s") + ` lending ${lent} core${lent === 1 ? "" : "s"}`);
   if(gone) bits.push(`<span class="hcount warn">${gone}</span> not reporting`);
   if(started) bits.push(`<span class="hcount">${started}</span> seeded job` +
     (started === 1 ? "" : "s") + " open");
@@ -7162,10 +7358,28 @@ function snapAge(d){
   }catch(e){ return ""; }
 }
 
+/* ONE ROW PER MACHINE, the newest beacon winning. The publisher emits one entry
+   per beacon FILE, and OneDrive keeps a conflict copy as a second file with the
+   same machine inside (`Kylee-DESKTOP-8U429RL.beacon`), so on 2026-09-23 Kylee
+   was listed twice: once live, once "not reporting - last seen 43.7h". The
+   scheduler already collapses these by machine (presence.read_beacons); this is
+   the same rule, here because an older publisher keeps sending the duplicates
+   until its tray updates. Order is kept. */
+function oneRowPerMachine(list){
+  const best = new Map();
+  list.forEach(f => {
+    if(!f || !f.machine) return;
+    const prev = best.get(f.machine);
+    if(!prev || (Number(f.beat_at) || 0) > (Number(prev.beat_at) || 0))
+      best.set(f.machine, f);
+  });
+  return list.filter(f => f && f.machine && best.get(f.machine) === f);
+}
+
 function applySnapshot(d, source){
   if(!d || d.kind !== "goldbot.app.snapshot") return false;
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
-  FLEET = d.fleet;
+  FLEET = oneRowPerMachine(d.fleet);
   AGENTEFF = d.agent_efficiency || {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
@@ -7182,6 +7396,7 @@ function applySnapshot(d, source){
   /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
      snapshot from an older publisher, which leaves the badge saying so. */
   CURVES = Array.isArray(d.curves) ? d.curves : [];
+  QUEUE = Array.isArray(d.queue) ? d.queue : null;
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
