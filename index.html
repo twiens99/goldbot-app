@@ -472,6 +472,11 @@ article.jrow{cursor:default;}
 /* 2026-09-23 -- a variable this task did NOT sweep, listed so the whole group
    is on the card; quieter than the ticked ones. */
 .tvar.isheld{opacity:.62;}
+/* 2026-09-25 -- a halted machine's why + what-to-do, on its card. */
+.haltp{border-left:3px solid var(--warn);background:rgba(224,139,74,.07);
+  border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;gap:5px;}
+.haltsteps{margin:0 0 0 18px;padding:0;color:var(--text);font-size:13px;line-height:1.5;}
+.haltsteps li{margin:2px 0;overflow-wrap:anywhere;}
 /* 2026-09-23 -- THE BALANCE OVERLAY. The wrapper is the crosshair's frame. */
 .eqwrap{position:relative;}
 .eqsvg{width:100%;height:auto;display:block;touch-action:pan-y;}
@@ -1332,13 +1337,16 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260923-220340";
+const APP_BUILD = "20260925-172319";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
 /* The published queue, or null when the snapshot predates it -- null, not
    [], so the page can fall back to the seeds-only queue it always had. */
 let QUEUE = null;
+let QUEUE_HELD = {};
+/* Rounds waiting on a PASS PICK, in Telegram's own numbering. */
+let PICKS = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
@@ -2593,13 +2601,32 @@ function contribCard(machine){
        + rows + `</div>`;
 }
 
+/* ---------- A HALTED MACHINE, EXPLAINED (2026-09-25) ----------
+   job_control.halt_summary, off the machine's own beacon: the title, why it
+   halted, and numbered steps ending with the REAL path of that machine's halt
+   file. The same words the Telegram alert uses, so the phone and the chat
+   never describe one halt two ways. */
+function haltPanel(h){
+  if(!h) return "";
+  const since = h.at && isFinite(Date.parse(h.at))
+    ? " · since " + ago((Date.now() - Date.parse(h.at)) / 1000) : "";
+  return `<div class="haltp">
+      <div class="opsh">Why it halted${esc(since)}</div>
+      <div class="opsnote">${esc(h.why || h.reason || "")}</div>
+      <div class="opsh">What to do</div>
+      <ol class="haltsteps">${(h.steps || []).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+      <div class="opsnote">No new rounds start on this machine until then; the
+        rest of the fleet keeps working.</div>
+    </div>`;
+}
+
 function machineCard(f){
     const rc = RC[f.regime] || "";
     const live = running(f);
     const st = stale(f);
     return `
     <article class="card">
-      <div class="stripe ${st ? "warn" : (live ? rc : "")}"></div>
+      <div class="stripe ${st || f.halt ? "warn" : (live ? rc : "")}"></div>
       <div class="card-in">
         <div class="top">
           ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
@@ -2609,7 +2636,8 @@ function machineCard(f){
                 longer has. */
             bktEl(f.bucket_id)}
           <span class="chip gold">${esc(f.machine)}</span>
-          ${(f.seed || f.phase)
+          ${f.halt ? `<span class="chip warn">HALTED</span>`
+            : (f.seed || f.phase)
             ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
                                                : phaseText(f.phase))}</span>` : ""}
           <span class="sp"></span>
@@ -2630,7 +2658,7 @@ function machineCard(f){
                 A SWEEP'S OWN NAME STILL WINS over the group it sweeps: on an
                 A/B the arm is the whole point, and two arms over one group are
                 two jobs that differ only in their label. */""}
-          <div class="title">${live
+          <div class="title">${f.halt ? esc(f.halt.title) : live
             ? esc((f.seed && f.seed.label) || humanize(f.group_id))
             : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
@@ -2642,7 +2670,8 @@ function machineCard(f){
             live && f.seed && f.seed.label && f.group_id
               ? `<div class="sub">${esc(humanize(f.group_id))}</div>` : ""}
         </div>
-        ${picking(f)
+        ${haltPanel(f.halt)}
+        ${f.halt ? "" : picking(f)
             /* Picking writes no group, no mode and no percent, so this row is
                otherwise empty and the card has nothing to say at all. How long
                it has been choosing is the one fact that exists. */
@@ -3313,6 +3342,9 @@ function fleetWithSeed(f, sd){
 function agentHostUse(host){
   if(!host) return "";
   if(stale(host)) return " · " + host.machine + " not reporting";
+  /* A HALTED HOST IS NOT "choosing a group" (2026-09-25) -- every halted tick
+     sets that phase before the halt gate returns. Say what it is waiting for. */
+  if(host.halt) return " · standing by, " + host.machine + " is halted";
   const ph = String(host.phase || "").toUpperCase();
   if(/^OPTIM/.test(ph) || ph === "SWEEP")
     return " · " + (humanize(host.group_id) || "optimizing");
@@ -3389,18 +3421,38 @@ function jobsModel(){
       // Measured 2026-09-14: the Laptop read "choosing a group" for 90 minutes
       // while it held and ran the TICKS arm of an A/B. The seed record is the
       // stronger evidence: something claimed it, and nothing else can hold it.
+      /* A HALT OUTRANKS THE PHASE. Every halted tick sets the choosing phase before the
+         halt gate returns, so the phase alone read "choosing a group" while the
+         Desktop sat halted on an MT5 update (2026-09-25). The beacon carries
+         the halt now; say it. Trevor: *"I want it to say manual MT5 update
+         required."* */
       line: stale(f) ? "not reporting - last seen " + ago(f.age_seconds)
+          : f.halt ? f.halt.title
           : sd ? (sd.label || humanize(sd.group_id) || "seeded work")
           : running(f) ? humanize(f.group_id)
           : picking(f) ? "choosing a group"
           : "idle - no round",
       // Same rule as the card's chip: a claimed seed names the work
       // better than a beacon that is describing a round it is not running.
-      chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
+      chip: f.halt && !stale(f) ? "HALTED"
+          : sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
       regime: rg,
-      cls: stale(f) ? "warn" : (RC[rg] || ""),
+      cls: stale(f) || f.halt ? "warn" : (RC[rg] || ""),
     });
   });
+
+  /* WAITING ON YOU, FIRST AFTER THE MACHINES. Trevor, 2026-09-25: *"The app
+     didn't tell me that I needed to pick a pass. Let's have that be the first
+     item on the list in the active tab, after each machine status."* A pending
+     pick holds its WHOLE regime, so it outranks everything queued below it.
+     `n` is Telegram's own number -- "1 207" applies pass 207 to #1. */
+  PICKS.forEach(pk => jobs.push({
+    id: "p:" + [pk.regime, pk.bucket_id, pk.group_id].join("|"),
+    section: "Waiting on you", pick: pk,
+    title: humanize(pk.group_id) || "A round",
+    line: pickLine(pk), chip: null, chips: ["PICK A PASS"],
+    regime: pk.regime || null, cls: "warn",
+  }));
 
   // Seeds not already shown as a machine's job, so nothing appears twice.
   const shown = new Set(FLEET.map(f => seedOnMachine(f.machine))
@@ -3527,6 +3579,69 @@ function queueCard(q){
     </article>`;
 }
 
+/* ---------- A ROUND WAITING ON A PASS PICK (2026-09-25) ----------
+   queue_preview.pending_picks. The app cannot send a pick yet (no write path to
+   the machines), so the card says how to send it from Telegram -- by the SAME
+   number Telegram uses -- and shows the report's own pass table to choose from. */
+function pickLine(pk){
+  const secs = pk.since ? Date.now() / 1000 - Number(pk.since) : null;
+  /* Days past two of them -- "286.0h ago" is a number nobody reads as twelve days. */
+  const since = secs == null ? ""
+    : "finished " + (secs > 172800 ? Math.round(secs / 86400) + " days ago" : ago(secs));
+  return ["#" + pk.n, since,
+          pk.holds_regime ? "holding all " + pk.regime + " work" : ""]
+    .filter(Boolean).join(" · ");
+}
+function pickCard(pk){
+  const rc = RC[pk.regime] || "";
+  /* No `kind`: the badge reads only the passes, and the phase names are words
+     the public repo's leak scan refuses. */
+  const t = {detail: {passes: pk.passes || [], variables: [], swept: []}};
+  /* NOTHING VALID TO PICK is its own case, and it is not rare: the first real
+     one (RANGING_EXIT_G6, 2026-09-13) had all 45 passes refused and held every
+     RANGING round for 12 days. "Choose a pass" would point at an empty table,
+     and picking a refused pass anyway applies a disqualified result. */
+  const split = (pk.passes || []).length ? optSplit(t.detail) : null;
+  const none = !!(split && !split.valid.length);
+  return `<article class="card">
+      <div class="stripe warn"></div>
+      <div class="card-in">
+        <div class="top">
+          ${pk.regime ? `<span class="chip ${rc}">${esc(pk.regime)}</span>` : ""}
+          <span class="chip warn">PICK A PASS</span>
+          <span class="sp"></span>
+          <span class="when">#${esc(pk.n)}</span>
+        </div>
+        <div>
+          <div class="title">${esc(humanize(pk.group_id) || "A round")}</div>
+          <div class="sub">${esc(pickLine(pk))}</div>
+        </div>
+        <div class="haltp">
+          <div class="opsh">Why it is waiting</div>
+          <div class="opsnote">The round finished and nothing is applied until a
+            pass is picked.${pk.holds_regime ? ` A pending pick holds <b>every
+            ${esc(pk.regime)} round</b>, so no ${esc(pk.regime)} work runs until
+            this is done.` : ""}</div>
+          <div class="opsh">What to do</div>
+          ${none ? `<div class="opsnote"><b>There is no valid pass to pick.</b> Every
+            pass this sweep ran was refused (disqualified) — see the table
+            below — and picking one anyway would apply a disqualified result.
+            This round needs a decision instead: <b>discard it</b>, which releases
+            ${esc(pk.regime)}, or re-run the group. Neither the app nor Telegram
+            has a button for that yet — ask for it in a session.</div>` : `
+          <ol class="haltsteps">
+            <li>Choose a pass from the table below.</li>
+            <li>In the GoldBot Telegram chat, send <b>${esc(pk.n)} &lt;pass&gt;</b>
+              — for example <b>${esc(pk.n)} 207</b> — or reply to this
+              round's alert with just the pass number.</li>
+          </ol>`}
+          ${none ? "" : `<div class="opsnote">The app cannot send it yet: it has no
+            write path to the machines.</div>`}
+        </div>
+      </div>
+    </article>` + ((pk.passes || []).length ? optimizeBadge(t, 1) : "");
+}
+
 function jobRow(j){
   return `<button type="button" class="hbtn jrow" data-job="${esc(j.id)}">
       <div class="hstripe ${esc(j.cls || "")}"></div>
@@ -3546,16 +3661,42 @@ function jobRow(j){
 
 function renderJobList(){
   const jobs = jobsModel();
-  if(!jobs.length) return '<div class="empty">No jobs.</div>';
+  if(!jobs.length && !QUEUE) return '<div class="empty">No jobs.</div>';
+  /* WHY THE QUEUE IS SHORT -- placed right after its last row, or where it
+     would have been. Measured 2026-09-25: the first real queue was EMPTY, with
+     RANGING held by one pending pass pick and the schedule's only other
+     candidate already running. A blank where "Queued up next" belongs reads as
+     a broken page. */
+  const isQ = j => j.section === "Queued up next" || j.section === "Queued after that";
+  let at = -1;
+  jobs.forEach((j, i) => { if(isQ(j) || j.section === "Running now" ||
+                              j.section === "Waiting on you") at = i; });
+  const note = queueNote(jobs.filter(isQ).length);
   let out = "", section = null;
-  jobs.forEach(j => {
+  if(at < 0) out += note;
+  jobs.forEach((j, i) => {
     if(j.section !== section){
       section = j.section;
       out += '<div class="section-label">' + esc(section) + '</div>';
     }
     out += jobRow(j);
+    if(i === at) out += note;
   });
   return out + renderFailures();
+}
+
+function queueNote(n){
+  if(!QUEUE || n >= 4) return "";
+  const pend = (QUEUE_HELD.pending || []);
+  const held = pend.length
+    ? " " + pend.map(p => `<b>${esc(p.regime)}</b> is held until you pick a pass for ` +
+        `<b>${esc(humanize(p.group_id))}</b>`).join("; ") +
+      " — a pending pick holds its whole regime."
+    : "";
+  const head = n ? "Nothing else is eligible right now." : "Nothing is queued right now.";
+  return (n ? "" : '<div class="section-label">Queued up next</div>') +
+    `<div class="notebody">${head} The schedule’s other candidates are already ` +
+    `running or held.${held}</div>`;
 }
 
 /* THE WHOLE JOB, not just the round in flight. Trevor, 2026-09-14: *"I want the
@@ -5975,6 +6116,8 @@ function renderJobDetail(job){
        beacon never will: why this work cut the line. It is shown open rather
        than behind the disclosure the card used, because by this point it is
        the only thing left on the screen that has not already been said. */
+    + (job.pick ? '<div class="section-label">Waiting on you</div>' +
+         pickCard(job.pick) : "")
     + (job.queue ? '<div class="section-label">What it will run</div>' +
          queueCard(job.queue) : "")
     + (job.seed && !job.fleet
@@ -6025,7 +6168,7 @@ function activeSummary(){
   const busy = FLEET.filter(f => running(f) && !stale(f)).length;
   const gone = FLEET.filter(stale).length;
   const started = SEEDS.filter(startedSeed).length;
-  const decide = SEEDS.filter(needsDecision).length;
+  const decide = SEEDS.filter(needsDecision).length + PICKS.length;
   /* Agents run no round, so `busy` never counts them. Their cores are the other
      half of what the fleet is doing, and the count says how many. */
   const lenders = FLEET.filter(f => isAgent(f) && !stale(f) && f.agents.state === "RUN");
@@ -6037,6 +6180,9 @@ function activeSummary(){
   if(lenders.length) bits.push(`<span class="hcount">${lenders.length}</span> agent` +
     (lenders.length === 1 ? "" : "s") + ` lending ${lent} core${lent === 1 ? "" : "s"}`);
   if(gone) bits.push(`<span class="hcount warn">${gone}</span> not reporting`);
+  /* A HALTED machine is waiting on a person, so it is counted as one. */
+  const halted = FLEET.filter(f => f.halt && !stale(f)).length;
+  if(halted) bits.push(`<span class="hcount warn">${halted}</span> halted — needs you`);
   if(started) bits.push(`<span class="hcount">${started}</span> seeded job` +
     (started === 1 ? "" : "s") + " open");
   if(decide) bits.push(`<span class="hcount warn">${decide}</span> waiting on you`);
@@ -7397,6 +7543,8 @@ function applySnapshot(d, source){
      snapshot from an older publisher, which leaves the badge saying so. */
   CURVES = Array.isArray(d.curves) ? d.curves : [];
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
+  QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
+  PICKS = Array.isArray(d.pending_picks) ? d.pending_picks : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
