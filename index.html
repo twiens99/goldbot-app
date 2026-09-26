@@ -1282,6 +1282,173 @@ nav button .ic{font-size:1.05rem;line-height:1;}
 nav button[aria-selected="true"]{color:var(--gold);}
 nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 
+/* ---------- live (the VPS: account, open trade, history, chart) ---------- */
+/* Everything here is prefixed lv- so it cannot collide with a fleet card. */
+.lv-dot{
+  display:inline-block;width:12px;height:12px;border-radius:50%;
+  background:var(--gold);box-shadow:0 0 0 0 rgba(224,180,87,.55);
+  animation:lvpulse 2s infinite;
+}
+.lv-dot.off{background:var(--faint);animation:none;}
+@keyframes lvpulse{
+  0%{box-shadow:0 0 0 0 rgba(224,180,87,.55);}
+  70%{box-shadow:0 0 0 9px rgba(224,180,87,0);}
+  100%{box-shadow:0 0 0 0 rgba(224,180,87,0);}
+}
+@media (prefers-reduced-motion:reduce){.lv-dot{animation:none;}}
+.lv-good{color:var(--good);}
+.lv-bad{color:var(--bad);}
+.lv-mono{font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+.lv-note{
+  font-size:.76rem;line-height:1.45;border-radius:9px;padding:8px 11px;
+  background:var(--card);color:var(--dim);
+}
+.lv-note.warn{background:rgba(224,139,74,.1);border:1px solid rgba(224,139,74,.25);color:var(--warn);}
+.lv-note b{font-weight:700;}
+.lv-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:14px;overflow:hidden;}
+.lv-stat{background:var(--card);padding:10px 12px 11px;display:flex;flex-direction:column;gap:1px;min-width:0;}
+.lv-k{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--faint);}
+.lv-v{font-family:"Roboto Mono",ui-monospace,monospace;font-size:1.02rem;font-weight:500;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.lv-dir{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.72rem;font-weight:500;
+  padding:2px 6px;border-radius:5px;background:var(--card-2);color:var(--text);white-space:nowrap;
+}
+.lv-dir .ar{color:var(--gold);}
+
+/* trading in */
+.lv-tin{padding:12px 13px 6px;gap:8px;}
+.lv-tinhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.lv-pill{
+  margin-left:auto;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 8px;border-radius:999px;white-space:nowrap;
+}
+.lv-pill.on{background:rgba(95,190,149,.16);color:var(--good);}
+.lv-pill.off{background:rgba(95,114,126,.18);color:var(--dim);}
+.lv-line{font-size:.78rem;color:var(--dim);line-height:1.45;}
+.lv-line b{color:var(--text);font-weight:500;font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+.lv-line.warn{color:var(--warn);}
+.lv-gates{display:flex;flex-direction:column;border-top:1px solid var(--line);margin-top:2px;}
+.lv-grow{
+  display:grid;grid-template-columns:auto auto 1fr auto;gap:4px 8px;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--line);font-size:.74rem;
+}
+.lv-grow:last-child{border-bottom:0;}
+.lv-grow.cur{box-shadow:inset 3px 0 0 var(--gold);background:rgba(224,180,87,.05);
+  margin:0 -13px;padding:7px 13px 7px 10px;}
+/* The reading sits on its own line under the chips: beside them, at phone
+   width, it lost its date to an ellipsis. */
+.lv-gpf{grid-column:1 / -1;font-family:"Roboto Mono",ui-monospace,monospace;color:var(--dim);
+  font-size:.7rem;font-variant-numeric:tabular-nums;}
+.lv-gpf b{color:var(--text);font-weight:500;}
+.lv-gst{font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+.lv-gst.on{color:var(--good);}
+.lv-gst.off{color:var(--faint);}
+
+/* chart */
+.lv-chead{display:flex;align-items:baseline;gap:9px;padding:12px 13px 8px;flex-wrap:wrap;}
+.lv-sym{font-weight:700;letter-spacing:.02em;}
+.lv-px{font-family:"Roboto Mono",ui-monospace,monospace;font-size:1.05rem;font-variant-numeric:tabular-nums;}
+.lv-spread{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.72rem;color:var(--faint);}
+.lv-acct{margin-left:auto;}
+.lv-controls{display:flex;gap:8px;padding:0 10px 8px;align-items:center;flex-wrap:wrap;}
+.lv-seg{display:flex;background:var(--bg);border-radius:9px;padding:2px;gap:2px;}
+.lv-seg button{
+  border:0;background:transparent;cursor:pointer;color:var(--dim);
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.74rem;
+  padding:5px 8px;border-radius:7px;min-width:34px;
+}
+.lv-seg button[aria-pressed="true"]{background:var(--card-2);color:var(--text);box-shadow:inset 0 -2px 0 var(--gold);}
+.lv-seg.small button{min-width:0;padding:5px 7px;font-family:inherit;font-size:.72rem;}
+.lv-seg button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.lv-ohlc{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;color:var(--dim);
+  padding:0 13px 4px;min-height:1.4em;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.lv-ohlc b{font-weight:500;color:var(--text);}
+.lv-chart{height:300px;position:relative;}
+.lv-legend{
+  display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 13px 11px;
+  font-size:.7rem;color:var(--dim);border-top:1px solid var(--line);
+}
+.lv-legend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+.lv-dash{display:inline-block;width:14px;border-top:2px dashed currentColor;}
+/* A tiny step, red then green: the legend's picture of the stop's trail. */
+.lv-stopkey{display:inline-block;width:16px;height:8px;
+  border-bottom:2px solid var(--bad);border-right:2px solid var(--bad);position:relative;}
+.lv-stopkey::after{content:"";position:absolute;left:14px;top:-2px;width:8px;border-top:2px solid var(--good);}
+.lv-band{display:inline-block;width:6px;height:9px;border-radius:1px;margin-right:-3px;opacity:.75;}
+
+/* open trade */
+.lv-otrade{padding:12px 13px 13px;gap:10px;}
+.lv-orow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.lv-oage{margin-left:auto;font-size:.74rem;color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;}
+.lv-opnl{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.lv-big{font-family:"Roboto Mono",ui-monospace,monospace;font-size:1.55rem;font-weight:500;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.lv-sub{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.78rem;color:var(--dim);}
+.lv-gauge{position:relative;height:8px;border-radius:4px;background:var(--card-2);margin:4px 2px 0;}
+.lv-gauge .fill{position:absolute;top:0;bottom:0;border-radius:4px;}
+.lv-gauge .tick{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--gold);border-radius:1px;}
+.lv-gauge .now{position:absolute;top:-3px;width:14px;height:14px;margin-left:-7px;border-radius:50%;
+  background:var(--text);border:3px solid var(--card);}
+.lv-glabels{display:flex;gap:12px;margin-top:9px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.66rem;color:var(--faint);}
+.lv-glabels span{display:inline-flex;align-items:center;gap:5px;}
+.lv-sw{display:inline-block;width:8px;height:8px;border-radius:2px;}
+.lv-sw.stop{background:var(--bad);width:4px;height:10px;}
+.lv-sw.entry{background:var(--gold);width:2px;height:10px;}
+.lv-sw.now{background:var(--text);border-radius:50%;}
+.lv-gauge .init{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--faint);border-radius:1px;}
+.lv-gauge .stopmk{position:absolute;top:-6px;bottom:-6px;width:4px;margin-left:-2px;border-radius:2px;}
+.lv-stop{display:flex;flex-direction:column;gap:6px;background:var(--bg);border-radius:10px;padding:10px 11px 11px;}
+.lv-stophead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.lv-stophead .lv-v{font-size:1.05rem;}
+.lv-stophead .lv-pill{margin-left:auto;}
+.lv-pill.risk{background:rgba(224,104,90,.16);color:var(--bad);}
+.lv-ogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.lv-ogrid div{display:flex;flex-direction:column;background:var(--bg);border-radius:8px;padding:6px 8px;min-width:0;}
+.lv-ogrid .lv-v{font-size:.84rem;}
+.lv-link{
+  align-self:flex-start;border:1px solid var(--line);background:transparent;cursor:pointer;
+  font-family:inherit;font-size:.76rem;font-weight:600;color:var(--gold);padding:6px 10px;border-radius:8px;
+}
+.lv-link:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+
+/* history */
+.lv-hf{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.lv-hfb{
+  border:1px solid var(--line);background:transparent;cursor:pointer;font-family:inherit;
+  font-size:.72rem;font-weight:600;color:var(--dim);padding:5px 10px;border-radius:999px;
+}
+.lv-hfb[aria-pressed="true"]{background:var(--card-2);color:var(--text);border-color:var(--card-2);}
+.lv-hsum{font-size:.76rem;color:var(--dim);line-height:1.45;}
+.lv-hsum b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;}
+.lv-hrow{
+  display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;
+  width:100%;text-align:left;border:0;background:transparent;cursor:pointer;color:var(--text);
+  font-family:inherit;padding:10px 13px;border-bottom:1px solid var(--line);
+}
+.lv-hrow:last-child{border-bottom:0;}
+.lv-hrow[aria-current="true"]{background:var(--card-2);box-shadow:inset 3px 0 0 var(--gold);}
+.lv-hrow:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+.lv-hl1{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;}
+.lv-hl2{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.72rem;color:var(--dim);font-variant-numeric:tabular-nums;}
+.lv-hpnl{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.92rem;text-align:right;font-variant-numeric:tabular-nums;}
+.lv-hwhy{font-size:.7rem;color:var(--faint);text-align:right;}
+.lv-when{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.72rem;color:var(--dim);}
+.lv-foot{font-size:.7rem;color:var(--faint);line-height:1.5;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;}
+.lv-foot a{color:var(--dim);}
+.lv-foot button{border:0;background:transparent;color:var(--gold);font:inherit;font-weight:600;cursor:pointer;padding:0;}
+.lv-form{display:flex;flex-direction:column;gap:9px;padding:13px;}
+.lv-form input{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;
+  padding:9px 10px;font-family:"Roboto Mono",ui-monospace,monospace;font-size:.8rem;
+}
+.lv-form input:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.lv-form .row{display:flex;gap:8px;flex-wrap:wrap;}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
 
@@ -1309,6 +1476,10 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
          you are not. Reached from home, left by its own back button. -->
     <section class="page" id="page-schedule" hidden></section>
     <section class="page" id="page-settings" hidden></section>
+    <!-- LIVE, also no tab: the first home badge. Trevor, 2026-09-25. Its data
+         comes from the VPS, not the gist, so paint() never touches it -- the
+         chart inside is built once and would be destroyed by a repaint. -->
+    <section class="page" id="page-live" hidden></section>
   </main>
 
   <nav role="tablist">
@@ -1337,7 +1508,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260925-172319";
+const APP_BUILD = "20260925-213827";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6287,6 +6458,12 @@ function reviewBadge(r){
 function renderHome(){
   const news = toReview();
   return '<div class="home">'
+    /* LIVE, FIRST. Trevor, 2026-09-25: *"another section on the home screen.
+       This is gonna be the live trading section."* It is the one badge about
+       money rather than about the machines, so it leads. Its subline is
+       painted by lvPaintBadge() from the VPS poll, not from the snapshot. */
+    + homeButton("live", `<span class="lv-dot${liveUrl() ? "" : " off"}"></span>`, "Live",
+                 `<span id="lvsub">${lvBadgeText()}</span>`, "var(--gold)")
     + homeButton("active", "▶", "Active", activeSummary())
     + homeButton("results", "✓", "Results",
         `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
@@ -7478,6 +7655,1156 @@ function fmtPct(v){
 }
 
 
+/* ==========================================================================
+   LIVE -- the VPS: account, open trade, trade history, chart, and the bucket
+   ==========================================================================
+   Trevor, 2026-09-25: *"another section on the home screen. This is gonna be
+   the live trading section ... current trades. Trade history. Then ... a live
+   trading graph ... 1min, 5min, 15min, 1hr, 4hr, 1D. Along with indicators for
+   current and past trades."* And: *"I also want to know what bucket the live
+   graph is currently trading in."*
+
+   WHERE THE DATA COMES FROM. Not the gist -- the VPS itself, over the tailnet.
+   GoldBot_LiveFeed.mq5 (an MT5 service beside the EA, read-only) writes the
+   account, positions, deals and bars; live_feed_server.ps1 joins them with the
+   EA's own monitoring files and the dial's provenance, and serves /live, /bars
+   and /regimes on 127.0.0.1, which `tailscale serve` publishes to the tailnet.
+   So this page works while every optimizer is asleep, and none of it passes
+   through GitHub. paint() never touches it: the chart is built once, and a
+   repaint every 20 s would throw it away.
+
+   🔴 THE ADDRESS IS NOT IN THIS FILE, for the gist id's reason: the repo is
+   public. It arrives once in the link (#live=https://...) or is typed on the
+   page, and is kept in this device's localStorage.
+
+   TIMES ARE BROKER SERVER TIME throughout, as MT5 shows them. A D1 candle is
+   the broker's day; shifting it to the phone's clock would split every day
+   candle across two dates. */
+const LIVE_KEY = "gb.live.v1";
+const LV_TFS = ["M1", "M5", "M15", "H1", "H4", "D1"];
+const LV_TF_LABEL = {M1: "1m", M5: "5m", M15: "15m", H1: "1H", H4: "4H", D1: "1D"};
+const LV_TF_SEC = {M1: 60, M5: 300, M15: 900, H1: 3600, H4: 14400, D1: 86400};
+/* How far back each timeframe's bars reach (the service keeps 1440 M1 .. 520
+   D1), with room to spare -- used to pick a timeframe that still holds an old
+   trade before asking for it. */
+const LV_TF_REACH = {M1: 20*3600, M5: 2.5*86400, M15: 8*86400, H1: 25*86400,
+                     H4: 80*86400, D1: 700*86400};
+/* Pinned, and pinned by hash: this page is on a public origin, and a CDN copy
+   that changed would otherwise run here with everything the page can reach. */
+const LV_LIB = "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
+const LV_LIB_SRI = "sha384-OK7vELvjHdhUFi31JYioPIcRHTROLdcDa6ZsNWgvgLaKj+9JqhU0Ad8g4wz3CXjA";
+const LV_BAND = {BULL: "rgba(95,190,149,.55)", BEAR: "rgba(224,104,90,.55)",
+                 RANGING: "rgba(111,168,212,.55)"};
+const LV_C = {card: "#141E26", card2: "#1B2933", grid: "#18242D", line: "#22313C",
+              dim: "#8CA0AC", faint: "#5F727E", gold: "#E0B457", good: "#5FBE95", bad: "#E0685A"};
+/* The EA's own exit reason wins: the broker records a trailing stop and a
+   plain stop both as "sl", and only the EA knows which it was. */
+const LV_EA_REASON = {TRAIL: "Trail", SL: "Stop", TP: "Target", SIGNAL: "Signal"};
+const LV_BROKER_REASON = {sl: "Stop", tp: "Target", expert: "EA", client: "Manual",
+                          mobile: "Manual", web: "Manual", stop_out: "Stop-out"};
+
+let LV = {
+  url: "",            // from the link, when localStorage is unavailable
+  data: null,         // the last /live answer
+  err: "",            // why the last poll failed; "" when it did not
+  at: 0,              // Date.now() of the last good /live
+  bars: {},           // tf -> {at, bars:[{time,open,high,low,close}]}
+  runs: null,         // [[server_time, regime], ...] from /regimes
+  runsAt: 0,
+  tf: "M5", style: "candles", sel: null, hf: "all",
+  built: false, editing: false, formErr: "", busy: false, timer: null, runsBusy: false,
+  liveAt: 0,          // Date.now() of the last /live (the joins); /now moves `at`
+  wantLive: false,    // /now saw a trade open or close: fetch /live next tick
+  showStop: (() => { try{ return localStorage.getItem("gb.live.stop") !== "0"; }catch(e){ return true; } })(),
+  trail: null,
+  viewGen: 0,         // bumped by every tap that moves the chart; see lvShow
+  chart: null, chartP: null, series: null, band: null, path: null, lines: [], sig: "",
+};
+let LV_LIB_P = null;
+
+/* ---------- address ---------- */
+function lvAdoptLink(){
+  try{
+    const v = new URLSearchParams(location.hash.slice(1)).get("live");
+    if(v && /^https?:\/\/[^\s"'<>]+$/i.test(v)){
+      LV.url = v.trim().replace(/\/+$/, "");
+      localStorage.setItem(LIVE_KEY, LV.url);
+    }
+  }catch(e){ /* no storage: LV.url still carries it for this visit */ }
+}
+function liveUrl(){
+  try{
+    const v = localStorage.getItem(LIVE_KEY);
+    if(v) return String(v).replace(/\/+$/, "");
+  }catch(e){}
+  return LV.url || "";
+}
+function lvHost(){
+  try{ return new URL(liveUrl()).host; }catch(e){ return liveUrl(); }
+}
+
+/* ---------- small formatters ---------- */
+function lvCur(){
+  const c = LV.data && LV.data.account && LV.data.account.currency;
+  return !c || c === "USD" ? "$" : c + " ";
+}
+function lvMoney(v, sign){
+  const n = Number(v);
+  if(!isFinite(n)) return "—";
+  const s = n < 0 ? "−" : (sign !== false && n > 0 ? "+" : "");
+  return s + lvCur() + Math.abs(n).toLocaleString("en-US",
+    {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+const lvTone = v => v > 0 ? "lv-good" : v < 0 ? "lv-bad" : "";
+function lvSigned(v, d){
+  const n = Number(v);
+  return (n < 0 ? "−" : n > 0 ? "+" : "") + Math.abs(n).toFixed(d == null ? 2 : d);
+}
+function lvPx(v){
+  const n = Number(v);
+  const dg = (LV.data && LV.data.symbol && LV.data.symbol.digits) || 2;
+  return isFinite(n) && n ? n.toFixed(dg) : "—";
+}
+const LV_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/* Server time now: the last answer's clock, moved on by the wall clock since. */
+function lvNow(){
+  const d = LV.data;
+  if(!d) return Math.floor(Date.now() / 1000);
+  return Number(d.served_gmt) + Number(d.gmt_offset || 0) +
+         Math.floor((Date.now() - LV.at) / 1000);
+}
+function lvWhen(t){
+  const d = new Date(Number(t) * 1000), p = n => String(n).padStart(2, "0");
+  const hm = p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+  return lvNow() - Number(t) < 6 * 86400
+    ? LV_DAYS[d.getUTCDay()] + " " + hm
+    : p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) + " " + hm;
+}
+function lvSpan(sec){
+  const m = Math.max(1, Math.round(Number(sec) / 60));
+  if(m < 60) return m + "m";
+  const h = Math.floor(m / 60);
+  if(h < 24) return h + "h " + String(m % 60).padStart(2, "0") + "m";
+  return Math.floor(h / 24) + "d " + (h % 24) + "h";
+}
+/* Seconds under a minute: "answered 1m ago" for a poll 3 s old read as a
+   stall, which is the one thing this page must never fake. */
+function lvDur(sec){
+  return sec < 60 ? Math.max(0, Math.round(sec)) + "s" : lvSpan(sec);
+}
+function lvAgo(sec){ return lvDur(sec) + " ago"; }
+/* The crosshair readout's clock: short enough that the CLOSE, the number that
+   matters, still fits on a phone -- time for intraday, weekday for 4H, date
+   for daily candles. */
+function lvBarWhen(t){
+  const d = new Date(Number(t) * 1000), p = n => String(n).padStart(2, "0");
+  if(LV.tf === "D1") return p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate());
+  const hm = p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+  return LV.tf === "H4" ? LV_DAYS[d.getUTCDay()] + " " + hm : hm;
+}
+function lvGmt(){
+  const o = Number(LV.data && LV.data.gmt_offset) / 3600;
+  if(!isFinite(o)) return "server time";
+  return "server time (GMT" + (o >= 0 ? "+" : "−") + Math.abs(o) + ")";
+}
+const lvRegTag = r => r ? `<span class="chip ${RC[r] || ""}">${esc(r)}</span>` : "";
+const lvDirTag = d => `<span class="lv-dir"><span class="ar">${d === "buy" ? "▲" : "▼"}</span> ` +
+                      `${d === "buy" ? "BUY" : "SELL"}</span>`;
+function lvReason(t){
+  const ea = t.ea_reason ? String(t.ea_reason).toUpperCase() : "";
+  if(ea) return LV_EA_REASON[ea] || (ea.charAt(0) + ea.slice(1).toLowerCase());
+  return LV_BROKER_REASON[t.reason] || esc(t.reason || "");
+}
+
+/* ---------- the data ---------- */
+function lvPositions(){
+  return LV.data && Array.isArray(LV.data.positions) ? LV.data.positions : [];
+}
+function lvTrades(){
+  return LV.data && Array.isArray(LV.data.trades) ? LV.data.trades : [];
+}
+const lvDayStart = () => Math.floor(lvNow() / 86400) * 86400;
+function lvOpenPnl(){
+  return lvPositions().reduce((s, p) => s + Number(p.profit || 0) + Number(p.swap || 0), 0);
+}
+function lvClosedSince(t){
+  return lvTrades().filter(x => Number(x.exit_time) >= t)
+                   .reduce((s, x) => s + Number(x.profit || 0), 0);
+}
+function lvErrText(e){
+  if(e && e.name === "AbortError") return "timed out";
+  if(e && e.name === "TypeError") return "no answer";
+  return String((e && e.message) || e);
+}
+async function lvGet(path){
+  const base = liveUrl();
+  if(!base) throw new Error("no address");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try{
+    const r = await fetch(base + path, {cache: "no-store", signal: ctl.signal});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+function lvVisible(){
+  const el = document.getElementById("page-live");
+  return !!el && !el.hidden && !document.hidden;
+}
+
+/* TWO SPEEDS. Trevor, 2026-09-25: *"I do want this Live page to update as
+   fast as possible."* While this page is on screen: /now EVERY SECOND -- the
+   price, the positions with their LIVE stop, equity and the forming candles,
+   passed straight through from the service, which rewrites it the moment any
+   of that changes -- and the heavy /live (history, gates, the stop's path)
+   every 15 s, or AT ONCE when /now shows a trade opened or closed. Off screen:
+   /live every 20 s for the home badge, and nothing faster -- a phone in a
+   pocket has no use for a second-by-second feed. */
+const LV_FAST_MS = 1000, LV_SLOW_MS = 15000, LV_IDLE_MS = 20000;
+function lvSchedule(delay){
+  clearTimeout(LV.timer);
+  if(!liveUrl()) return;
+  LV.timer = setTimeout(lvTick, delay != null ? delay : (lvVisible() ? LV_FAST_MS : LV_IDLE_MS));
+}
+async function lvTick(){
+  const fast = lvVisible() && LV.data && !LV.wantLive && Date.now() - LV.liveAt < LV_SLOW_MS;
+  if(fast) await lvPollNow(); else await lvPoll();
+  lvSchedule();
+}
+async function lvPoll(){
+  if(!liveUrl() || LV.busy) return;
+  LV.busy = true;
+  try{
+    const d = await lvGet("/live");
+    if(d && d.schema === 1){
+      LV.data = d; LV.at = LV.liveAt = Date.now(); LV.err = ""; LV.wantLive = false;
+    }
+    else LV.err = "an answer this page does not understand";
+  }catch(e){ LV.err = lvErrText(e); }
+  finally{ LV.busy = false; }
+  if(lvVisible() && LV.built){
+    if(LV.chart){ await lvMaybeBars(); lvMaybeRegimes(); }   // the band can arrive late
+    lvPaint();
+  }
+  lvPaintBadge();
+}
+async function lvPollNow(){
+  if(LV.busy) return;
+  LV.busy = true;
+  let r = null;
+  try{ r = await lvGet("/now"); LV.err = ""; }
+  catch(e){ LV.err = lvErrText(e); }
+  finally{ LV.busy = false; }
+  if(r) lvMergeNow(r);
+  if(lvVisible() && LV.built){
+    if(LV.chart) await lvMaybeBars();
+    lvPaintFast();
+  }
+  lvPaintBadge();
+}
+/* /now ONTO /live. The live numbers -- price, profit, the broker's stop --
+   replace the old ones; what only /live knows (regime, bucket, the stop's
+   path) stays. A position that appeared or vanished means a trade opened or
+   closed, and so does a new deals_sig: either one fetches /live at once. */
+function lvMergeNow(r){
+  const d = LV.data, n = r && r.now;
+  if(!d) return;
+  d.served_gmt = r.served_gmt;
+  LV.at = Date.now();
+  const health = Object.assign({}, d.health || {});
+  if(!n){
+    health.feed = {status: "missing", age_s: null};
+    d.health = health;
+    return;
+  }
+  const age = Number(r.served_gmt) - Number(n.written_gmt);
+  health.feed = {status: age > 30 ? "stalled" : "ok", age_s: age, service: n.service};
+  d.health = health;
+  d.gmt_offset = n.gmt_offset;
+  d.account = n.account; d.terminal = n.terminal; d.symbol = n.symbol; d.forming = n.forming;
+  const old = new Map((d.positions || []).map(p => [String(p.ticket), p]));
+  const live = Array.isArray(n.positions) ? n.positions : [];
+  if(live.length !== old.size || live.some(p => !old.has(String(p.ticket)))) LV.wantLive = true;
+  if(n.deals_sig != null && d.deals_sig != null && n.deals_sig !== d.deals_sig) LV.wantLive = true;
+  d.positions = live.map(p => {
+    const q = old.get(String(p.ticket)) || {ticket: p.ticket, id: p.id, symbol: p.symbol, dir: p.type,
+      volume: p.volume, entry_price: p.price_open, entry_time: p.time, magic: p.magic,
+      regime: null, bucket: null, sl_trail: [], sl_initial: null, sl_gap: null};
+    return Object.assign(q, {price: p.price_current, profit: p.profit, swap: p.swap, sl: p.sl, tp: p.tp});
+  });
+}
+/* Every second: only what moves. The history and the gates change with /live
+   and are left alone, so a list you are scrolling is not rebuilt under you. */
+function lvPaintFast(){
+  lvPaintStatus();
+  lvPaintStats();
+  lvPaintHead();
+  lvPaintOpen();
+  lvPaintFoot();
+  if(LV.series) lvChartLive();
+}
+async function lvMaybeBars(force){
+  const tf = LV.tf, c = LV.bars[tf];
+  if(!force && c && Date.now() - c.at < 60000) return;
+  try{
+    const d = await lvGet("/bars?tf=" + tf);
+    const bars = (Array.isArray(d.bars) ? d.bars : [])
+      .map(b => ({time: b[0], open: b[1], high: b[2], low: b[3], close: b[4]}));
+    lvApplyBars(tf, bars);
+  }catch(e){
+    if(!c) LV.bars[tf] = {at: Date.now(), bars: [], err: lvErrText(e)};
+  }
+}
+async function lvMaybeRegimes(){
+  if(LV.runsBusy || (LV.runs && Date.now() - LV.runsAt < 600000)) return;
+  LV.runsBusy = true;
+  try{
+    const d = await lvGet("/regimes");
+    LV.runs = Array.isArray(d.runs) ? d.runs : [];
+    LV.runsAt = Date.now();
+    if(LV.band) LV.band.setData(lvBandData());
+  }catch(e){ /* no band is better than a wrong one */ }
+  finally{ LV.runsBusy = false; }
+}
+
+/* ---------- the home badge ---------- */
+function lvBadgeText(){
+  if(!liveUrl()) return "Not connected — add the VPS address";
+  const d = LV.data;
+  if(!d) return LV.err ? "VPS unreachable" : "Connecting…";
+  const tin = d.trading_in;
+  const where = tin && tin.regime
+    ? lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket) : "") + " · "
+    : "";
+  const feed = (d.health && d.health.feed && d.health.feed.status) || "";
+  if(feed === "missing") return where + "MT5 feed not started";
+  const pos = lvPositions(), op = lvOpenPnl(), today = lvClosedSince(lvDayStart());
+  /* The stop's result rides on the badge too: it is what the trade closes at
+     unless the EA exits first, so it is the number worth seeing without
+     opening the page. */
+  const withStop = pos.find(p => Number(p.sl));
+  const at = withStop ? lvStopPnl(withStop) : null;
+  const main = pos.length
+    ? `<span class="hcount">${pos.length}</span> open <span class="${lvTone(op)}">${lvMoney(op)}</span>` +
+      (at != null ? ` · stop <span class="${lvTone(at)}">${lvMoney(at)}</span>` : "")
+    : "Flat";
+  return where + main + ` · today <span class="${lvTone(today)}">${lvMoney(today)}</span>` +
+         (LV.err ? ' · <span class="lv-bad">not answering</span>' : "");
+}
+function lvPaintBadge(){
+  const el = document.getElementById("lvsub");
+  if(el) el.innerHTML = lvBadgeText();
+  const dot = document.querySelector("#page-home .lv-dot");
+  if(dot) dot.classList.toggle("off", !liveUrl() || !LV.data || !!LV.err);
+}
+
+/* ---------- the page ---------- */
+function lvSkeleton(){
+  return '<div class="home">'
+    + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
+    + '<div id="lvstatus" class="home"></div>'
+    + '<div class="lv-stats" id="lvstats"></div>'
+    + '<div class="card lv-tin" id="lvtin"></div>'
+    + '<div class="card" id="lvchartcard">'
+    +   '<div class="lv-chead" id="lvchead"></div>'
+    +   '<div class="lv-controls">'
+    +     '<div class="lv-seg" id="lvtf" role="group" aria-label="Timeframe"></div>'
+    +     '<div class="lv-seg small" id="lvstyle" role="group" aria-label="Chart style"></div>'
+    +     '<div class="lv-seg small" id="lvstopt" role="group" aria-label="Show the stop"></div>'
+    +   '</div>'
+    +   '<div class="lv-ohlc" id="lvohlc"></div>'
+    +   '<div class="lv-chart" id="lvchart"></div>'
+    +   '<div class="lv-legend">'
+    +     '<span><span style="color:var(--gold)">▲▼</span>Entry</span>'
+    +     '<span><span class="lv-good">●</span>/<span class="lv-bad">●</span>Exit, won / lost</span>'
+    +     '<span><span class="lv-stopkey"></span>Stop and its trail: red at risk, green locked in</span>'
+    +     '<span><span class="lv-band" style="background:var(--bull)"></span>'
+    +       '<span class="lv-band" style="background:var(--bear)"></span>'
+    +       '<span class="lv-band" style="background:var(--range)"></span>Bottom band: regime</span>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="section-label">Open trades <span class="hcount" id="lvopenn"></span></div>'
+    + '<div id="lvopen"></div>'
+    + '<div class="section-label">Trade history</div>'
+    + '<div class="lv-hf" id="lvhf"></div>'
+    + '<div class="lv-hsum" id="lvhsum"></div>'
+    + '<div class="card" id="lvhist"></div>'
+    + '<div class="lv-foot" id="lvfoot"></div>'
+    + '</div>';
+}
+function lvConnectForm(){
+  const cur = liveUrl();
+  const val = esc(cur).replace(/"/g, "&quot;");
+  return '<div class="home">'
+    + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
+    + '<div class="card lv-form">'
+    +   '<div class="lv-k">Live feed address</div>'
+    +   '<div class="lv-line">This page reads the VPS directly, over Tailscale, so this phone '
+    +     'needs Tailscale switched on. Paste the address the VPS installer printed, '
+    +     'like <b>https://&lt;vps&gt;.&lt;tailnet&gt;.ts.net</b>. It is kept on this phone only.</div>'
+    +   `<input id="lvurl" type="url" inputmode="url" autocomplete="off" spellcheck="false" `
+    +     `placeholder="https://…ts.net" value="${val}">`
+    +   '<div class="row"><button type="button" class="lv-link" data-lvsave>Save</button>'
+    +   (cur ? '<button type="button" class="lv-link" data-lvcancel>Cancel</button>' : "")
+    +   '</div>'
+    +   (LV.formErr ? `<div class="lv-line warn">${esc(LV.formErr)}</div>` : "")
+    + '</div></div>';
+}
+
+async function lvShow(){
+  const page = document.getElementById("page-live");
+  if(!page) return;
+  if(!liveUrl() || LV.editing){
+    lvDestroyChart();
+    page.innerHTML = lvConnectForm();
+    LV.built = false;
+    return;
+  }
+  if(!LV.built){
+    page.innerHTML = lvSkeleton();
+    LV.built = true;
+  }
+  lvPaintControls();
+  lvPaint();
+  lvSchedule(0);
+  /* THE VIEW IS SET ONCE, RIGHT AFTER THE BARS -- and not at all if you have
+     already moved it. The first /regimes can take seconds (the server reads
+     every heartbeat file once), and a trade tapped while it loaded was thrown
+     back to the newest candles when it finished. Found in testing. */
+  const gen = LV.viewGen;
+  if(await lvEnsureChart()){
+    await lvMaybeBars();
+    if(gen === LV.viewGen) lvSetSeriesData(true);
+    lvMaybeRegimes();
+  }
+}
+
+function lvPaintControls(){
+  const tf = document.getElementById("lvtf");
+  if(tf) tf.innerHTML = LV_TFS.map(k =>
+    `<button type="button" data-lvtf="${k}" aria-pressed="${LV.tf === k}">${LV_TF_LABEL[k]}</button>`).join("");
+  const st = document.getElementById("lvstyle");
+  if(st) st.innerHTML = [["candles", "Candles"], ["bars", "Bars"]].map(([k, l]) =>
+    `<button type="button" data-lvstyle="${k}" aria-pressed="${LV.style === k}">${l}</button>`).join("");
+  const so = document.getElementById("lvstopt");
+  if(so) so.innerHTML = `<button type="button" data-lvstopt aria-pressed="${LV.showStop}">Stop</button>`;
+}
+
+function lvPaint(){
+  if(!LV.built) return;
+  lvPaintStatus();
+  lvPaintStats();
+  lvPaintTin();
+  lvPaintHead();
+  lvPaintOpen();
+  lvPaintHistory();
+  lvPaintFoot();
+  if(LV.series) lvChartLive();
+}
+
+/* WHAT IS WRONG, in the order it matters. Each line names the fix, and a
+   closed market is said plainly rather than looking like a dead feed. */
+function lvIssues(){
+  const d = LV.data, out = [];
+  if(!d){
+    out.push(LV.err
+      ? ["warn", `Can't reach the VPS at <b>${esc(lvHost())}</b> (${esc(LV.err)}). ` +
+                 `Is Tailscale switched on for this phone?`]
+      : ["", "Connecting to the VPS…"]);
+    return out;
+  }
+  if(LV.err) out.push(["warn", `No answer from the VPS for ${lvDur((Date.now() - LV.at) / 1000)} ` +
+                               `(${esc(LV.err)}). This is what it said last.`]);
+  const feed = (d.health && d.health.feed) || {};
+  const s = d.symbol || {}, t = d.terminal || {};
+  /* CLOSED: the last tick is old -- or, when there is no price feed to ask,
+     it is the weekend. Found against the real VPS on a Saturday: with the
+     service not yet started, a 6-hour-old EA heartbeat read as "is it still
+     attached?" when the market was simply shut. Gold closes about 21:00 UTC
+     Friday and reopens about 22:00 UTC Sunday. */
+  const u = new Date(), wd = u.getUTCDay(), hr = u.getUTCHours();
+  const weekend = wd === 6 || (wd === 5 && hr >= 21) || (wd === 0 && hr < 22);
+  const closed = (feed.status === "ok" && s.tick_time)
+    ? lvNow() - Number(s.tick_time) > 600
+    : weekend;
+  if(feed.status === "missing")
+    out.push(["warn", "The VPS is answering, but the MT5 feed is not running. In MT5 on the VPS: " +
+                      "<b>Navigator → Services → GoldBot_LiveFeed → Start</b>."]);
+  else if(feed.status === "stalled")
+    out.push(["warn", `The MT5 feed stopped writing ${lvAgo(feed.age_s)}. Is MT5 still running on the VPS?`]);
+  if(!d.ea)
+    out.push(["warn", "No heartbeat from the EA. Is it attached to its chart on the VPS?"]);
+  else if(!closed && d.ea.heartbeat_age_s != null && d.ea.heartbeat_age_s > 180)
+    out.push(["warn", `The EA's last heartbeat was ${lvAgo(d.ea.heartbeat_age_s)}. Is it still attached?`]);
+  if(feed.status === "ok" && t.connected === false)
+    out.push(["warn", "MT5 on the VPS is not connected to the broker."]);
+  if(feed.status === "ok" && t.trade_allowed === false)
+    out.push(["warn", "Algo trading is switched off in MT5 on the VPS, so the EA cannot open trades."]);
+  if(d.ea && d.ea.gate_enforced === false)
+    out.push(["warn", "The EA is not enforcing the live gate, so it can trade in ANY regime, armed or not."]);
+  if(closed) out.push(["", s.tick_time ? `Market closed. Last price ${lvWhen(s.tick_time)}.`
+                                       : "Market closed for the weekend."]);
+  return out;
+}
+function lvPaintStatus(){
+  const el = document.getElementById("lvstatus");
+  if(!el) return;
+  const list = lvIssues();
+  el.hidden = !list.length;
+  el.innerHTML = list.map(([k, m]) => `<div class="lv-note${k ? " " + k : ""}">${m}</div>`).join("");
+}
+
+function lvPaintStats(){
+  const el = document.getElementById("lvstats");
+  if(!el) return;
+  const a = (LV.data && LV.data.account) || {};
+  const op = lvOpenPnl(), today = lvClosedSince(lvDayStart());
+  const cell = (k, v, cls) => `<div class="lv-stat"><span class="lv-k">${k}</span>` +
+                              `<span class="lv-v ${cls || ""}">${v}</span></div>`;
+  el.innerHTML = cell("Balance", a.balance != null ? lvMoney(a.balance, false) : "—")
+    + cell("Equity", a.equity != null ? lvMoney(a.equity, false) : "—")
+    + cell("Open P/L", LV.data ? lvMoney(op) : "—", lvTone(op))
+    + cell("Closed today", LV.data ? lvMoney(today) : "—", lvTone(today));
+}
+
+/* TRADING IN -- the regime the EA is in, the bucket whose values are in force,
+   and whether that bucket's gate lets it trade. Then every regime's gate. */
+function lvPaintTin(){
+  const el = document.getElementById("lvtin");
+  if(!el) return;
+  const d = LV.data;
+  const tin = d && d.trading_in;
+  const gates = d && Array.isArray(d.gates) ? d.gates : [];
+  let head = '<div class="lv-tinhead"><span class="lv-k">Trading in</span>';
+  let line = "";
+  if(!tin || !tin.regime){
+    line = d ? "The EA has not reported a regime yet." : "Waiting for the VPS.";
+  } else {
+    const armed = tin.armed === true;
+    head += lvRegTag(tin.regime) + (tin.bucket != null ? bktEl(tin.bucket) : "")
+         + `<span class="lv-pill ${armed ? "on" : "off"}">${armed ? "Armed" : "Not armed"}</span>`;
+    const say = armed
+      ? `The EA can open ${esc(tin.regime)} trades here.`
+      : `${esc(tin.regime)} is not armed, so the EA opens nothing until it passes the gate (PF 1.50).`;
+    const axis = (tin.axis || "D1") + " slope";
+    const slope = tin.slope != null ? ` ${axis} <b>${lvSigned(tin.slope, 4)}</b>,` : "";
+    let where = "";
+    if(tin.bucket == null)
+      where = tin.resolved_by === "unknown_no_slope"
+        ? " bucket unknown: this regime has split, and the EA on the VPS does not report its slope yet."
+        : " no bucket covers this slope.";
+    else if(tin.root)
+      where = ` root bucket, one bucket covers every slope until ${esc(tin.regime)} splits.`;
+    else
+      where = ` bucket range <b>${lvSigned(tin.slope_min, 4)}</b> to <b>${lvSigned(tin.slope_max, 4)}</b>.`;
+    /* Without a slope (an EA that does not report one yet) the sentence
+       starts at `where`, which then needs its own capital. */
+    const w = where.trim();
+    line = slope ? say + slope + where : say + " " + w.charAt(0).toUpperCase() + w.slice(1);
+  }
+  head += "</div>";
+  const rows = gates.map(g => {
+    const cur = tin && g.regime === tin.regime && String(g.bucket) === String(tin.bucket);
+    const pf = g.pf != null ? `PF <b>${Number(g.pf).toFixed(2)}</b> on ${esc(g.trades)}` : "not measured yet";
+    const when = g.measured_at ? " · " + esc(fmtWhen(Number(g.measured_at)).slice(0, 5)) : "";
+    return `<div class="lv-grow${cur ? " cur" : ""}">${lvRegTag(g.regime)}${bktEl(g.bucket)}<span></span>` +
+           `<span class="lv-gst ${g.armed ? "on" : "off"}">${g.armed ? "Armed" : "Off"}</span>` +
+           `<span class="lv-gpf">${pf}${when ? " · measured" + when.slice(2) : ""}</span></div>`;
+  }).join("");
+  el.innerHTML = head + `<div class="lv-line">${line}</div>` +
+                 (rows ? `<div class="lv-gates">${rows}</div>` : "");
+}
+
+function lvPaintHead(){
+  const el = document.getElementById("lvchead");
+  if(!el) return;
+  const d = LV.data || {}, s = d.symbol || {}, a = d.account || {};
+  const spread = s.bid && s.ask ? `spread ${(Number(s.ask) - Number(s.bid)).toFixed(s.digits || 2)}` : "";
+  const acct = a.mode ? (a.mode === "real" ? "Real account" : a.mode === "demo" ? "Demo account" : esc(a.mode)) : "";
+  el.innerHTML = `<span class="lv-sym">${esc(s.name || "XAUUSD.s")}</span>` +
+    `<span class="lv-px">${s.bid ? lvPx(s.bid) : "—"}</span>` +
+    `<span class="lv-spread">${spread}</span>` +
+    (acct ? `<span class="chip ${a.mode === "real" ? "warn" : "gold"} lv-acct" ` +
+            `title="${esc(a.server || "").replace(/"/g, "&quot;")}">${acct}</span>` : "");
+}
+
+function lvPaintOpen(){
+  const el = document.getElementById("lvopen");
+  if(!el) return;
+  const pos = lvPositions();
+  const n = document.getElementById("lvopenn");
+  if(n) n.textContent = LV.data ? String(pos.length) : "";
+  if(!LV.data){ el.innerHTML = ""; return; }
+  if(!pos.length){
+    el.innerHTML = '<div class="card lv-otrade"><div class="lv-line">No open trade. ' +
+                   'The EA holds at most one position at a time.</div></div>';
+    return;
+  }
+  /* BUILT when the stop moves (or the trade changes), UPDATED IN PLACE every
+     second otherwise. Rebuilding once a second would replace the button under
+     a finger that was halfway through tapping it. */
+  const key = JSON.stringify(pos.map(p => [p.ticket, p.sl, p.tp, p.regime, p.bucket, p.sl_initial,
+                                           (p.sl_trail || []).length, !!p.sl_gap]));
+  if(el.dataset.key !== key){
+    el.dataset.key = key;
+    el.innerHTML = pos.map(lvOpenCard).join("");
+  }
+  pos.forEach(lvOpenLive);
+}
+
+/* Money per 1.0 of price, for this position: the broker's tick value when it
+   is the chart's symbol, else read back off the position's own profit. */
+function lvPerPoint(p){
+  const s = (LV.data && LV.data.symbol) || {};
+  const tv = Number(s.tick_value), ts = Number(s.tick_size);
+  if(p.symbol === s.name && tv > 0 && ts > 0) return tv / ts * Number(p.volume);
+  const mv = (Number(p.price) - Number(p.entry_price)) * (p.dir === "buy" ? 1 : -1);
+  return Math.abs(mv) > 1e-9 ? Number(p.profit) / mv : null;
+}
+/* WHAT THE STOP WOULD CLOSE THE TRADE AT, in money. Trevor, 2026-09-25: the
+   stop "should be the one that eventually kills the trade in profit or loss."
+   The EA sends no take-profit (TP is 0 on every order and every modify), so
+   unless it closes on a signal, this IS the trade's result. Swap is included;
+   slippage past the stop is not, so it reads "about". */
+function lvStopPnl(p){
+  const v = lvPerPoint(p), sl = Number(p.sl);
+  if(!v || !sl) return null;
+  return (sl - Number(p.entry_price)) * (p.dir === "buy" ? 1 : -1) * v + Number(p.swap || 0);
+}
+
+function lvOpenCard(p){
+  const t = esc(p.ticket), sl = Number(p.sl), tp = Number(p.tp);
+  const stopPnl = lvStopPnl(p);
+  let head, line = "";
+  if(!sl){
+    head = `<span class="lv-pill risk">No stop</span>`;
+    line = "This trade has no stop at the broker. Nothing closes it automatically.";
+  } else {
+    const kind = stopPnl == null ? "" : Math.abs(stopPnl) < 0.005 ? "Break-even"
+               : stopPnl > 0 ? "Locks " + lvMoney(stopPnl) : "Risks " + lvMoney(stopPnl);
+    head = `<span class="lv-v">${lvPx(sl)}</span>` +
+      (kind ? `<span class="lv-pill ${stopPnl > 0 ? "on" : stopPnl < 0 ? "risk" : "off"}">${kind}</span>` : "");
+    const trail = Array.isArray(p.sl_trail) ? p.sl_trail : [];
+    const moves = Math.max(0, trail.length - 1);
+    const init = Number(p.sl_initial);
+    line = init && Math.abs(init - sl) > 1e-9
+      ? `Started at <b>${lvPx(init)}</b> and moved ${moves || "at least once"}${moves ? (moves === 1 ? " time" : " times") : ""}. `
+      : "Where the EA placed it at entry. ";
+    line += "This is the stop that closes the trade; the EA only ever tightens it. " +
+            `<span id="lvo-${t}-room"></span>`;
+  }
+  const g = p.sl_gap;
+  const gap = g ? `<div class="lv-note warn">The broker refused the EA's last stop move` +
+      (g.target_sl ? ` to <b>${lvPx(g.target_sl)}</b>` : "") + (g.since ? ` (${lvWhen(g.since)})` : "") +
+      `. The stop shown is still the one that would close the trade; the EA tries again on every tick.</div>`
+    : "";
+  return `<div class="card lv-otrade">
+    <div class="lv-orow">${lvDirTag(p.dir)}<span class="lv-dir">${Number(p.volume).toFixed(2)} lot</span>` +
+      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket) : ""}` +
+      `<span class="lv-oage" id="lvo-${t}-age"></span></div>
+    <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
+      `<span class="lv-sub" id="lvo-${t}-move"></span></div>
+    <div class="lv-stop">
+      <div class="lv-stophead"><span class="lv-k">Stop</span>${head}</div>
+      <div class="lv-line">${line}</div>
+      ${sl ? `<div class="lv-gauge" id="lvo-${t}-gauge" aria-hidden="true"></div>
+      <div class="lv-glabels"><span><i class="lv-sw stop"></i>stop</span><span><i class="lv-sw entry"></i>entry</span>` +
+        `<span><i class="lv-sw now"></i>price</span></div>` : ""}
+      ${tp ? `<div class="lv-line">Target at the broker: <b>${lvPx(tp)}</b>.</div>` : ""}
+    </div>
+    ${gap}
+    <div class="lv-ogrid">
+      <div><span class="lv-k">Entry</span><span class="lv-v">${lvPx(p.entry_price)}</span></div>
+      <div><span class="lv-k">Now</span><span class="lv-v" id="lvo-${t}-now"></span></div>
+      <div><span class="lv-k">Opened</span><span class="lv-v">${lvWhen(p.entry_time)}</span></div>
+    </div>
+    <button type="button" class="lv-link" data-lvfocus="p${t}">Show stop on chart</button>
+  </div>`;
+}
+
+/* The numbers that move every second, written into the card that is there. */
+function lvOpenLive(p){
+  const t = String(p.ticket), $ = id => document.getElementById("lvo-" + t + "-" + id);
+  const pnl = Number(p.profit || 0) + Number(p.swap || 0);
+  const dir = p.dir === "buy" ? 1 : -1;
+  const move = (Number(p.price) - Number(p.entry_price)) * dir;
+  const e = $("pnl"); if(e){ e.textContent = lvMoney(pnl); e.className = "lv-big " + lvTone(pnl); }
+  const m = $("move"); if(m) m.textContent = lvSigned(move) + " from entry";
+  const a = $("age"); if(a) a.textContent = "open " + lvSpan(lvNow() - Number(p.entry_time));
+  const n = $("now"); if(n) n.textContent = lvPx(p.price);
+  const sl = Number(p.sl);
+  const room = $("room");
+  if(room && sl){
+    const gap = (Number(p.price) - sl) * dir;
+    room.textContent = gap > 0 ? `The price is ${gap.toFixed(2)} away from it.`
+                               : "The price is at or through it.";
+  }
+  const g = $("gauge");
+  if(g && sl){
+    /* One axis for everything that matters: where it started, the stop now,
+       the entry and the price. The shaded run is the money at the stop --
+       green when the stop has already locked in a profit, red when a loss. */
+    const vals = [sl, Number(p.entry_price), Number(p.price)];
+    const init = Number(p.sl_initial);
+    if(init) vals.push(init);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = Math.max((hi - lo) * 0.12, 0.5);
+    lo -= pad; hi += pad;
+    const pct = v => ((v - lo) / (hi - lo) * 100).toFixed(2);
+    const locked = (sl - Number(p.entry_price)) * dir > 0;
+    const s = pct(sl), en = pct(Number(p.entry_price)), pr = pct(Number(p.price));
+    g.innerHTML =
+      `<div class="fill" style="left:${Math.min(s, en)}%;width:${Math.abs(s - en).toFixed(2)}%;` +
+      `background:${locked ? LV_C.good : LV_C.bad};opacity:.45"></div>` +
+      (init && Math.abs(init - sl) > 1e-9 ? `<div class="init" style="left:${pct(init)}%"></div>` : "") +
+      `<div class="tick" style="left:${en}%"></div>` +
+      `<div class="stopmk" style="left:${s}%;background:${locked ? LV_C.good : LV_C.bad}"></div>` +
+      `<div class="now" style="left:${pr}%"></div>`;
+  }
+}
+
+const LV_HF = [["today", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All"]];
+function lvHistoryRows(){
+  const now = lvNow();
+  const from = LV.hf === "today" ? lvDayStart() : LV.hf === "week" ? now - 7 * 86400
+             : LV.hf === "month" ? now - 30 * 86400 : -Infinity;
+  return lvTrades().filter(t => Number(t.exit_time) >= from);
+}
+function lvPaintHistory(){
+  const hf = document.getElementById("lvhf"), sum = document.getElementById("lvhsum"),
+        list = document.getElementById("lvhist");
+  if(!hf || !sum || !list) return;
+  hf.innerHTML = LV_HF.map(([k, l]) =>
+    `<button type="button" class="lv-hfb" data-lvhf="${k}" aria-pressed="${LV.hf === k}">${l}</button>`).join("");
+  if(!LV.data){ sum.innerHTML = ""; list.innerHTML = ""; list.hidden = true; return; }
+  const rows = lvHistoryRows();
+  const won = rows.filter(t => Number(t.profit) > 0);
+  const gw = won.reduce((s, t) => s + Number(t.profit), 0);
+  const gl = -rows.filter(t => Number(t.profit) < 0).reduce((s, t) => s + Number(t.profit), 0);
+  const net = gw - gl;
+  sum.innerHTML = rows.length
+    ? `<b>${rows.length}</b> trades · <b>${won.length}</b> won ` +
+      `(${Math.round(won.length / rows.length * 100)}%) · PF <b>${gl > 0 ? (gw / gl).toFixed(2) : "—"}</b>` +
+      ` · net <b class="${lvTone(net)}">${lvMoney(net)}</b>`
+    : (lvTrades().length ? "Nothing closed in this range." : "No closed trades on this account yet.");
+  const shown = rows.slice(0, 100);
+  list.innerHTML = shown.map(t => {
+    const id = "t" + t.position;
+    return `<button type="button" class="lv-hrow" data-lvfocus="${esc(id)}" aria-current="${LV.sel === id}">
+      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket) : ""}` +
+        `<span class="lv-when">${lvWhen(t.entry_time)} · ${lvSpan(Number(t.exit_time) - Number(t.entry_time))}</span></span>
+      <span class="lv-hpnl ${lvTone(Number(t.profit))}">${lvMoney(t.profit)}</span>
+      <span class="lv-hl2">${lvPx(t.entry_price)} → ${lvPx(t.exit_price)}</span>
+      <span class="lv-hwhy">${lvReason(t)}</span>
+    </button>`;
+  }).join("") + (rows.length > shown.length
+    ? `<div class="lv-line" style="padding:9px 13px">Showing the newest ${shown.length} of ${rows.length}.</div>` : "");
+  list.hidden = !shown.length;
+}
+
+function lvPaintFoot(){
+  const el = document.getElementById("lvfoot");
+  if(!el) return;
+  const age = LV.at ? lvAgo((Date.now() - LV.at) / 1000) : "never";
+  el.innerHTML = `<span>Times are ${esc(lvGmt())}.</span>` +
+    `<span>Feed: ${esc(lvHost())}, answered ${age}. <button type="button" data-lvchange>Change</button></span>` +
+    `<span>Chart by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" ` +
+    `rel="noopener">TradingView Lightweight Charts</a>.</span>`;
+}
+
+/* ---------- the chart ---------- */
+function lvLib(){
+  if(window.LightweightCharts) return Promise.resolve(window.LightweightCharts);
+  if(LV_LIB_P) return LV_LIB_P;
+  LV_LIB_P = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = LV_LIB;
+    s.integrity = LV_LIB_SRI;
+    s.crossOrigin = "anonymous";
+    s.async = true;
+    s.onload = () => window.LightweightCharts ? resolve(window.LightweightCharts)
+                                              : reject(new Error("no chart global"));
+    s.onerror = () => { LV_LIB_P = null; reject(new Error("could not load")); };
+    document.head.appendChild(s);
+  });
+  return LV_LIB_P;
+}
+function lvEnsureChart(){
+  if(LV.chart) return Promise.resolve(true);
+  if(LV.chartP) return LV.chartP;
+  LV.chartP = (async () => {
+    let LC;
+    try{ LC = await lvLib(); }
+    catch(e){
+      const box = document.getElementById("lvchart");
+      if(box) box.innerHTML = '<div class="empty">The chart library could not be loaded from ' +
+        'jsdelivr, so there is no chart. Everything else on this page still works.</div>';
+      LV.chartP = null;
+      return false;
+    }
+    const box = document.getElementById("lvchart");
+    if(!box){ LV.chartP = null; return false; }
+    LV.LC = LC;
+    LV.chart = LC.createChart(box, {
+      autoSize: true,
+      layout: {background: {type: "solid", color: LV_C.card}, textColor: LV_C.dim, fontSize: 11,
+               fontFamily: "Roboto Mono, ui-monospace, monospace", attributionLogo: false},
+      grid: {vertLines: {color: LV_C.grid}, horzLines: {color: LV_C.grid}},
+      rightPriceScale: {borderColor: LV_C.line, scaleMargins: {top: 0.12, bottom: 0.11}},
+      timeScale: {borderColor: LV_C.line, timeVisible: true, secondsVisible: false,
+                  rightOffset: 4, barSpacing: 6},
+      crosshair: {mode: LC.CrosshairMode.Normal,
+                  vertLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2},
+                  horzLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2}},
+      /* A vertical swipe scrolls the PAGE; only sideways drags pan the chart. */
+      handleScroll: {vertTouchDrag: false},
+    });
+    LV.path = LV.chart.addLineSeries({lineWidth: 2, lineStyle: LC.LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    LV.band = LV.chart.addHistogramSeries({priceScaleId: "band", priceLineVisible: false,
+      lastValueVisible: false, base: 0});
+    LV.trail = LV.chart.addLineSeries({lineType: LC.LineType.WithSteps, lineWidth: 2,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    LV.chart.priceScale("band").applyOptions({scaleMargins: {top: 0.945, bottom: 0}, visible: false});
+    lvMakeSeries();
+    LV.chart.subscribeCrosshairMove(p => {
+      const b = p && p.seriesData && LV.series ? p.seriesData.get(LV.series) : null;
+      lvOhlc(b || lvLastBar());
+    });
+    return true;
+  })();
+  return LV.chartP;
+}
+function lvDestroyChart(){
+  if(LV.chart){ try{ LV.chart.remove(); }catch(e){} }
+  LV.chart = LV.chartP = LV.series = LV.band = LV.path = LV.trail = null;
+  LV.lines = []; LV.sig = "";
+}
+function lvMakeSeries(){
+  if(!LV.chart) return;
+  if(LV.series){ LV.chart.removeSeries(LV.series); LV.lines = []; }
+  /* THE OPEN TRADE'S STOP AND TARGET STAY ON THE SCALE. Autoscale fits the
+     candles only, so a stop a few dollars under the last hour's low was drawn
+     off the chart. Widened only while the newest candle is in view -- scrolled
+     back through last month, the old prices are what should fill the height. */
+  const common = {upColor: LV_C.good, downColor: LV_C.bad, priceLineColor: LV_C.dim,
+                  priceFormat: {type: "price", precision: 2, minMove: 0.01},
+                  autoscaleInfoProvider: original => {
+                    const res = original(), ext = lvLineExtent();
+                    if(!res || !res.priceRange || !ext) return res;
+                    return {priceRange: {minValue: Math.min(res.priceRange.minValue, ext[0]),
+                                         maxValue: Math.max(res.priceRange.maxValue, ext[1])},
+                            margins: res.margins};
+                  }};
+  LV.series = LV.style === "bars"
+    ? LV.chart.addBarSeries(Object.assign({thinBars: false}, common))
+    : LV.chart.addCandlestickSeries(Object.assign({borderVisible: false,
+        wickUpColor: LV_C.good, wickDownColor: LV_C.bad}, common));
+  LV.sig = "";
+  lvSetSeriesData(false);
+}
+function lvBars(){ const c = LV.bars[LV.tf]; return c && Array.isArray(c.bars) ? c.bars : []; }
+function lvShowLatest(){
+  const n = lvBars().length, box = document.getElementById("lvchart");
+  if(!LV.chart || !n) return;
+  const k = Math.max(30, Math.floor(((box && box.clientWidth) || 320) / 6));
+  LV.chart.timeScale().setVisibleLogicalRange({from: n - k, to: n + 4});
+}
+function lvLineExtent(){
+  if(!LV.chart) return null;
+  const r = LV.chart.timeScale().getVisibleLogicalRange(), n = lvBars().length;
+  if(!r || !n || r.to < n - 1) return null;
+  const vals = [];
+  lvChartTrades().filter(t => t.open).forEach(t =>
+    [t.entry_price, LV.showStop ? t.sl : 0, t.tp].forEach(v => { if(Number(v)) vals.push(Number(v)); }));
+  return vals.length ? [Math.min(...vals), Math.max(...vals)] : null;
+}
+function lvLastBar(){ const b = lvBars(); return b.length ? b[b.length - 1] : null; }
+function lvIdx(arr, t){
+  let lo = 0, hi = arr.length - 1;
+  if(hi < 0 || t < arr[0].time) return -1;
+  while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(arr[mid].time <= t) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+/* A trade's time, moved onto a bar that exists on this timeframe. Anything the
+   loaded bars do not reach is left off rather than pinned to the wrong candle. */
+function lvSnap(t){
+  const arr = lvBars(), i = lvIdx(arr, Number(t));
+  return i < 0 ? null : arr[i].time;
+}
+function lvRegimeAt(t){
+  const runs = LV.runs;
+  if(!runs || !runs.length || t < runs[0][0]) return null;
+  let lo = 0, hi = runs.length - 1;
+  while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(runs[mid][0] <= t) lo = mid; else hi = mid - 1; }
+  return runs[lo][1];
+}
+function lvBandPoint(b){
+  const r = lvRegimeAt(b.time);
+  return {time: b.time, value: 1, color: (r && LV_BAND[r]) || "rgba(0,0,0,0)"};
+}
+function lvBandData(){ return lvBars().map(lvBandPoint); }
+function lvApplyBars(tf, bars){
+  const old = LV.bars[tf] && LV.bars[tf].bars;
+  LV.bars[tf] = {at: Date.now(), bars};
+  if(!LV.series || LV.tf !== tf) return;
+  /* A refresh that continues the series is applied as UPDATES, so the chart
+     keeps the place you scrolled to; anything else is a reload. */
+  if(old && old.length && bars.length && bars[0].time <= old[old.length - 1].time){
+    const lastT = old[old.length - 1].time;
+    bars.filter(b => b.time >= lastT).forEach(b => {
+      LV.series.update(b);
+      LV.band.update(lvBandPoint(b));
+    });
+    lvMarks(true);
+  } else lvSetSeriesData(!!(old && old.length));   // a first load: the caller decides the view
+}
+function lvSetSeriesData(fit){
+  if(!LV.series) return;
+  const bars = lvBars();
+  LV.series.setData(bars);
+  LV.band.setData(lvBandData());
+  lvMarks(true);
+  lvOhlc(lvLastBar());
+  /* NOT scrollToRealTime(): it ANIMATES, so it finished after a trade tap had
+     centred the chart and threw the chart back to the newest candles. Found in
+     testing; an immediate range cannot be overtaken. */
+  if(fit) lvShowLatest();
+  const box = document.getElementById("lvchart");
+  const c = LV.bars[LV.tf];
+  if(box) box.title = c && c.err ? "No bars: " + c.err : "";
+}
+/* Every second: move the forming candle, and redraw the marks only when trades,
+   positions, stops or the selection changed -- a trailing stop moves. */
+function lvChartLive(){
+  const d = LV.data, f = d && d.forming && d.forming[LV.tf];
+  const arr = lvBars();
+  if(f && arr.length && f[0] >= arr[arr.length - 1].time){
+    const bar = {time: f[0], open: f[1], high: f[2], low: f[3], close: f[4]};
+    if(bar.time === arr[arr.length - 1].time) arr[arr.length - 1] = bar; else arr.push(bar);
+    LV.series.update(bar);
+    LV.band.update(lvBandPoint(bar));
+    lvOhlc(bar);
+  }
+  lvMarks(false);
+  lvTrailLive();
+}
+function lvChartTrades(){
+  const sym = LV.data && LV.data.symbol && LV.data.symbol.name;
+  const closed = lvTrades().filter(t => !sym || t.symbol === sym)
+    .map(t => ({id: "t" + t.position, dir: t.dir, entry_time: t.entry_time, entry_price: t.entry_price,
+                exit_time: t.exit_time, exit_price: t.exit_price, profit: Number(t.profit)}));
+  const open = lvPositions().filter(p => !sym || p.symbol === sym)
+    .map(p => ({id: "p" + p.ticket, dir: p.dir, entry_time: p.entry_time, entry_price: p.entry_price,
+                open: true, price: p.price, sl: p.sl, tp: p.tp, pos: p,
+                profit: Number(p.profit || 0) + Number(p.swap || 0)}));
+  return closed.concat(open);
+}
+/* THE STOP'S PATH: a step line from the entry's stop, through every ratchet the
+   EA's heartbeat recorded, to the broker's stop right now -- red while a hit
+   would lose money, green once it would lock a profit. Snapped onto this
+   timeframe's candles; a step before the first loaded candle is carried in. */
+function lvTrailData(t){
+  const arr = lvBars();
+  if(!t || !arr.length) return [];
+  const pts = (Array.isArray(t.pos.sl_trail) ? t.pos.sl_trail : []).slice().sort((a, b) => a[0] - b[0]);
+  const out = [];
+  let carry = null;
+  pts.forEach(([time, sl]) => {
+    const s = lvSnap(time);
+    if(s == null){ carry = sl; return; }
+    if(carry != null && !out.length && s > arr[0].time) out.push({time: arr[0].time, value: carry});
+    carry = null;
+    if(out.length && out[out.length - 1].time === s) out[out.length - 1].value = sl;
+    else out.push({time: s, value: sl});
+  });
+  if(!out.length && carry != null) out.push({time: arr[0].time, value: carry});
+  const last = arr[arr.length - 1].time, live = Number(t.sl);
+  if(live){
+    if(out.length && out[out.length - 1].time === last) out[out.length - 1].value = live;
+    else if(!out.length || out[out.length - 1].time < last) out.push({time: last, value: live});
+  }
+  const dir = t.dir === "buy" ? 1 : -1, entry = Number(t.entry_price);
+  out.forEach(p => { p.color = (p.value - entry) * dir > 0 ? LV_C.good : LV_C.bad; });
+  return out;
+}
+function lvStopTrade(list){
+  return (list || lvChartTrades()).find(t => t.open && Number(t.sl));
+}
+function lvMarks(force){
+  if(!LV.series) return;
+  const list = lvChartTrades();
+  const sig = JSON.stringify([LV.tf, LV.sel, LV.showStop, lvBars().length ? lvBars()[0].time : 0,
+    list.map(t => [t.id, t.exit_time || 0, t.sl || 0, t.tp || 0,
+                   t.pos ? (t.pos.sl_trail || []).length : 0])]);
+  if(force || sig !== LV.sig){
+    LV.sig = sig;
+    const marks = [];
+    list.forEach(t => {
+      const sel = LV.sel === t.id;
+      const a = lvSnap(t.entry_time);
+      if(a != null) marks.push({time: a, position: t.dir === "buy" ? "belowBar" : "aboveBar",
+        color: LV_C.gold, shape: t.dir === "buy" ? "arrowUp" : "arrowDown", size: sel ? 1.6 : 1,
+        text: sel ? (t.dir === "buy" ? "BUY " : "SELL ") + lvPx(t.entry_price) : ""});
+      if(!t.open){
+        const b = lvSnap(t.exit_time);
+        if(b != null) marks.push({time: b, position: "inBar", color: t.profit >= 0 ? LV_C.good : LV_C.bad,
+          shape: "circle", size: sel ? 1.3 : 0.7, text: sel ? lvMoney(t.profit) : ""});
+      }
+    });
+    marks.sort((x, y) => x.time - y.time);
+    LV.series.setMarkers(marks);
+    LV.lines.forEach(l => { try{ LV.series.removePriceLine(l); }catch(e){} });
+    LV.lines = [];
+    const LS = LV.LC.LineStyle;
+    list.filter(t => t.open).forEach(t => {
+      LV.lines.push(LV.series.createPriceLine({price: Number(t.entry_price), color: LV_C.gold, lineWidth: 1,
+        lineStyle: LS.Solid, axisLabelVisible: true, title: t.dir === "buy" ? "BUY" : "SELL"}));
+      /* THE STOP, labelled with what a hit would close the trade at -- the
+         number Trevor asked to see. Solid and heavier than the rest: of every
+         line here, it is the one that ends the trade. */
+      if(LV.showStop && Number(t.sl)){
+        const at = lvStopPnl(t.pos);
+        LV.lines.push(LV.series.createPriceLine({price: Number(t.sl),
+          color: at != null && at > 0 ? LV_C.good : LV_C.bad, lineWidth: 2, lineStyle: LS.Solid,
+          axisLabelVisible: true, title: "SL " + (at != null ? lvMoney(at) : "")}));
+      }
+      if(Number(t.tp)) LV.lines.push(LV.series.createPriceLine({price: Number(t.tp), color: LV_C.good,
+        lineWidth: 1, lineStyle: LS.Dashed, axisLabelVisible: true, title: "TP"}));
+    });
+    if(LV.trail){
+      const st = LV.showStop ? lvStopTrade(list) : null;
+      LV.trail.setData(st ? lvTrailData(st) : []);
+    }
+  }
+  lvPath(list);
+}
+/* Every second: the trail's last step follows the broker's stop. */
+function lvTrailLive(){
+  if(!LV.trail || !LV.showStop) return;
+  const t = lvStopTrade(), last = lvLastBar();
+  if(!t || !last) return;
+  const dir = t.dir === "buy" ? 1 : -1, sl = Number(t.sl);
+  try{
+    LV.trail.update({time: last.time, value: sl,
+                     color: (sl - Number(t.entry_price)) * dir > 0 ? LV_C.good : LV_C.bad});
+  }catch(e){ /* an older point than the trail's last: the next setData fixes it */ }
+}
+/* The selected trade, entry to exit (or to now), as a dashed line. */
+function lvPath(list){
+  if(!LV.path) return;
+  const t = (list || lvChartTrades()).find(x => x.id === LV.sel);
+  const a = t ? lvSnap(t.entry_time) : null;
+  const last = lvLastBar();
+  const b = t ? (t.open ? (last && last.time) : lvSnap(t.exit_time)) : null;
+  if(!t || a == null || b == null || b <= a){ LV.path.setData([]); return; }
+  LV.path.applyOptions({color: t.profit >= 0 ? LV_C.good : LV_C.bad});
+  LV.path.setData([{time: a, value: Number(t.entry_price)},
+                   {time: b, value: Number(t.open ? t.price : t.exit_price)}]);
+}
+function lvOhlc(bar){
+  const el = document.getElementById("lvohlc");
+  if(!el) return;
+  if(!bar){ el.textContent = lvBars().length ? "" : "No bars yet on this timeframe."; return; }
+  const ch = bar.close - bar.open;
+  el.innerHTML = `${lvBarWhen(bar.time)} O <b>${lvPx(bar.open)}</b> H <b>${lvPx(bar.high)}</b> ` +
+                 `L <b>${lvPx(bar.low)}</b> C <b class="${lvTone(ch)}">${lvPx(bar.close)}</b>`;
+}
+async function lvSetTf(tf, keepView){
+  LV.viewGen++;
+  LV.tf = tf;
+  lvPaintControls();
+  if(!LV.series) return;
+  await lvMaybeBars();
+  lvSetSeriesData(!keepView);
+}
+/* Tap a trade: a timeframe that fits how long it lasted AND still reaches back
+   to it, then the chart centred on it. */
+async function lvFocus(id){
+  const t = lvChartTrades().find(x => x.id === id);
+  if(!t) return;
+  LV.viewGen++;
+  LV.sel = id;
+  lvPaintHistory();
+  const end = t.open ? lvNow() : Number(t.exit_time);
+  const span = end - Number(t.entry_time), age = lvNow() - Number(t.entry_time);
+  let i = LV_TFS.indexOf(span <= 75 * 60 ? "M1" : span <= 6 * 3600 ? "M5"
+                        : span <= 18 * 3600 ? "M15" : span <= 5 * 86400 ? "H1" : "H4");
+  while(i < LV_TFS.length - 1 && age > LV_TF_REACH[LV_TFS[i]]) i++;
+  document.getElementById("lvchartcard").scrollIntoView(
+    {behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"});
+  if(!(await lvEnsureChart())) return;
+  await lvSetTf(LV_TFS[i], true);
+  /* Still before the first loaded bar? One timeframe up, until it fits. */
+  while(i < LV_TFS.length - 1 && lvSnap(t.entry_time) == null){ i++; await lvSetTf(LV_TFS[i], true); }
+  const arr = lvBars();
+  const a = lvIdx(arr, Number(t.entry_time));
+  const b = t.open ? arr.length - 1 : lvIdx(arr, Number(t.exit_time));
+  if(a >= 0){
+    const pad = Math.max(8, Math.round(Math.max(12, b - a) * 0.5));
+    LV.chart.timeScale().setVisibleLogicalRange({from: a - pad, to: b + pad});
+  }
+  lvMarks(true);
+}
+
+document.addEventListener("click", e => {
+  const tf = e.target.closest("[data-lvtf]");
+  if(tf){ LV.sel = null; lvSetTf(tf.dataset.lvtf, false); lvPaintHistory(); return; }
+  const st = e.target.closest("[data-lvstyle]");
+  if(st && LV.chart){
+    LV.style = st.dataset.lvstyle;
+    lvPaintControls();
+    const range = LV.chart.timeScale().getVisibleLogicalRange();
+    lvMakeSeries();
+    if(range) LV.chart.timeScale().setVisibleLogicalRange(range);
+    return;
+  }
+  if(e.target.closest("[data-lvstopt]")){
+    LV.showStop = !LV.showStop;
+    try{ localStorage.setItem("gb.live.stop", LV.showStop ? "1" : "0"); }catch(err){}
+    lvPaintControls();
+    lvMarks(true);
+    if(LV.series) LV.series.applyOptions({});   // re-run autoscale with or without the stop
+    return;
+  }
+  const f = e.target.closest("[data-lvfocus]");
+  if(f){
+    /* "Show stop on chart" means the stop is on it, whatever the toggle said. */
+    if(f.dataset.lvfocus.charAt(0) === "p" && !LV.showStop){
+      LV.showStop = true;
+      try{ localStorage.setItem("gb.live.stop", "1"); }catch(err){}
+      lvPaintControls();
+    }
+    lvFocus(f.dataset.lvfocus);
+    return;
+  }
+  const hf = e.target.closest("[data-lvhf]");
+  if(hf){ LV.hf = hf.dataset.lvhf; lvPaintHistory(); return; }
+  if(e.target.closest("[data-lvchange]")){ LV.editing = true; LV.formErr = ""; lvShow(); return; }
+  if(e.target.closest("[data-lvcancel]")){ LV.editing = false; LV.formErr = ""; lvShow(); return; }
+  if(e.target.closest("[data-lvsave]")){
+    const inp = document.getElementById("lvurl");
+    const v = inp ? inp.value.trim().replace(/\/+$/, "") : "";
+    if(!/^https?:\/\/[^\s"'<>]+$/i.test(v)){
+      LV.formErr = "That is not an address this page can use. It starts with https://";
+      lvShow();
+      return;
+    }
+    try{ localStorage.setItem(LIVE_KEY, v); }catch(err){ /* this visit only */ }
+    LV.url = v;
+    LV.editing = false; LV.formErr = "";
+    LV.data = null; LV.err = ""; LV.at = 0; LV.bars = {}; LV.runs = null; LV.runsAt = 0; LV.sel = null;
+    LV.liveAt = 0; LV.wantLive = false;
+    lvShow();
+    lvPaintBadge();
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden && liveUrl()) lvSchedule(0);
+});
+lvAdoptLink();
+lvSchedule(0);
+
 function paint(stamp){
   document.getElementById("page-home").innerHTML = renderHome();
   document.getElementById("page-active").innerHTML = renderActive();
@@ -7663,7 +8990,7 @@ const POLL_MS = 20000;
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
-const PAGES = ["home", "active", "results", "schedule", "settings"];
+const PAGES = ["home", "active", "results", "schedule", "settings", "live"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
@@ -7691,6 +9018,9 @@ function go(page){
   document.querySelectorAll("nav button").forEach(b =>
     b.setAttribute("aria-selected", String(b.dataset.p === "home")));
   window.scrollTo(0, 0);
+  /* Live builds its chart the first time it is SHOWN: a chart created inside a
+     hidden section measures zero wide. */
+  if(page === "live") lvShow();
 }
 
 /* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
