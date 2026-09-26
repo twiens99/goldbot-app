@@ -1305,6 +1305,21 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 }
 .lv-note.warn{background:rgba(224,139,74,.1);border:1px solid rgba(224,139,74,.25);color:var(--warn);}
 .lv-note b{font-weight:700;}
+/* 2026-09-25 -- IS THE VPS LETTING THE EA TRADE. A chip on the Live badge,
+   always; a red panel on top of Home only when it is definitely off. */
+.lv-algo{display:inline-block;font-size:.62rem;font-weight:700;letter-spacing:.05em;
+  padding:1px 6px;border-radius:4px;margin-right:6px;vertical-align:1px;white-space:nowrap;}
+.lv-algo.on{background:rgba(95,190,149,.14);color:var(--good);}
+.lv-algo.off{background:rgba(224,104,90,.16);color:var(--bad);}
+.lv-algo.unknown{background:var(--tonal);color:var(--dim);}
+.lv-alerts{display:flex;flex-direction:column;gap:8px;}
+.lv-alerts[hidden]{display:none;}
+.lv-alert{display:block;width:100%;text-align:left;font:inherit;color:var(--text);cursor:pointer;
+  border:1px solid rgba(224,104,90,.35);border-left:3px solid var(--bad);
+  background:rgba(224,104,90,.08);border-radius:12px;padding:11px 13px;}
+.lv-alert .lv-at{font-weight:700;color:var(--bad);font-size:.9rem;}
+.lv-alert .lv-ab{font-size:.78rem;color:var(--dim);line-height:1.45;margin-top:3px;}
+.lv-alert .lv-ab b{color:var(--text);}
 .lv-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:14px;overflow:hidden;}
 .lv-stat{background:var(--card);padding:10px 12px 11px;display:flex;flex-direction:column;gap:1px;min-width:0;}
 .lv-k{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--faint);}
@@ -1508,7 +1523,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260925-213827";
+const APP_BUILD = "20260925-215133";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6462,6 +6477,8 @@ function renderHome(){
        This is gonna be the live trading section."* It is the one badge about
        money rather than about the machines, so it leads. Its subline is
        painted by lvPaintBadge() from the VPS poll, not from the snapshot. */
+    /* ABOVE LIVE, and empty unless the VPS cannot trade -- see lvAlertHtml. */
+    + (h => `<div id="lvalert" class="lv-alerts"${h ? "" : " hidden"}>${h}</div>`)(lvAlertHtml())
     + homeButton("live", `<span class="lv-dot${liveUrl() ? "" : " off"}"></span>`, "Live",
                  `<span id="lvsub">${lvBadgeText()}</span>`, "var(--gold)")
     + homeButton("active", "▶", "Active", activeSummary())
@@ -7967,8 +7984,62 @@ async function lvMaybeRegimes(){
   finally{ LV.runsBusy = false; }
 }
 
+/* ---------- is the VPS letting the EA trade ---------- */
+/* Trevor, 2026-09-25, after the VPS was found with Algo Trading OFF and BULL
+   armed: *"We need an alert in the app somewhere maybe the home screen. That
+   needs to tell me whether the VPS is letting ALGO trading on."*
+
+   THREE ANSWERS, NOT TWO. Unknown is its own state and never renders as ON: a
+   phone off the tailnet, a feed that is not running and a VPS that stopped
+   answering all leave the last reading stale, and a stale "on" is exactly the
+   reassurance that hid this switch until the feed existed.
+
+   It reads MT5's TERMINAL switch -- TerminalInfoInteger(TERMINAL_TRADE_ALLOWED),
+   the toolbar's Algo Trading button. The EA's own "Allow Algo Trading" (the hat
+   on its chart) is not in the feed; only the EA can see that one. */
+function lvAlgo(){
+  if(!liveUrl()) return {k: "unknown", why: "no VPS address on this phone"};
+  const d = LV.data;
+  if(!d) return {k: "unknown", why: LV.err ? "can't reach the VPS" : "connecting"};
+  if(LV.err) return {k: "unknown", why: "the VPS is not answering"};
+  const feed = (d.health && d.health.feed && d.health.feed.status) || "";
+  if(feed !== "ok") return {k: "unknown",
+    why: feed === "stalled" ? "the MT5 feed stopped writing" : "the MT5 feed is not running"};
+  const t = d.terminal || {};
+  if(t.trade_allowed === true) return {k: "on"};
+  if(t.trade_allowed === false) return {k: "off"};
+  return {k: "unknown", why: "the feed does not say"};
+}
+function lvAlgoChip(){
+  const a = lvAlgo();
+  const label = a.k === "on" ? "ALGO ON" : a.k === "off" ? "ALGO OFF" : "ALGO ?";
+  return `<span class="lv-algo ${a.k}"${a.why ? ` title="${esc(a.why)}"` : ""}>${label}</span>`;
+}
+/* THE RED PANEL: a DEFINITE off, or a terminal that has lost the broker, which
+   stops trading just as surely. Unknown stays on the chip -- a panel that
+   appears every time the phone leaves the tailnet is a panel nobody reads. */
+function lvAlertHtml(){
+  const a = lvAlgo(), d = LV.data;
+  const lost = a.k !== "unknown" && d && d.terminal && d.terminal.connected === false;
+  if(a.k !== "off" && !lost) return "";
+  const armed = ((d && d.gates) || []).filter(g => g.armed).map(g => lvRegTag(g.regime));
+  const stakes = armed.length
+    ? `${armed.join(" ")} ${armed.length > 1 ? "are" : "is"} armed, but the EA cannot open a trade.`
+    : "The EA cannot open a trade.";
+  const out = [];
+  if(a.k === "off") out.push(["Algo Trading is OFF on the VPS",
+    `${stakes} In MT5 on the VPS, click <b>Algo Trading</b> in the toolbar so it shows a green ▶.`]);
+  if(lost) out.push(["MT5 on the VPS has lost the broker",
+    `${stakes} Check MT5's connection on the VPS (bottom-right corner).`]);
+  return out.map(([h, b]) => `<button type="button" class="lv-alert" data-go="live">` +
+    `<div class="lv-at">🛑 ${h}</div><div class="lv-ab">${b}</div></button>`).join("");
+}
+
 /* ---------- the home badge ---------- */
-function lvBadgeText(){
+/* The chip leads every subline, including "not connected": whether the VPS
+   can trade is the one answer that belongs on Home whatever else is known. */
+function lvBadgeText(){ return lvAlgoChip() + lvBadgeMain(); }
+function lvBadgeMain(){
   if(!liveUrl()) return "Not connected — add the VPS address";
   const d = LV.data;
   if(!d) return LV.err ? "VPS unreachable" : "Connecting…";
@@ -7994,6 +8065,8 @@ function lvBadgeText(){
 function lvPaintBadge(){
   const el = document.getElementById("lvsub");
   if(el) el.innerHTML = lvBadgeText();
+  const al = document.getElementById("lvalert");
+  if(al){ const h = lvAlertHtml(); al.innerHTML = h; al.hidden = !h; }
   const dot = document.querySelector("#page-home .lv-dot");
   if(dot) dot.classList.toggle("off", !liveUrl() || !LV.data || !!LV.err);
 }
@@ -8129,7 +8202,7 @@ function lvIssues(){
     : weekend;
   if(feed.status === "missing")
     out.push(["warn", "The VPS is answering, but the MT5 feed is not running. In MT5 on the VPS: " +
-                      "<b>Navigator → Services → GoldBot_LiveFeed → Start</b>."]);
+                      "<b>Navigator → right-click Services → Refresh, then right-click GoldBot_LiveFeed → Add Service</b>."]);
   else if(feed.status === "stalled")
     out.push(["warn", `The MT5 feed stopped writing ${lvAgo(feed.age_s)}. Is MT5 still running on the VPS?`]);
   if(!d.ea)
