@@ -1544,7 +1544,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260927-070624";
+const APP_BUILD = "20260927-101252";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2089,7 +2089,11 @@ const startedSeed = sd => STARTED_STATUSES.has(String(sd.status || "").toLowerCa
 const EXECUTING_STATUSES = new Set(["running", "claimed"]);
 const executingSeed = sd =>
   EXECUTING_STATUSES.has(String(sd.status || "").toLowerCase());
-const queuedSeed = sd => String(sd.status || "").toLowerCase() === "pending";
+/* `held` (2026-09-27) is queued too: work waiting for a build, not a person --
+   seeds.HELD. A machine takes it the moment it is on the build that can run it. */
+const queuedSeed = sd => ["pending", "held"].includes(String(sd.status || "").toLowerCase());
+const seedStatusText = sd => String(sd.status || "").toLowerCase() === "held"
+  ? "held · waits for the build" : String(sd.status || "");
 const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
 
 function renderSeeds(list, label){
@@ -2120,7 +2124,7 @@ function seedCard(sd){
                 ? `<span class="chip">${esc(sd.only_machine)} only</span>` : ""}
             <span class="chip">${esc(roundType(sd))}</span>
             <span class="sp"></span>
-            <span class="when">${esc(String(sd.status || ""))}</span>
+            <span class="when">${esc(seedStatusText(sd))}</span>
           </div>
           <div>
             <div class="title">${esc(sd.label || humanize(sd.group_id) || "Seeded work")}</div>
