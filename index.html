@@ -1320,6 +1320,21 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-alert .lv-at{font-weight:700;color:var(--bad);font-size:.9rem;}
 .lv-alert .lv-ab{font-size:.78rem;color:var(--dim);line-height:1.45;margin-top:3px;}
 .lv-alert .lv-ab b{color:var(--text);}
+/* 2026-09-26 -- OUR ETA and the TRACK RECORD it stands on. */
+.trk-note{font-size:.74rem;color:var(--dim);line-height:1.45;}
+.trk-note b{color:var(--text);font-weight:600;}
+.trk-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:.78rem;}
+.trk-kv span{color:var(--dim);}
+.trk-kv b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;}
+.trk-scroll{overflow-x:auto;}
+.trk-tbl{width:100%;border-collapse:collapse;font-size:.7rem;font-variant-numeric:tabular-nums;}
+.trk-tbl th{text-align:left;color:var(--faint);font-weight:600;padding:3px 4px;border-bottom:1px solid var(--line);white-space:nowrap;}
+.trk-tbl td{padding:3px 4px;border-bottom:1px solid var(--line);color:var(--text);white-space:nowrap;}
+.trk-tbl td.dim{color:var(--dim);}
+.trk-tbl td.bad{color:var(--warn);}
+.trk-heat{display:grid;grid-template-columns:28px repeat(24,1fr);gap:1px;font-size:.58rem;color:var(--faint);}
+.trk-heat i{display:block;height:11px;border-radius:2px;background:var(--line);}
+.trk-heat .hl{line-height:11px;}
 .lv-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:14px;overflow:hidden;}
 .lv-stat{background:var(--card);padding:10px 12px 11px;display:flex;flex-direction:column;gap:1px;min-width:0;}
 .lv-k{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--faint);}
@@ -1495,6 +1510,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
          comes from the VPS, not the gist, so paint() never touches it -- the
          chart inside is built once and would be destroyed by a repaint. -->
     <section class="page" id="page-live" hidden></section>
+    <section class="page" id="page-track" hidden></section>
   </main>
 
   <nav role="tablist">
@@ -1523,7 +1539,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260926-151644";
+const APP_BUILD = "20260926-184329";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1536,6 +1552,7 @@ let PICKS = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
+let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
 /* Who fed each controller, keyed by controller machine name. */
 let AGENTCONTRIB = {};
 /* The four words for where a variable is up to, explained -- published once at
@@ -2885,10 +2902,14 @@ function machineCard(f){
                       duration. A machine on older code sends none and metaRow
                       drops the cell, which is why this needs no guard. */
                    ["Started", fmtStarted(f.phase_since)],
-                   ["ETA", fmtEta(etaAt(f))],
+                   /* 2026-09-26 -- OUR estimate (eta_model), MT5's only when
+                      the snapshot carries none: MT5 projects the percent of the
+                      WHOLE GRID and was ~20x wrong. The range is under the row. */
+                   ["ETA", fmtEta(ourEtaAt(f) || etaAt(f))],
                    ["Jobs done", jobsDone(f.regime, f.bucket_id)],
                    ["In phase", phaseFor(f)]])}
         ${progressBar(f, rc)}
+        ${etaNote(f)}
         ${passPick(f)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
             ? sweptList(f.seed.variables, f.seed.cells)
@@ -6499,6 +6520,10 @@ function renderHome(){
        put the thing that decides WHAT RUNS NEXT behind the same tap as a
        bucket-priority toggle. It is not a setting; it is the plan. */
     + homeButton("schedule", "☷", "Schedule", scheduleSummary(), "var(--range)")
+    /* 2026-09-26 -- THE TRACK RECORD. Trevor: *"Should be able to see a track
+       record of these things"* -- how long tasks took, how good the ETAs were,
+       when each agent lends. Under Schedule: it is what the plan's times stand on. */
+    + homeButton("track", "⏱", "Track record", trackSummary(), "var(--done)")
     + homeButton("settings", "⚙", "Settings", settingsSummary())
     /* BELOW RESULTS, and only when there is something in it. An empty "To
        review" heading is a heading that trains you to stop looking. */
@@ -7984,6 +8009,136 @@ async function lvMaybeRegimes(){
   finally{ LV.runsBusy = false; }
 }
 
+/* ---------- OUR ETA (2026-09-26) ---------- */
+/* Trevor: *"The times it shows on my app, Is not reliable at all ... Start
+   predicting them instead of what the MT5, says."* f.eta is built by the
+   publisher (app_snapshot._eta_for) from every past task this fleet recorded
+   (task_timing), the model learned from them (eta_model) and the agents'
+   hour-of-week track record (agent_record). MT5's own figure stays visible,
+   labelled, so the two can be compared. */
+function ourEtaAt(f){
+  const e = f && f.eta;
+  if(!e || e.finish_at == null || stale(f)) return null;
+  return new Date(e.finish_at * 1000);
+}
+function etaNote(f){
+  const e = f && f.eta;
+  if(!e) return "";
+  if(e.seconds == null)
+    return `<div class="trk-note">No estimate yet${e.basis ? " — " + esc(e.basis) : ""}.</div>`;
+  const when = s => fmtEta(new Date(s * 1000));
+  const mt5 = fmtEta(etaAt(f));
+  const bits = [];
+  if(e.passes) bits.push(`${e.passes} passes` +
+    (e.grid && e.grid > e.passes ? ` of a ${e.grid.toLocaleString()}-cell grid` : ""));
+  if(e.cores) bits.push(`${e.cores} cores` + (e.agent_cores ? ` (≈${e.agent_cores} borrowed)` : ""));
+  const over = e.overdue
+    ? `<div class="warnrow"><span>⚠️</span><span>Running past the high end of the estimate — ` +
+      `a stall, a sleeping machine, or a slower task than this history knows.</span></div>` : "";
+  return `<div class="trk-note">Estimate <b>${esc(hm(e.seconds))}</b> in all ` +
+    `(${esc(hm(e.low))}–${esc(hm(e.high))}), done <b>${esc(when(e.finish_low))}–${esc(when(e.finish_high))}</b>` +
+    (bits.length ? ` · ${esc(bits.join(" on "))}` : "") +
+    `. From ${esc(e.basis || "history")}` +
+    (mt5 ? ` · MT5 says ${esc(mt5)}` : "") + `.</div>` + over;
+}
+
+/* ---------- THE TRACK RECORD (2026-09-26) ---------- */
+/* Trevor: *"Should be able to see a track record of these things."* Built by
+   app_snapshot.collect_track_record. Every number here is MEASURED off this
+   fleet's own tasks; the only priors (a machine with no history of its own)
+   are named as priors in the ETA's own basis line, never here. */
+function trackSummary(){
+  const a = TRACK.accuracy;
+  if(!a || !a.n) return TRACK.machines ? "Recording how long every task takes" : "Not on this snapshot yet";
+  return `<span class="hcount">${a.within_25pct}</span> of ${a.n} past optimizations predicted within ±25%`;
+}
+function trkHeat(heat){
+  if(!Array.isArray(heat)) return "";
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  let h = '<div class="trk-heat"><span></span>';
+  for(let i = 0; i < 24; i++) h += `<span class="hl">${i % 6 === 0 ? i : ""}</span>`;
+  heat.forEach((row, d) => {
+    h += `<span class="hl">${days[d]}</span>`;
+    row.forEach(v => {
+      h += v == null ? '<i style="opacity:.25"></i>'
+        : `<i style="background:var(--good);opacity:${(0.12 + 0.88 * v).toFixed(2)}"></i>`;
+    });
+  });
+  return h + '</div>';
+}
+function trkPct(x){ return x == null ? "—" : Math.round(x * 100) + "%"; }
+function trkKv(pairs){
+  return '<div class="trk-kv">' + pairs.filter(p => p[1] != null && p[1] !== "")
+    .map(([k, v]) => `<span>${esc(k)}</span><b>${esc(String(v))}</b>`).join("") + '</div>';
+}
+function renderTrack(){
+  const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  if(!TRACK.machines)
+    return '<div class="home">' + back + '<div class="card"><div class="card-in">' +
+      '<div class="trk-note">This snapshot has no track record yet — it arrives with the ' +
+      'publisher that records task times.</div></div></div></div>';
+  const a = TRACK.accuracy || {};
+  let out = '<div class="home">' + back;
+  out += '<div class="section-label">How good the estimates are</div><div class="card"><div class="card-in">' +
+    trkKv([["Optimizations within ±25%", `${a.within_25pct ?? "—"} of ${a.n ?? "—"}`],
+           ["Median actual ÷ estimate", a.median_ratio],
+           ["Stalled (machine asleep or stopped)", a.stalled ?? 0]]) +
+    '<div class="trk-note">Scored against every finished task this fleet recorded. Stalls are counted ' +
+    'apart: nothing can predict a machine going to sleep, but its card says when a task runs long.</div>' +
+    '</div></div>';
+  Object.entries(TRACK.machines).forEach(([m, s]) => {
+    const pr = s.pass_seconds_real || {};
+    const bt = s.backtests || {};
+    const kv = [];
+    if(pr.genetic) kv.push(["Real-tick pass, big grid", `${hm(pr.genetic.typical)} (${hm(pr.genetic.low)}–${hm(pr.genetic.high)}) · ${pr.genetic.n} runs`]);
+    if(pr.complete) kv.push(["Real-tick pass, small grid", `${hm(pr.complete.typical)} · ${pr.complete.n} runs`]);
+    /* The backtest names come from the DATA, never from this file: the page
+       is public and the leak scan refuses protected names in its source. */
+    Object.entries(bt).forEach(([t, v]) => {
+      if(v) kv.push([t, `${hm(v.typical)} (${hm(v.low)}–${hm(v.high)}) · ${v.n} runs`]);
+    });
+    kv.push(["Cores", s.cores], ["Cores kept busy", trkPct(s.utilisation)], ["Stalls", s.stalls]);
+    const rows = (s.recent || []).slice().reverse().map(r => {
+      const ratio = (r.predicted && r.seconds) ? r.seconds / r.predicted : null;
+      const off = r.stalled || (ratio && (ratio < 0.8 || ratio > 1.25));
+      return `<tr><td>${esc(r.task)}</td><td class="dim">${esc(humanize(r.group || ""))}</td>` +
+        `<td class="dim">${esc(fmtWhen(r.start))}</td><td>${esc(hm(r.seconds))}</td>` +
+        `<td class="dim">${r.predicted ? esc(hm(r.predicted)) : "—"}</td>` +
+        `<td class="${off ? "bad" : ""}">${r.stalled ? "stalled" : ratio ? ratio.toFixed(2) + "×" : "—"}</td>` +
+        `<td class="dim">${r.passes ?? ""}${r.grid && r.grid !== r.passes ? " / " + r.grid.toLocaleString() : ""}</td></tr>`;
+    }).join("");
+    out += `<div class="section-label">${esc(m)} · ${s.tasks} tasks recorded</div><div class="card"><div class="card-in">` +
+      trkKv(kv) +
+      (rows ? '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Task</th><th>Group</th><th>Started</th>' +
+              '<th>Took</th><th>Est.</th><th>vs est.</th><th>Passes / grid</th></tr>' + rows + '</table></div>' : "") +
+      '</div></div>';
+  });
+  const bands = TRACK.passes_vs_grid || [];
+  if(bands.length){
+    out += '<div class="section-label">Passes the search really runs</div><div class="card"><div class="card-in">' +
+      '<table class="trk-tbl"><tr><th>Grid</th><th>Typical</th><th>Range</th><th>Rounds</th></tr>' +
+      bands.map(b => `<tr><td>${b.grid_from.toLocaleString()}${b.grid_to < 1e11 ? "–" + b.grid_to.toLocaleString() : "+"}</td>` +
+        `<td>${b.typical}</td><td class="dim">${b.min}–${b.max}</td><td class="dim">${b.n}</td></tr>`).join("") +
+      '</table><div class="trk-note">MT5’s own time-remaining assumes the whole grid runs. It does not: ' +
+      'the genetic search stops at about these counts, and a grid of 400 or fewer runs every cell.</div></div></div>';
+  }
+  Object.entries(TRACK.agents || {}).forEach(([m, r]) => {
+    const stops = Object.entries(r.stops || {}).sort((x, y) => y[1] - x[1])
+      .map(([k, v]) => `${k} ×${v}`).join(", ");
+    out += `<div class="section-label">${esc(m)} · lends to ${esc(r.agent_for || "—")}</div>` +
+      '<div class="card"><div class="card-in">' +
+      trkKv([["Lending", `${trkPct(r.availability)} of the time`], ["Per week", `${r.hours_per_week} h`],
+             ["Cores", r.typical_cores], ["At night (22–07)", trkPct(r.night_share)],
+             ["Weekends", trkPct(r.weekend_share)], ["Typical stretch", hm((r.median_window_hours || 0) * 3600)],
+             ["Now", r.lending_now ? "lending" : "not lending"]]) +
+      trkHeat(r.heat) +
+      `<div class="trk-note">One square per hour of the week, darker = lent more often. ` +
+      `Observed ${esc(hm((r.observed_hours || 0) * 3600))} since ${esc(fmtWhen(r.since))}` +
+      (stops ? `. Stops: ${esc(stops)}` : "") + `.</div></div></div>`;
+  });
+  return out + '</div>';
+}
+
 /* ---------- is the VPS letting the EA trade ---------- */
 /* Trevor, 2026-09-25, after the VPS was found with Algo Trading OFF and BULL
    armed: *"We need an alert in the app somewhere maybe the home screen. That
@@ -8883,6 +9038,7 @@ function paint(stamp){
   document.getElementById("page-active").innerHTML = renderActive();
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("page-settings").innerHTML = renderSettings();
+  document.getElementById("page-track").innerHTML = renderTrack();
   repaintSchedule();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
@@ -8927,6 +9083,7 @@ function applySnapshot(d, source){
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = oneRowPerMachine(d.fleet);
   AGENTEFF = d.agent_efficiency || {};
+  TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
@@ -9063,7 +9220,7 @@ const POLL_MS = 20000;
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
-const PAGES = ["home", "active", "results", "schedule", "settings", "live"];
+const PAGES = ["home", "active", "results", "schedule", "settings", "live", "track"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
