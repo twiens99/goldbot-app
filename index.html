@@ -1539,7 +1539,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260926-203106";
+const APP_BUILD = "20260926-203903";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8016,7 +8016,24 @@ async function lvMaybeRegimes(){
    (task_timing), the model learned from them (eta_model) and the agents'
    hour-of-week track record (agent_record). MT5's own figure stays visible,
    labelled, so the two can be compared. */
+/* 2026-09-26 (late) -- A BACKTEST'S OWN PACE TAKES OVER ONCE IT HAS ONE.
+   Trevor: *"I want that card to show the calculated time that we have learned
+   from."* The history gave the Laptop's bucket test 24m in all (21m-44m, 70
+   runs); the one running at 20:34 was 44% done after 30m -- 38m still to go --
+   and the card said "due now", because a history-only estimate has nothing
+   left once the typical time has passed. A single backtest's percent is the
+   share of its date range done, so once it has moved (10%+) the run's own pace
+   is the better measurement: history before, this run's pace after. NOT for an
+   optimization (source "mt5"): its percent is of the whole grid, ~20x wrong on
+   a genetic search, and a small grid moves in waves -- the history model stays.
+   Keyed off the data's `source`, never a task name: this page is public and
+   the leak scan refuses protected names in its source. */
+function ownPace(f){
+  return !!(f && f.source === "backtest" && f.percent != null && f.percent >= 10
+            && f.percent < 100 && f.pct_per_hour);
+}
 function ourEtaAt(f){
+  if(ownPace(f)){ const own = etaAt(f); if(own) return own; }
   const e = f && f.eta;
   if(!e || e.finish_at == null || stale(f)) return null;
   return new Date(e.finish_at * 1000);
@@ -8027,6 +8044,21 @@ function etaNote(f){
   if(e.seconds == null)
     return `<div class="trk-note">No estimate yet${e.basis ? " — " + esc(e.basis) : ""}.</div>`;
   const when = s => fmtEta(new Date(s * 1000));
+  const own = ownPace(f) ? etaAt(f) : null;
+  if(own){
+    /* The run's own pace (ourEtaAt says why), with the history kept beside it
+       so a slow run shows as slow rather than as a wrong estimate. */
+    const began = Date.parse(f.phase_since);
+    const ran = isNaN(began) ? null : Math.max(0, (Date.now() - began) / 1000);
+    const left = Math.max(0, (own - Date.now()) / 1000);
+    const slower = ran != null && e.high && ran + left > e.high;
+    return `<div class="trk-note">This run: <b>${esc(String(f.percent))}%</b>` +
+      (ran != null ? ` in ${esc(hm(ran))}` : "") +
+      ` — at its own pace <b>~${esc(hm(left))} left</b>, done <b>${esc(fmtEta(own))}</b>. ` +
+      `History: ${esc(hm(e.seconds))} in all (${esc(hm(e.low))}–${esc(hm(e.high))}), ` +
+      `from ${esc(e.basis || "history")}` +
+      (slower ? " — slower than its usual range" : "") + `.</div>`;
+  }
   const mt5 = fmtEta(etaAt(f));
   const bits = [];
   if(e.passes) bits.push(`${e.passes} passes` +
