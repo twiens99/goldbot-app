@@ -1015,6 +1015,11 @@ article.jrow{cursor:default;}
 .applyb:disabled{background:var(--card-2);color:var(--faint);cursor:default;}
 .applyb:active:not(:disabled){transform:translateY(1px);}
 .pickfoot{font-size:.68rem;color:var(--faint);line-height:1.45;}
+/* 2026-09-26 -- SENDING A PASS from the app, and the rounds not finished yet. */
+.sendp{display:flex;flex-direction:column;gap:7px;margin-top:10px;
+  border-top:1px solid var(--line);padding-top:9px;}
+.applyb.armed{background:var(--warn);color:#1A1204;}
+.iptasks{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
 /* THE WAY IN. Full width with a chevron, because that is this app's own shape
    for "this opens something" -- the same read as a home button or a results
    row. Tonal rather than gold: it must be findable at a glance without
@@ -1539,7 +1544,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260926-203903";
+const APP_BUILD = "20260926-213340";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3048,7 +3053,9 @@ function jobCard(r, rep, condensed, hint, cadence){
   const rc = REGIME_CLASS[r.regime] || "";
   rep = rep || {};
   const cells = [
-    ["Round", "r" + r.round_no],
+    /* 2026-09-26 -- a narrow seed's round has no fleet round number: it is
+       shown here and charged to nothing (collect_uncounted). */
+    ["Round", r.counted === false ? "seed · not counted" : "r" + r.round_no],
     ["Pass picked", r.picked_pass ?? null],
     ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
            : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
@@ -3139,7 +3146,15 @@ function renderResultsJob(r){
   const openTask = tasks[open];
   const band = (openTask && !isBacktest(openTask) && openTask.detail)
     ? openTask.detail.cadence : null;
-  return back + chips + jobCard(r, rep, false, null, band) +
+  /* 2026-09-26 -- CHANGE THE PASS on the group's latest applied round
+     (published as `changeable`); fleet_api checks the same again. */
+  const change = r.changeable
+    ? `<div class="card"><div class="card-in">` +
+        sendForm({regime: _groupRegime(r.group_id) || r.regime, bucket_id: r.bucket_id,
+                  group_id: r.group_id, mode: "override", round: r.round,
+                  applied_pass: r.applied_pass}) + `</div></div>`
+    : "";
+  return back + chips + jobCard(r, rep, false, null, band) + change +
     /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
        *"I want the Variables and their status info in here right below the PF
        numbers, above the Reports."*
@@ -3303,7 +3318,8 @@ function renderResultsList(){
   /* "newest first" WAS TEXT AND IS NOW A CONTROL. Trevor: *"Where it currently
      says NEWEST FIRST, i want that to be a button chip also."* Same words, same
      place -- it simply does something now. */
-  return `<div class="section-label">${shown.filter(completed).length} completed` +
+  return inProgressSection() +
+    `<div class="section-label">${shown.filter(completed).length} completed` +
     (nf ? ` · ${nf} failed` : "") + `</div>
     <div class="rctl">
       <span class="rlab">Show</span>
@@ -3838,12 +3854,12 @@ function pickCard(pk){
             has a button for that yet — ask for it in a session.</div>` : `
           <ol class="haltsteps">
             <li>Choose a pass from the table below.</li>
-            <li>In the GoldBot Telegram chat, send <b>${esc(pk.n)} &lt;pass&gt;</b>
-              — for example <b>${esc(pk.n)} 207</b> — or reply to this
-              round's alert with just the pass number.</li>
+            <li>Send it from here, below. Or in the GoldBot Telegram chat, send
+              <b>${esc(pk.n)} &lt;pass&gt;</b> — for example <b>${esc(pk.n)} 207</b>
+              — or reply to this round's alert with just the pass number.</li>
           </ol>`}
-          ${none ? "" : `<div class="opsnote">The app cannot send it yet: it has no
-            write path to the machines.</div>`}
+          ${none ? "" : sendForm({regime: pk.regime, bucket_id: pk.bucket_id,
+            group_id: pk.group_id, mode: "confirm", round: roundOf(pk.rel_dir)})}
         </div>
       </div>
     </article>` + ((pk.passes || []).length ? optimizeBadge(t, 1) : "");
@@ -6470,7 +6486,7 @@ function toReview(){
     return [];
   }
   return done.filter(r => !seen.has(String(r.round_no)))
-             .sort((a, b) => (b.round_no || 0) - (a.round_no || 0));
+             .sort((a, b) => String(b.recorded_at || "").localeCompare(String(a.recorded_at || "")));
 }
 
 /* ONE BADGE. It carries both navigation attributes on purpose: [data-rjob]
@@ -6788,6 +6804,16 @@ document.addEventListener("click", async e => {
 function apiBase(){
   try{
     if(window.FLEET_API) return String(window.FLEET_API).replace(/\/+$/, "");
+    /* 2026-09-26 -- THE PHONE'S OWN LINK, the way the VPS address (live=) and
+       the gist id (g=) arrive: `#...&api=https://<laptop>.ts.net/<token>`. A
+       fragment never reaches a server, it is kept on this phone after the
+       first visit, and it is still never in the snapshot or this repo. */
+    const h = new URLSearchParams(location.hash.slice(1)).get("api");
+    if(h && /^https:\/\/[^\s"'<>]+$/i.test(h)){
+      const hv = h.trim().replace(/\/+$/, "");
+      try{ localStorage.setItem("gb.api.v1", hv); }catch(e){}
+      return hv;
+    }
     const v = localStorage.getItem("gb.api.v1");
     return v ? String(v).replace(/\/+$/, "") : "";
   }catch(e){ return ""; }
@@ -6853,6 +6879,239 @@ async function refreshSettings(){
     if(out && out.settings) SETTINGS_STATE = out.settings;
     if(out && out.mode_text) SETTINGS_STATE.mode_text = out.mode_text;
   }catch(e){ /* the badge keeps the snapshot's copy, which is still true */ }
+}
+
+/* ---------- SENDING A PASS FROM THE APP (2026-09-26) ----------
+   Trevor: *"how can we get it so that the app can send the pass number. I'd
+   really like to retire the telegram alerts eventually."*
+
+   POST /pick on the Laptop's fleet_api leaves a REQUEST (app_picks); the tick
+   applies it at its next boundary through the same path a Telegram reply
+   takes, then runs both backtests. So this card says "sent", never "applied",
+   until a snapshot carries the request's outcome (d.app_picks).
+
+   TWO KINDS: a pick for a round WAITING on one, and a CHANGE OF PASS on a
+   group's latest applied round (an override -- what a Telegram reply to an
+   old alert did). Both take two taps: the first arms, the second sends. */
+let APP_PICKS = [];     // d.app_picks -- what became of each request
+let IN_PROGRESS = [];   // d.in_progress -- rounds started and not finished
+const SEND = { typed: {}, arm: null, busy: null, local: {} };
+
+const pkey = o => [o.regime, o.bucket_id, o.group_id].join("|");
+function _groupRegime(g){
+  const h = String(g || "").split("_")[0].toUpperCase();
+  return ["BULL", "BEAR", "RANGING", "GLOBALS"].indexOf(h) >= 0 ? h : "";
+}
+function roundOf(relDir){
+  const t = String(relDir || "").split("/").filter(Boolean).pop() || "";
+  return /^PASS\d+$/i.test(t) ? t.toUpperCase() : "";
+}
+
+function sendErr(err){
+  if(err === "read-only")
+    return "this phone has no link to the Laptop yet.";
+  if(err === "unreachable")
+    return "the Laptop did not answer — asleep, off the tailnet, or its tray is not running. Nothing changed.";
+  return String(err || "refused") + " Nothing changed.";
+}
+
+/* The newest thing known about this group's pick: what THIS visit sent, or
+   the snapshot's record once it catches up. */
+function sendRecord(key){
+  const loc = SEND.local[key];
+  const snap = APP_PICKS.find(p => pkey(p) === key);
+  const snapAt = snap ? Date.parse(snap.requested_at || "") : NaN;
+  if(snap && (!loc || (isFinite(snapAt) && snapAt >= loc.at - 60000)))
+    return Object.assign({src: "snap"}, snap);
+  return loc ? Object.assign({src: "local"}, loc) : null;
+}
+
+function sendStatusLine(key){
+  const s = sendRecord(key);
+  if(!s) return "";
+  if(s.src === "local"){
+    if(s.state === "sending")
+      return `<div class="pickfoot">Sending pass ${esc(s.pass)}…</div>`;
+    if(s.state === "error")
+      return `<div class="pickwarn">⚠️ Pass ${esc(s.pass)} was not sent — ${esc(sendErr(s.msg))}</div>`;
+    return `<div class="pickdone">✓ Pass ${esc(s.pass)} sent. It applies when the job
+      running now finishes, then both backtests run. This card updates on the next
+      snapshot.</div>`;
+  }
+  const n = esc(s.pass_number);
+  if(s.status === "requested")
+    return `<div class="pickdone">✓ Pass ${n} sent ${esc(fmtWhen(s.requested_at))} —
+      waiting for the job running now to finish.</div>`;
+  if(s.status === "applied")
+    return `<div class="pickdone">✓ Pass ${n} applied ${esc(fmtWhen(s.done_at))}.
+      ${esc(s.message || "")}</div>`;
+  return `<div class="pickwarn">⚠️ Pass ${n} was ${s.status === "refused" ? "refused" : "not applied"}
+    (${esc(fmtWhen(s.done_at || s.requested_at))}): ${esc(s.message || "no reason given")}</div>`;
+}
+
+function sendLabel(o, key){
+  const t = SEND.typed[key];
+  const n = t == null || t === "" ? NaN : Number(t);
+  if(SEND.busy === key) return ["Sending…", true];
+  if(!(n >= 1) || Math.floor(n) !== n) return ["Enter a pass number", true];
+  const over = o.mode === "override";
+  if(SEND.arm === key)
+    return [over ? `Tap again: replace pass ${o.applied_pass} with pass ${n}`
+                 : `Tap again: apply pass ${n}`, false];
+  return [over ? `Change to pass ${n}` : `Apply pass ${n}`, false];
+}
+
+function sendForm(o){
+  const key = pkey(o);
+  const over = o.mode === "override";
+  const head = over ? "Change the pass" : "Send the pass from here";
+  if(!apiBase())
+    return `<div class="sendp"><div class="opsh">${head}</div>
+      <div class="opsnote">This phone has no link to the Laptop yet, so the app can't
+        send. Open the app once from the link that ends in <b>&amp;api=…</b>; the
+        phone keeps it after that.</div>${sendStatusLine(key)}</div>`;
+  const [label, off] = sendLabel(o, key);
+  const typed = SEND.typed[key];
+  return `<div class="sendp" data-sendscope="${esc(key)}">
+      <div class="opsh">${head}</div>
+      <div class="opsnote">${over
+        ? `Pass <b>${esc(o.applied_pass)}</b> is applied. A different pass rewinds this
+           round to where it started, applies that pass and runs both backtests again.`
+        : `Nothing is applied until you send one.`}
+        It applies when the job running now finishes.</div>
+      <div class="pickother">
+        <label for="sin-${esc(key)}">Pass</label>
+        <input class="pickin" id="sin-${esc(key)}" type="number" inputmode="numeric"
+          min="1" placeholder="—" data-sendin="${esc(key)}"
+          value="${typed == null ? "" : esc(typed)}">
+      </div>
+      <button type="button" class="applyb${SEND.arm === key ? " armed" : ""}"
+        data-send="${esc(key)}" data-mode="${over ? "override" : "confirm"}"
+        data-round="${esc(o.round || "")}" data-applied="${esc(o.applied_pass ?? "")}"
+        ${off ? "disabled" : ""}>${esc(label)}</button>
+      ${sendStatusLine(key)}
+    </div>`;
+}
+
+function sendOpts(btn){
+  const p = btn.dataset.send.split("|");
+  return {regime: p[0], bucket_id: Number(p[1]), group_id: p.slice(2).join("|"),
+          mode: btn.dataset.mode, round: btn.dataset.round || "",
+          applied_pass: btn.dataset.applied === "" ? null : Number(btn.dataset.applied)};
+}
+
+function syncSendBtn(btn){
+  const o = sendOpts(btn);
+  const [label, off] = sendLabel(o, btn.dataset.send);
+  btn.textContent = label;
+  btn.disabled = off;
+  btn.classList.toggle("armed", SEND.arm === btn.dataset.send);
+}
+
+async function sendPick(o, n){
+  const key = pkey(o);
+  SEND.arm = null; SEND.busy = key;
+  SEND.local[key] = {pass: n, state: "sending", at: Date.now()};
+  repaintCards();
+  const res = await apiCall("/pick", {
+    regime: o.regime, bucket_id: o.bucket_id, group_id: o.group_id,
+    pass_number: n, override: o.mode === "override",
+    round: o.round || undefined, by: "app"});
+  SEND.busy = null;
+  SEND.local[key] = res.ok ? {pass: n, state: "sent", at: Date.now()}
+                           : {pass: n, state: "error", msg: res.error, at: Date.now()};
+  if(res.ok) delete SEND.typed[key];
+  repaintCards();
+}
+
+document.addEventListener("input", e => {
+  const inp = e.target.closest("[data-sendin]");
+  if(!inp) return;
+  const key = inp.dataset.sendin;
+  SEND.typed[key] = inp.value.trim();
+  if(SEND.arm === key) SEND.arm = null;
+  const scope = inp.closest(".sendp");
+  const btn = scope && scope.querySelector("[data-send]");
+  if(btn) syncSendBtn(btn);
+});
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-send]");
+  if(!btn || btn.disabled) return;
+  const key = btn.dataset.send;
+  if(SEND.arm !== key){
+    /* ARM, don't send. A change of pass re-runs two real-tick backtests and a
+       stray tap should cost nothing; the arm lapses on its own. */
+    SEND.arm = key;
+    syncSendBtn(btn);
+    setTimeout(() => {
+      if(SEND.arm === key){
+        SEND.arm = null;
+        document.querySelectorAll("[data-send]").forEach(b => {
+          if(b.dataset.send === key) syncSendBtn(b);
+        });
+      }
+    }, 8000);
+    return;
+  }
+  sendPick(sendOpts(btn), Number(SEND.typed[key]));
+});
+
+/* ---------- NOT FINISHED YET, at the top of Results (2026-09-26) ----------
+   Trevor: *"that ranging pass isn't showing up on my results tab in the
+   app.... Can we get that?"* Results lists FINISHED rounds, and a round is
+   finished when both its backtests are in -- so a round waiting on a pick, or
+   with its backtests running or owed, showed nowhere on this tab. The
+   publisher lists them (d.in_progress); this draws them. */
+const TASK_MARK = {passed: "✓", running: "▶", queued: "·", skipped: "–", failed: "✕"};
+
+function ipStage(it){
+  const p = it.applied_pass ?? it.pass_number;
+  if(it.awaiting_pick) return "Finished — waiting on your pick. Nothing is applied until you pick.";
+  if(it.stage === "backtests_owed"){
+    const err = String(it.last_error || "");
+    return `Pass ${p} applied · its backtests are owed and run next` +
+      (it.attempts ? ` (${it.attempts} of 3 tried` +
+        (err ? `; last: ${err.length > 140 ? err.slice(0, 137) + "…" : err}` : "") + ")" : "");
+  }
+  const run = it.stage && it.stage !== "running" ? phaseText(it.stage) + " running" : "Running";
+  return run + (it.machine ? " on " + it.machine : "") + (p != null ? ` · pass ${p} applied` : "");
+}
+
+function ipCard(it){
+  const rc = REGIME_CLASS[it.regime] || "";
+  const tasks = (it.tasks || []).map(t =>
+    `<span class="chip${t.status === "running" ? " gold" : ""}">${
+      esc(TASK_MARK[t.status] || "·")} ${esc(phaseText(t.kind))}</span>`).join("");
+  const form = it.awaiting_pick ? sendForm(Object.assign({}, it, {mode: "confirm"}))
+    : it.changeable ? sendForm(Object.assign({}, it, {mode: "override"})) : "";
+  return `<article class="card">
+      <div class="stripe ${esc(rc)}"></div>
+      <div class="card-in">
+        <div class="top">
+          ${it.regime ? `<span class="chip ${esc(rc)}">${esc(it.regime)}</span>` : ""}
+          ${bktEl(it.bucket_id)}
+          ${it.machine ? `<span class="chip gold">${esc(it.machine)}</span>` : ""}
+          <span class="chip">NOT FINISHED</span>
+        </div>
+        <div>
+          <div class="title">${esc(humanize(it.group_id))}</div>
+          <div class="sub">${esc(ipStage(it))}</div>
+        </div>
+        ${tasks ? `<div class="iptasks">${tasks}</div>` : ""}
+        ${form}
+      </div>
+    </article>`;
+}
+
+function inProgressSection(){
+  const items = IN_PROGRESS.filter(it =>
+    (!RESULTS_REGIME || it.regime === RESULTS_REGIME) &&
+    (RESULTS_BUCKET == null || String(it.bucket_id) === String(RESULTS_BUCKET)) &&
+    (!RESULTS_MACHINE || it.machine === RESULTS_MACHINE));
+  if(!items.length) return "";
+  return `<div class="section-label">${items.length} not finished yet</div>` +
+    items.map(ipCard).join("");
 }
 
 function renderSchedule(){
@@ -9134,6 +9393,8 @@ function applySnapshot(d, source){
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
   QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
   PICKS = Array.isArray(d.pending_picks) ? d.pending_picks : [];
+  APP_PICKS = Array.isArray(d.app_picks) ? d.app_picks : [];
+  IN_PROGRESS = Array.isArray(d.in_progress) ? d.in_progress : [];
   FILE_BASE = typeof d.reports_base === "string" ? d.reports_base : null;
   LEDGER = d.ledger.filter(x => x.epoch === EPOCH);
   /* HOW OLD IS WHAT YOU ARE LOOKING AT. A page that never says would sit on a
@@ -9663,12 +9924,21 @@ document.addEventListener("click", e => {
   if(ap && !ap.disabled){
     const n = PICKED[ap.dataset.apply];
     const box = ap.parentElement;
-    /* WHAT IT WOULD SAY, not what it did. The preview must not imply a round
-       was applied -- nothing was sent, and there is nowhere to send it. */
-    box.innerHTML = `<div class="pickhd">⏸ Round finished — pick a pass</div>` +
-      `<div class="pickdone">✓ Pass ${n} would be applied here, and the two
-        post-round backtests queued. <b>Nothing was sent</b> — this page has no
-        write path to the machines yet.</div>`;
+    const p = String(ap.dataset.apply).split("|");
+    const o = {regime: p[0], bucket_id: Number(p[1]), group_id: p.slice(2).join("|"),
+               mode: "confirm"};
+    /* 2026-09-26 -- IT SENDS NOW (fleet_api /pick). Without the phone's link to
+       the Laptop it still says so rather than pretending. */
+    if(!apiBase()){
+      box.innerHTML = `<div class="pickhd">⏸ Round finished — pick a pass</div>` +
+        `<div class="pickwarn">⚠️ Pass ${esc(n)} was not sent — ${esc(sendErr("read-only"))}</div>`;
+      return;
+    }
+    SEND.typed[pkey(o)] = String(n);
+    sendPick(o, Number(n)).then(() => {
+      box.innerHTML = `<div class="pickhd">⏸ Round finished — pick a pass</div>` +
+        sendStatusLine(pkey(o));
+    });
   }
 });
 
