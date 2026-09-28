@@ -1482,7 +1482,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
   padding:9px 10px;font-family:"Roboto Mono",ui-monospace,monospace;font-size:.8rem;
 }
 .lv-form input:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
-.lv-form .row{display:flex;gap:8px;flex-wrap:wrap;}
+.lv-form .row{display:flex;flex-direction:row;gap:8px;flex-wrap:wrap;}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
@@ -1544,7 +1544,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260927-142922";
+const APP_BUILD = "20260927-220700";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2213,12 +2213,12 @@ function failSentLine(s){
 function failSendError(act, err){
   const what = "<b>" + esc(failActLabel(act)) + "</b>";
   if(err === "read-only")
-    return "\u26a0\ufe0f " + what + " was not sent. This page is served from a "
-      + "public host and has no route to the Laptop \u2014 the write endpoint "
-      + "answers only on the tailnet, to a page served from there. Nothing changed.";
+    return "\u26a0\ufe0f " + what + " was not sent \u2014 this phone has no link to "
+      + "the Laptop yet. Paste it in <b>Settings \u2192 Laptop link</b>, then try "
+      + "again. Nothing changed.";
   if(err === "unreachable")
-    return "\u26a0\ufe0f " + what + " was not sent \u2014 the Laptop\u2019s write "
-      + "endpoint did not answer. It may not be running. Nothing changed.";
+    return "\u26a0\ufe0f " + what + " was not sent \u2014 the Laptop did not answer. "
+      + "<b>Settings \u2192 Laptop link \u2192 Test</b> says why. Nothing changed.";
   return "\u26a0\ufe0f " + what + " was refused: " + esc(err) + ". Nothing changed.";
 }
 
@@ -2334,6 +2334,12 @@ function failPanel(f){
       ${failData(f)}
 
       <div class="opsh">Actions</div>
+      ${/* SAID BEFORE THE TAP, not after it. With no link, Clear could only
+            arm, confirm and then fail -- three taps to learn what was knowable
+            when the panel opened. */
+        !apiBase() && !sent ? `<div class="opsdis">⚠️ <b>This phone has no
+        link to the Laptop</b>, so these can't send yet. Paste it in <b>Settings
+        → Laptop link</b>.</div>` : ""}
       ${sent ? `<div class="opsnote">${failSentLine(sent)}</div>`
         : busy ? `<div class="opsnote">Sending\u2026</div>`
         : `<div class="opsrow">${row}</div>`}
@@ -6808,6 +6814,10 @@ document.addEventListener("click", async e => {
 function apiBase(){
   try{
     if(window.FLEET_API) return String(window.FLEET_API).replace(/\/+$/, "");
+    /* Pasted into Settings -> Laptop link on this visit. Ahead of the page
+       address, so a link typed to replace a wrong one wins over an old
+       `&api=` still sitting in the URL. */
+    if(LINK.typed) return LINK.typed;
     /* 2026-09-26 -- THE PHONE'S OWN LINK, the way the VPS address (live=) and
        the gist id (g=) arrive: `#...&api=https://<laptop>.ts.net/<token>`. A
        fragment never reaches a server, it is kept on this phone after the
@@ -6825,6 +6835,123 @@ function apiBase(){
 
 let SETTINGS_BUSY = false;
 let SETTINGS_ERROR = "";
+
+/* ---------- 0. THE LAPTOP LINK ----------
+   Trevor, 2026-09-27: *"I still can't clear failed rounds on the phone."*
+   The endpoint had answered since 07:15 and not one request from the phone
+   ever reached it -- not even a CORS preflight, and its log records every
+   one. The link could arrive only as `&api=` in a URL, and the home-screen
+   icon predates it: opened in a different browser from the icon's, the link
+   is saved where the icon never looks, and every Clear fails on the phone.
+
+   So the link can be pasted HERE, inside whatever browser the app is running
+   in, and Test says whether the Laptop answered -- instead of a Clear that
+   fails and leaves you guessing which of "no link" and "no answer" it was.
+
+   The token is the write credential: kept on this phone only, never drawn.
+   The card shows the host. */
+const LINK = { editing: false, err: "", typed: "", test: null, busy: false };
+const API_KEY = "gb.api.v1";
+const API_LINK_RE = /^https:\/\/[^\s"'<>\/]+\/[^\s"'<>]+$/i;
+
+function apiHost(){
+  try{ return new URL(apiBase()).host; }catch(e){ return ""; }
+}
+
+async function linkTest(){
+  const base = apiBase();
+  if(!base || LINK.busy) return;
+  LINK.busy = true; LINK.test = null;
+  repaintSettings();
+  const t0 = Date.now();
+  let res;
+  try{
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 12000) : null;
+    const r = await fetch(base + "/health", {cache: "no-store",
+                                             signal: ctl ? ctl.signal : undefined});
+    if(timer) clearTimeout(timer);
+    const out = await r.json().catch(() => ({}));
+    if(r.ok && out.ok)
+      res = {ok: true, ms: Date.now() - t0, machine: String(out.machine || "")};
+    else if(r.status === 404)
+      res = {ok: false, msg: "The Laptop answered, but not to this link — the "
+        + "part after the last / is wrong. Paste the link again."};
+    else
+      res = {ok: false, msg: "The Laptop answered with HTTP " + r.status + "."};
+  }catch(e){
+    /* The browser hides WHY a fetch failed, so this names every cause that
+       looks the same from here. The third one is Chrome's own: a public page
+       reaching a tailnet address needs the site's "devices on your local
+       network" permission -- granted once for Live, and it covers this. */
+    res = {ok: false, msg: "No answer. Check that Tailscale is switched on on this "
+      + "phone, and that this site may connect to devices on your local network "
+      + "(Chrome asks once). If both are, the Laptop is asleep or its endpoint "
+      + "is not running."};
+  }
+  LINK.busy = false; LINK.test = res;
+  repaintSettings();
+}
+
+function linkBadge(){
+  const base = apiBase();
+  if(!base || LINK.editing)
+    return '<div class="card lv-form">'
+      + '<div class="lv-k">Laptop link</div>'
+      + '<div class="lv-line">' + (base ? "" : '<strong>This phone has no link to the '
+      + 'Laptop</strong>, so nothing on this page can be sent — clearing a failure, '
+      + 'a pass, a lease or bucket priority. ')
+      + 'Paste the link that ends in the Laptop\'s token, like '
+      + '<b>https://&lt;laptop&gt;.&lt;tailnet&gt;.ts.net/&lt;token&gt;</b>. It is kept '
+      + 'on this phone only, and this phone needs Tailscale switched on.</div>'
+      + '<input id="apiurl" type="url" inputmode="url" autocomplete="off" '
+      + 'spellcheck="false" placeholder="https://…ts.net/…">'
+      + '<div class="row"><button type="button" class="lv-link" data-apisave>Save</button>'
+      + (base ? '<button type="button" class="lv-link" data-apicancel>Cancel</button>' : "")
+      + '</div>'
+      + (LINK.err ? '<div class="lv-line warn">' + esc(LINK.err) + '</div>' : "")
+      + '</div>';
+  const t = LINK.test;
+  return '<div class="card lv-form">'
+    + '<div class="lv-k">Laptop link</div>'
+    + '<div class="lv-line">Linked to <b>' + esc(apiHost()) + '</b>. Everything this '
+    + 'page sends goes there, over Tailscale.</div>'
+    + '<div class="row">'
+    + '<button type="button" class="lv-link" data-apitest' + (LINK.busy ? " disabled" : "")
+    + '>' + (LINK.busy ? "Testing…" : "Test") + '</button>'
+    + '<button type="button" class="lv-link" data-apichange>Change</button>'
+    + '</div>'
+    + (t ? '<div class="lv-line' + (t.ok ? "" : " warn") + '">' + (t.ok
+        ? "✓ " + esc(t.machine || "The Laptop") + " answered in " + esc(t.ms)
+          + " ms. Clear, Retry and the other controls can send."
+        : "⚠️ " + esc(t.msg)) + '</div>' : "")
+    + '</div>';
+}
+
+document.addEventListener("click", e => {
+  if(e.target.closest("[data-apitest]")){ linkTest(); return; }
+  if(e.target.closest("[data-apichange]")){
+    LINK.editing = true; LINK.err = ""; repaintSettings(); return;
+  }
+  if(e.target.closest("[data-apicancel]")){
+    LINK.editing = false; LINK.err = ""; repaintSettings(); return;
+  }
+  if(e.target.closest("[data-apisave]")){
+    const inp = document.getElementById("apiurl");
+    const v = inp ? inp.value.trim().replace(/\/+$/, "") : "";
+    if(!API_LINK_RE.test(v)){
+      LINK.err = "That is not a link this page can use. It starts with https:// "
+        + "and ends with the token, after the last /.";
+      repaintSettings();
+      return;
+    }
+    try{ localStorage.setItem(API_KEY, v); }catch(err){ /* this visit only */ }
+    LINK.typed = v; LINK.editing = false; LINK.err = ""; LINK.test = null;
+    SETTINGS_ERROR = "";
+    repaintCards();
+    linkTest();
+  }
+});
 
 /* ONE POST, SHARED BY EVERY WRITE ON THE PAGE. Split out of apiPost on
    2026-09-23 when the failure card got a route: apiPost also owns the Settings
@@ -6913,9 +7040,9 @@ function roundOf(relDir){
 
 function sendErr(err){
   if(err === "read-only")
-    return "this phone has no link to the Laptop yet.";
+    return "this phone has no link to the Laptop yet. Paste it in Settings → Laptop link.";
   if(err === "unreachable")
-    return "the Laptop did not answer — asleep, off the tailnet, or its tray is not running. Nothing changed.";
+    return "the Laptop did not answer — asleep, off the tailnet, or its tray is not running. Settings → Laptop link → Test says which. Nothing changed.";
   return String(err || "refused") + " Nothing changed.";
 }
 
@@ -6972,8 +7099,8 @@ function sendForm(o){
   if(!apiBase())
     return `<div class="sendp"><div class="opsh">${head}</div>
       <div class="opsnote">This phone has no link to the Laptop yet, so the app can't
-        send. Open the app once from the link that ends in <b>&amp;api=…</b>; the
-        phone keeps it after that.</div>${sendStatusLine(key)}</div>`;
+        send. Paste it in <b>Settings → Laptop link</b>; the phone keeps it after
+        that.</div>${sendStatusLine(key)}</div>`;
   const [label, off] = sendLabel(o, key);
   const typed = SEND.typed[key];
   return `<div class="sendp" data-sendscope="${esc(key)}">
@@ -7709,19 +7836,14 @@ function schedValueRow(b, u){
 }
 
 function renderSettings(){
-  const ro = !apiBase();
   return '<div class="home">'
     + '<div class="section-label">Settings</div>'
     /* SAID ONCE, AT THE TOP, rather than on every control. A disabled chip with
        no explanation reads as a bug; the same sentence repeated eleven times
-       reads as noise. */
-    + (ro ? '<div class="card"><div class="card-in">'
-      + '<div class="tlab">Read-only</div>'
-      + '<div class="tnote">This page cannot reach the fleet\'s write endpoint, '
-      + 'so nothing below can be saved. The endpoint deliberately has no public '
-      + 'address \u2014 it answers only over the private network, which is what '
-      + 'the Tailscale move delivers. Until then this badge shows what is set '
-      + 'and cannot change it.</div></div></div>' : "")
+       reads as noise. The link card is that sentence now, and the way out of
+       it: it says read-only AND takes the link that ends it. (The card it
+       replaced still said "until the Tailscale move" a day after the move.) */
+    + linkBadge()
     + (SETTINGS_ERROR && SETTINGS_ERROR !== "read-only"
         ? '<div class="card"><div class="card-in"><div class="tlab">Not saved</div>'
         + '<div class="tnote">' + esc(SETTINGS_ERROR) + '</div></div></div>' : "")
