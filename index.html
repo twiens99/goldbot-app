@@ -1592,7 +1592,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-154300";
+const APP_BUILD = "20260928-154926";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6780,7 +6780,9 @@ document.addEventListener("click", async e => {
     + "[data-schedscope],[data-schedcap],"
     /* 2026-09-28 -- Pass picks, its timer, and the fallback block's chips. */
     + "[data-schedpp],[data-schedtimer],[data-schedfbreg],[data-schedfbsel],"
-    + "[data-schedfbn],[data-schedfbgrp],[data-schedfbord]");
+    + "[data-schedfbn],[data-schedfbgrp],[data-schedfbord],"
+    /* 2026-09-28 -- a ticked regime's bucket numbers, block and fallback. */
+    + "[data-schedbkt],[data-schedfbbkt]");
   if(!t) return;
   e.preventDefault();
   e.stopPropagation();
@@ -6847,13 +6849,15 @@ document.addEventListener("click", async e => {
   const [id, val] = pair(d.schedsel || d.schedreg || d.schedn
     || d.schedgrp || d.schedord || d.scheduntil || d.schedval || d.schedscope
     || d.schedcap || d.schedpp || d.schedtimer || d.schedfbreg || d.schedfbsel
-    || d.schedfbn || d.schedfbgrp || d.schedfbord || ":");
+    || d.schedfbn || d.schedfbgrp || d.schedfbord || d.schedbkt || d.schedfbbkt || ":");
   const b = schedFind(id);
   if(!b) return;
   /* Tapping the lit target turns it off -- back to no target. With Named gone
      there is no other chip that means "none". */
   if(d.schedsel !== undefined) b.select = (b.select === val) ? "explicit" : val;
-  else if(d.schedreg !== undefined) schedToggle(b.regimes, val);
+  else if(d.schedreg !== undefined){
+    schedToggle(b.regimes, val); schedDropRegimeBuckets(b, val); }
+  else if(d.schedbkt !== undefined) schedToggle(b.buckets || (b.buckets = []), val);
   else if(d.schedn !== undefined) b.select_n = Number(val);
   /* A filter chip toggles off back to all groups; the ordering always has one
      lit (Default is a real choice, not an absence). */
@@ -6881,7 +6885,10 @@ document.addEventListener("click", async e => {
     }
   }
   else if(d.schedtimer !== undefined) b.pick_timer_min = Number(val);
-  else if(d.schedfbreg !== undefined) schedToggle(schedFb(b).regimes, val);
+  else if(d.schedfbreg !== undefined){
+    const f = schedFb(b); schedToggle(f.regimes, val); schedDropRegimeBuckets(f, val); }
+  else if(d.schedfbbkt !== undefined){
+    const f = schedFb(b); schedToggle(f.buckets || (f.buckets = []), val); }
   else if(d.schedfbsel !== undefined){
     const f = schedFb(b); f.select = (f.select === val) ? "explicit" : val; }
   else if(d.schedfbn !== undefined) schedFb(b).select_n = Number(val);
@@ -7740,6 +7747,37 @@ function schedBlockCard(b, i, isActive, sch, isPast){
 
 /* THE BLOCK AS ONE SENTENCE. A builder that only shows chips makes you
    reassemble the meaning in your head every time you read it. */
+/* THE BUCKETS OF THE TICKED REGIMES. Trevor, 2026-09-28: *"When selecting bull
+   bear or ranging. I want the bucket numbers to pop up below them and be
+   selectable. Currently only 1 bucket, but eventually there will be more."*
+   Picking one NARROWS its regime to the picked buckets (schedule_builder.
+   resolve_targets); none picked is every bucket in it. Leaf buckets only -- a
+   split parent is superseded and would resolve to nothing. */
+function schedBucketRow(regs, picked, attr, chip){
+  const want = (regs || []).map(function(r){ return String(r).toUpperCase(); });
+  const list = (BUCKETS || []).filter(function(x){
+    return x && x.leaf !== false && want.indexOf(String(x.regime || "").toUpperCase()) >= 0; });
+  if(!list.length) return "";
+  const any = list.some(function(x){
+    return (picked || []).indexOf(String(x.regime).toUpperCase() + "|" + x.bucket_id) >= 0; });
+  return '<div class="chips" style="margin-top:6px">'
+    + list.map(function(x){
+        const key = String(x.regime).toUpperCase() + "|" + x.bucket_id;
+        return chip(attr, key, (picked || []).indexOf(key) >= 0,
+                    String(x.regime).toUpperCase() + " " + x.bucket_id); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + (any
+        ? "Only the buckets lit above run in their regime."
+        : "Every bucket in the ticked regimes. Pick a bucket to narrow it.") + '</div>';
+}
+/* Unticking a regime drops its picked buckets, so a hidden chip cannot keep
+   targeting anything. */
+function schedDropRegimeBuckets(t, regime){
+  if((t.regimes || []).indexOf(regime) >= 0) return;
+  t.buckets = (t.buckets || []).filter(function(k){
+    return String(k).split("|")[0].toUpperCase() !== String(regime).toUpperCase(); });
+}
+
 /* ---------- PASS PICKS (2026-09-28) ----------
    Trevor: *"I want an option underneath target bucket. 'Pass picks' Automatic
    or Manual. Manual comes with a timer. 15 min. Upon clicking manual, another
@@ -7758,7 +7796,10 @@ function schedFb(b){ return b.fallback || (b.fallback = schedNewFallback()); }
 /* The fallback's target in one line -- what a timed-out wait will run. */
 function schedFallbackPhrase(fb){
   fb = fb || {};
-  const regs = (fb.regimes || []).length ? fb.regimes.join(" + ") : "every bucket";
+  const narrowed = (fb.buckets || []).map(function(k){ return String(k).split("|")[0].toUpperCase(); });
+  const parts = (fb.regimes || []).filter(function(r){ return narrowed.indexOf(r) < 0; })
+    .concat((fb.buckets || []).map(function(k){ return String(k).replace("|", " "); }));
+  const regs = parts.length ? parts.join(" + ") : "every bucket";
   const sel = (fb.select && fb.select !== "explicit")
     ? (SCHED_LABEL[fb.select] || fb.select) + " × " + (fb.select_n || 1) + " in " : "";
   const g = (fb.groups && fb.groups !== "any") ? ", " + (SCHED_LABEL[fb.groups] || fb.groups) : "";
@@ -7805,6 +7846,7 @@ function schedPassPicks(b, chip){
     + vocab("selects").map(function(v){
         return chip("schedfbsel", v, (fb.select || "explicit") === v, SCHED_LABEL[v] || v); }).join("")
     + '</div>'
+    + schedBucketRow(fb.regimes, fb.buckets, "schedfbbkt", chip)
     + ((fb.select || "explicit") === "explicit" ? ""
         : '<div class="chips" style="margin-top:6px">'
           + [1, 2, 3].map(function(n){
@@ -7843,10 +7885,13 @@ function schedSentence(b){
   const sel = b.select || "explicit";
   let what;
   if(sel === "explicit"){
-    const names = (b.buckets || []).map(function(k){ return k.replace("|", "/"); });
-    const regs = b.regimes || [];
-    what = names.length ? names.join(" + ")
-         : (regs.length ? regs.join(" + ") : "every bucket");
+    const names = (b.buckets || []).map(function(k){ return k.replace("|", " "); });
+    /* A regime with picked buckets IS those buckets (resolve_targets narrows
+       it); one with none picked is the whole regime. */
+    const narrowed = (b.buckets || []).map(function(k){ return String(k).split("|")[0].toUpperCase(); });
+    const regs = (b.regimes || []).filter(function(r){ return narrowed.indexOf(r) < 0; });
+    const parts = regs.concat(names);
+    what = parts.length ? parts.join(" + ") : "every bucket";
   } else {
     /* 🔴 NAMED WITH NOTHING TICKED IS "EVERY BUCKET", NOT "NOTHING".
        Trevor, 2026-09-19: *"Named Target doesn't make any sense, other than
@@ -7969,12 +8014,14 @@ function schedEditor(b){
         return chip("schedsel", v, (b.select || "explicit") === v,
                     SCHED_LABEL[v] || v); }).join("")
     + '</div>'
+    /* The ticked regimes' bucket numbers, selectable (Trevor, 2026-09-28). */
+    + schedBucketRow(b.regimes, b.buckets, "schedbkt", chip)
     /* No ranking lit is NO TARGET, said in this page's own words: a machine still
        on the old build publishes Named's old sentence ("The buckets you named.")
        for the same key. */
     + '<div class="tnote">' + ((b.select || "explicit") === "explicit"
-        ? "<b>No ranking.</b> Every bucket in the regimes you pick — all of them "
-          + "if you pick none. Add a ranking to narrow it to the top 1–3."
+        ? "<b>No ranking.</b> Everything targeted above runs — every bucket "
+          + "if you pick nothing. Add a ranking to narrow it to the top 1–3."
         : esc(vocabText("select_text", b.select))) + '</div>'
     /* The bucket-name chips went with Named (2026-09-28). A block saved with
        names still resolves them -- the sentence above the editor says which. */
