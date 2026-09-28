@@ -150,6 +150,25 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .chip.bull{background:rgba(95,190,149,.14);color:var(--bull);}
 .chip.bear{background:rgba(224,104,90,.14);color:var(--bear);}
 .chip.range{background:rgba(111,168,212,.14);color:var(--range);}
+/* 🔴 A CHIP THAT IS A CONTROL SAYS WHETHER IT IS ON. Trevor, 2026-09-28: *"Let's
+   make a lit up chip more prominent I can't tell which ones are lit or not."*
+   The schedule editor's chips added `on` and nothing styled it -- every chip
+   was the same tonal blue, lit or not. Now an unlit control is hollow and quiet,
+   and a lit one is SOLID GOLD with dark text and a tick, so the difference reads
+   at arm's length and without colour. `button.chip` only: the status chips drawn
+   as spans (SEEDED, the regime tags) are labels, not controls, and stay as they
+   were. */
+.chips{display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+button.chip{
+  font-family:inherit;font-size:.68rem;cursor:pointer;
+  padding:6px 10px;border-radius:7px;
+  background:transparent;color:var(--dim);border:1px solid var(--line);
+}
+button.chip.on{
+  background:var(--gold);color:#17130a;border-color:var(--gold);
+  box-shadow:0 0 0 2px rgba(224,180,87,.28);
+}
+button.chip.on::before{content:"\2713\00a0";}
 .when{font-size:.69rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
 
 .title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;
@@ -1564,7 +1583,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-135119";
+const APP_BUILD = "20260928-144602";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7665,7 +7684,8 @@ function schedBlockCard(b, i, isActive, sch, isPast){
     + (outcome && outcome.measured
         ? '<div class="tnote" style="margin-top:6px">' + esc(outcome.measured) + '</div>' : "")
     + '<div class="chips" style="margin-top:8px">'
-    + '<button type="button" class="chip' + (editing ? " on" : "") + '" data-schededit="'
+    /* An ACTION, not a toggle: never lit, or "✓ Close" would read as a choice. */
+    + '<button type="button" class="chip" data-schededit="'
     + esc(b.id) + '">' + (editing ? "Close" : "Edit") + '</button>'
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':-1">\u2191</button>'
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':1">\u2193</button>'
@@ -7907,7 +7927,8 @@ function schedUntilIsCount(field){ return field === "n" || field === "passes"; }
 function schedValueRow(b, u){
   const opts = {
     jobs: [1, 2, 3, 5, 10],
-    pf_at_least: [1.0, 1.2, 1.4, 1.6, 2.0],
+    /* 1.5 is the live gate's PF, the number a block is most often run toward. */
+    pf_at_least: [1.0, 1.2, 1.4, 1.5, 1.6, 2.0],
     pinned_cleared: [25, 50, 75, 100],
     profit_up_pct: [5, 10, 25, 50],
     giveback_below: [30, 40, 50],
