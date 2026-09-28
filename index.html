@@ -1544,7 +1544,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260927-220700";
+const APP_BUILD = "20260927-223516";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2165,7 +2165,34 @@ function seedCard(sd){
    arrives -- the write lands on the shared JSON at once, but THIS page reads a
    published snapshot, and a card that vanished on 202 would claim the
    scheduler had already seen it. */
-const FAILSTATE = { open: null, arm: null, said: null, busy: null, sent: {} };
+/* 🔴 KEPT ACROSS A RELOAD (2026-09-27). Trevor cleared all three failures from
+   the phone at 22:30 -- and then saw two cards come back with live buttons,
+   tapped Clear again, and read "refused: that group has no failure on record"
+   as the Clear not working. Cause: the snapshot he reloaded into was built at
+   22:29:58, between his taps, and `sent` lived only in the page he left. So a
+   record now survives a reload and holds until a snapshot built a minute after
+   the tap arrives -- a newer one reflects the clear. If THAT one still lists
+   the group, it failed again, and the card is live again. */
+const FAILSENT_KEY = "gb.failsent.v1";
+const FAILSTATE = { open: null, arm: null, said: null, busy: null,
+  sent: (() => { try{ const v = JSON.parse(localStorage.getItem(FAILSENT_KEY) || "{}");
+                      return v && typeof v === "object" ? v : {}; }
+                 catch(e){ return {}; } })() };
+
+function failSentSave(){
+  try{ localStorage.setItem(FAILSENT_KEY, JSON.stringify(FAILSTATE.sent)); }catch(e){}
+}
+function failSentFor(key){
+  const s = FAILSTATE.sent[key];
+  if(!s) return null;
+  let gen = NaN;
+  try{ gen = Date.parse((LAST_SNAPSHOT || {}).generated_at || ""); }catch(e){}
+  if(s.at && isFinite(gen) && gen > s.at + 60000){
+    delete FAILSTATE.sent[key]; failSentSave();
+    return null;
+  }
+  return s;
+}
 
 /* key, icon, label, loud, needs arming */
 const FAIL_ACTS = [
@@ -2198,6 +2225,10 @@ function failSentLine(s){
   const park = s.park === "lifted" ? " The scheduler\u2019s park was lifted with it."
     : s.park === "parked" ? " The scheduler parks it too, so the two agree."
     : "";
+  if(s.already)
+    return `✓ <b>Already cleared.</b> The Laptop has no failure on record for
+      this group, so an earlier Clear landed. This card goes when the list next
+      updates.`;
   const head = s.act === "clear"
     ? "<b>Cleared.</b> Back in normal rotation."
     : s.act === "retry"
@@ -2239,7 +2270,21 @@ async function failSend(key, act, n){
   const res = await apiCall("/failure", body);
   FAILSTATE.busy = null;
   if(res.ok){
-    FAILSTATE.sent[key] = {act: act, after: res.out.after, park: res.out.park};
+    FAILSTATE.sent[key] = {act: act, after: res.out.after, park: res.out.park,
+                           at: Date.now()};
+    failSentSave();
+  }else if(res.status === 409 && act === "clear"){
+    /* 409 on a CLEAR is the thing already being true: the only 409 fleet_api
+       gives here is "no failure on record". The card it came from was drawn
+       from an older snapshot. */
+    FAILSTATE.sent[key] = {act: act, already: true, after: {failures: 0},
+                           at: Date.now()};
+    failSentSave();
+  }else if(res.status === 409){
+    FAILSTATE.said = "⚠️ <b>" + esc(failActLabel(act)) + "</b> was not "
+      + "sent — the Laptop has no failure on record for this group any more; "
+      + "it was already cleared. This card goes when the list next updates. "
+      + "Nothing changed.";
   }else{
     FAILSTATE.said = failSendError(act, res.error);
   }
@@ -2287,7 +2332,7 @@ function failPanel(f){
   const armed = FAILSTATE.arm && FAILSTATE.arm.key === key ? FAILSTATE.arm.act : null;
   const orphans = failOrphans(f).length;
 
-  const sent = FAILSTATE.sent[key];
+  const sent = failSentFor(key);
   const busy = FAILSTATE.busy === key;
   const row = FAIL_ACTS.filter(([k]) =>
       /* Recover and Delete are about DATA, so they appear only when there is
@@ -2363,7 +2408,11 @@ function renderFailures(){
     FAILURES.map(f => {
       const rc = RC[f.regime] || "";
       const n = f.failures || 0;
-      const why = f.parked ? "parked after 3 — waiting on you"
+      /* Cleared from here, and the snapshot has not caught up: say so on the
+         card itself, so it does not read as still failing. */
+      const done = (failSentFor(failKey(f)) || {}).act === "clear";
+      const why = done ? "cleared from the app — goes when the list next updates"
+        : f.parked ? "parked after 3 — waiting on you"
         : f.awaiting_other_round ? "one other round runs first, then it retries"
         : "retrying";
       return `
@@ -2373,7 +2422,8 @@ function renderFailures(){
           <div class="top">
             ${f.regime ? `<span class="chip ${rc}">${esc(f.regime)}</span>` : ""}
             ${f.released_by ? `<span class="chip gold">${esc(f.released_by)}</span>` : ""}
-            <span class="chip warn">${f.parked ? "PARKED" : "FAILED"}</span>
+            <span class="chip ${done ? "gold" : "warn"}">${done ? "CLEARED"
+              : f.parked ? "PARKED" : "FAILED"}</span>
             <span class="sp"></span>
             <span class="when">${n} failure${n === 1 ? "" : "s"}</span>
           </div>
@@ -6972,8 +7022,9 @@ async function apiCall(path, body){
     /* 202 IS THE SUCCESS CODE HERE, not 200 -- fleet_api answers "accepted, not
        applied" on purpose and no control may upgrade that to "done". */
     if(r.status !== 202)
-      return {ok: false, out: out, error: out.error || ("HTTP " + r.status)};
-    return {ok: true, out: out, error: ""};
+      return {ok: false, out: out, error: out.error || ("HTTP " + r.status),
+              status: r.status};
+    return {ok: true, out: out, error: "", status: r.status};
   }catch(e){
     return {ok: false, out: {}, error: "unreachable"};
   }
