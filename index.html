@@ -1557,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-063959";
+const APP_BUILD = "20260928-095755";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1693,13 +1693,23 @@ function sweptList(vars, cells){
    A name with no state still renders: an older publisher sends no detail at
    all, and a tile that dropped its variable list in that case would look broken
    rather than plain. */
-function varList(vars, states){
+function varList(vars, states, riders){
   if(!Array.isArray(vars) || !vars.length) return "";
   const by = {};
   (states || []).forEach(s => { if(s && s.name) by[s.name] = s; });
   const n = vars.length;
+  /* THE RIDERS, AFTER THE GROUP. Trevor, 2026-09-28: *"We need to make sure
+     that there is a rider chip included in with the variable list."* Swept in
+     this round, not the group's -- so listed, chipped RIDER, and not counted as
+     one of the group's variables. From the round plan (the publisher's
+     `riders`); none when a machine's publisher predates it. */
+  const rd = (Array.isArray(riders) ? riders : []).filter(r => r && vars.indexOf(r) < 0);
   return `<div class="vars">
-      <div class="vhead">${n} Variable${n === 1 ? "" : "s"}</div>
+      <div class="vhead">${n} Variable${n === 1 ? "" : "s"}${
+        rd.length ? ` + ${rd.length} rider${rd.length === 1 ? "" : "s"}` : ""}</div>
+      ${rd.map(r => `<div class="tvar">
+          <span class="tvn">${esc(spaceOut(stripRegime(r)))}</span>
+          <span class="tmem rider">RIDER</span></div>`).join("")}
       ${vars.map(v => {
         const st = by[v];
         return `<div class="tvar">
@@ -2991,7 +3001,7 @@ function machineCard(f){
         ${passPick(f)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
             ? sweptList(f.seed.variables, f.seed.cells)
-            : varList(f.variables, liveStates(f))}
+            : varList(f.variables, liveStates(f), f.riders)}
         ${st ? `<div class="warnrow"><span>⚠️</span><span>` +
           `Last reported ${esc(ago(f.age_seconds))} — the beacon is stale, ` +
           `so this page cannot say what it is doing now.</span></div>` : ""}
