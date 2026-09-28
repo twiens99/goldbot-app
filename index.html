@@ -1557,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-105142";
+const APP_BUILD = "20260928-110743";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7852,11 +7852,11 @@ function schedEditor(b){
                     SCHED_LABEL[v] || v); }).join("")
     + '</div>'
     + '<div class="tnote">' + ((b.groups || "any") === "any"
-        ? "<b>Default order.</b> Each bucket's regular schedule: a bucket is on the "
-          + "pass its least-run group is on, and a group that has run more than "
-          + "that waits for the rest to catch up. First pass in the structural "
-          + "order (exits first, EMA groups last); later passes ranked by measured "
-          + "PF gain."
+        ? "<b>Default order.</b> Each bucket's regular schedule: every group gets "
+          + "one turn per pass, and one already done this pass is skipped. When "
+          + "all have had their turn the pass ends and every group starts the next "
+          + "one equal. First pass in the structural order (exits first, EMA "
+          + "groups last); later passes ranked by measured PF gain."
         : esc(vocabText("group_text", b.groups))) + '</div>'
 
     /* MACHINES: taken out, 2026-09-28 (Trevor: *"Machines section can be
