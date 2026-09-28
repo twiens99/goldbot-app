@@ -1557,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-101647";
+const APP_BUILD = "20260928-102652";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6793,8 +6793,8 @@ document.addEventListener("click", async e => {
     "[data-schedgo],[data-schedback],[data-schedadd],[data-schedsave],"
     + "[data-schedclear],"
     + "[data-schededit],[data-scheddel],[data-schedmove],[data-schedact],"
-    + "[data-schedsel],[data-schedreg],[data-schedbkt],[data-schedn],"
-    + "[data-schedgrp],[data-schedmac],[data-scheduntil],[data-schedval],"
+    + "[data-schedsel],[data-schedreg],[data-schedn],"
+    + "[data-schedgrp],[data-scheduntil],[data-schedval],"
     + "[data-schedscope],[data-schedcap]");
   if(!t) return;
   e.preventDefault();
@@ -6859,8 +6859,8 @@ document.addEventListener("click", async e => {
   }
 
   // ---- per-block edits, all local ----
-  const [id, val] = pair(d.schedsel || d.schedreg || d.schedbkt || d.schedn
-    || d.schedgrp || d.schedmac || d.scheduntil || d.schedval || d.schedscope
+  const [id, val] = pair(d.schedsel || d.schedreg || d.schedn
+    || d.schedgrp || d.scheduntil || d.schedval || d.schedscope
     || d.schedcap || ":");
   const b = schedFind(id);
   if(!b) return;
@@ -6868,10 +6868,8 @@ document.addEventListener("click", async e => {
      there is no other chip that means "none". */
   if(d.schedsel !== undefined) b.select = (b.select === val) ? "explicit" : val;
   else if(d.schedreg !== undefined) schedToggle(b.regimes, val);
-  else if(d.schedbkt !== undefined) schedToggle(b.buckets, val);
   else if(d.schedn !== undefined) b.select_n = Number(val);
   else if(d.schedgrp !== undefined) b.groups = val;
-  else if(d.schedmac !== undefined) schedToggle(b.machines, val);
   else if(d.scheduntil !== undefined){
     /* THE VALUE IS DROPPED WITH THE KIND. "3" means jobs under one condition
        and a PF under another; carrying it across would silently make "until PF
@@ -7687,6 +7685,13 @@ function schedBlockCard(b, i, isActive, sch, isPast){
     + esc(b.id) + '">' + (editing ? "Close" : "Edit") + '</button>'
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':-1">\u2191</button>'
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':1">\u2193</button>'
+    /* \ud83d\udd34 CLEAR, NOT DELETE. Trevor, 2026-09-19: *"We need a Clear button
+       somewhere. That would clear all the selections without removing the block
+       completely."* -- and 2026-09-28, moved up beside Close and Remove: it acts
+       on the whole block, like they do, so it sits with them. Only while the
+       block is open, because the selections it clears are the editor's. */
+    + (editing ? '<button type="button" class="chip" data-schedclear="' + esc(b.id)
+        + '">Clear selections</button>' : "")
     + '<button type="button" class="chip" data-scheddel="' + esc(b.id) + '">Remove</button>'
     + '</div>'
     + (editing ? schedEditor(b) : "")
@@ -7802,31 +7807,28 @@ function schedEditor(b){
   };
   return '<div class="tsec" style="margin-top:10px">'
 
-    /* 🔴 CLEAR, NOT DELETE. Trevor, 2026-09-19: *"We need a Clear button
-       somewhere. That would clear all the selections without removing the block
-       completely."* Starting a block over meant removing it and adding another,
-       which loses its place in the chain -- so the only way to start over also
-       moved the thing you were not trying to move. */
-    + '<div class="trow" style="margin-bottom:2px">'
-    + '<span class="section-label" style="margin:0">Target</span>'
-    + '<button type="button" class="chip" data-schedclear="' + esc(b.id)
-    + '">Clear selections</button></div>'
+    /* 🔴 ONE SECTION, "TARGET BUCKET". Trevor, 2026-09-28: *"the word target
+       changes to Target bucket. Move bull bear and ranging up into the target
+       bucket section. These three will be able to be selected with any of the
+       other target bucket chips."* They always could be -- regimes are the POOL
+       (toggles, any number) and a ranking picks within it (one at a time) --
+       but on two rows they read as two separate choices. One row, regimes
+       first because they narrow what the ranking ranks. */
+    + '<div class="section-label" style="margin:0 0 2px">Target bucket</div>'
     + '<div class="chips">'
+    + ["BULL", "BEAR", "RANGING"].map(function(r){
+        return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
     + vocab("selects").map(function(v){
         return chip("schedsel", v, (b.select || "explicit") === v,
                     SCHED_LABEL[v] || v); }).join("")
     + '</div>'
-    /* No chip lit is NO TARGET, said in this page's own words: a machine still
+    /* No ranking lit is NO TARGET, said in this page's own words: a machine still
        on the old build publishes Named's old sentence ("The buckets you named.")
        for the same key. */
     + '<div class="tnote">' + ((b.select || "explicit") === "explicit"
-        ? "<b>No target.</b> Every bucket in the regimes you tick — all of them "
-          + "if you tick none. Tap a target to rank them instead."
+        ? "<b>No ranking.</b> Every bucket in the regimes you pick — all of them "
+          + "if you pick none. Add a ranking to narrow it to the top 1–3."
         : esc(vocabText("select_text", b.select))) + '</div>'
-    + '<div class="chips" style="margin-top:6px">'
-    + ["BULL", "BEAR", "RANGING"].map(function(r){
-        return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
-    + '</div>'
     /* The bucket-name chips went with Named (2026-09-28). A block saved with
        names still resolves them -- the sentence above the editor says which. */
     + ((b.select || "explicit") === "explicit"
@@ -7844,18 +7846,10 @@ function schedEditor(b){
     + '</div>'
     + '<div class="tnote">' + esc(vocabText("group_text", b.groups || "any")) + '</div>'
 
-    + '<div class="section-label" style="margin-top:12px">Machines</div>'
-    + '<div class="chips">'
-    /* `machine`, not `machine_id` -- the fleet row's own field name, and the
-       snapshot carries ONE ROW PER BEACON rather than one per machine, so the
-       list is deduped. Reading the wrong key put a chip labelled "undefined"
-       on the card and wrote the string "undefined" into the block, which the
-       scheduler would then have matched against no machine at all. */
-    + schedMachines().map(function(name){
-        return chip("schedmac", name, (b.machines || []).indexOf(name) >= 0,
-                    name); }).join("")
-    + '</div>'
-    + '<div class="tnote">None selected means any machine may take it.</div>'
+    /* MACHINES: taken out, 2026-09-28 (Trevor: *"Machines section can be
+       completely taken out."*). A block's `machines` stays [] = any machine, the
+       engine's own default. A block saved with machines still honours them, and
+       its sentence says so. */
 
     + '<div class="section-label" style="margin-top:12px">Until</div>'
     + '<div class="chips">'
@@ -7884,15 +7878,6 @@ function schedEditor(b){
     + '<div class="tnote">On reaching this the block moves on rather than '
     + 'stopping the chain \u2014 and says loudly that it gave up.</div>'
     + '</div>';
-}
-
-function schedMachines(){
-  const seen = {};
-  (FLEET || []).forEach(function(f){
-    const n = f && f.machine;
-    if(n) seen[n] = true;
-  });
-  return Object.keys(seen).sort();
 }
 
 /* The one number a condition needs, as chips rather than a keyboard: a phone
