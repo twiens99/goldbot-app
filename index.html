@@ -1592,7 +1592,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-155936";
+const APP_BUILD = "20260928-164003";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7463,9 +7463,9 @@ let SCHED_EDIT = null;        // block id being edited, or null
 
 const SCHED_FALLBACK = {
   selects: ["lowest_pf", "highest_pf", "lowest_profit", "highest_profit",
-            "most_defaults"],
+            "most_defaults", "closest_split", "farthest_split"],
   groups: ["any", "pinned", "exit", "entry", "ema"],
-  orders: ["default", "highest_pf", "lowest_pf"],
+  orders: ["default", "highest_pf", "lowest_pf", "closest_split", "farthest_split"],
   untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits", "epoch_done"],
   scopes: ["live", "frozen"],
 };
@@ -7475,6 +7475,8 @@ const SCHED_LABEL = {
   lowest_profit: "Least profit",
   highest_profit: "Most profit", worst_giveback: "Worst give-back",
   most_defaults: "Most defaults",
+  /* 2026-09-28 -- one key for both the bucket target and the group ordering. */
+  closest_split: "Closest to split", farthest_split: "Farthest from split",
   any: "All groups", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
   default: "Default",
   ema: "EMA lane", moved_giveback: "Moved give-back",
@@ -7522,7 +7524,23 @@ const SCHED_ORDER_TEXT = {
             + "pass go first, each group's runs in that pass counted as one.",
   lowest_pf: "The groups that lowered the bucket's PF most in its last completed "
            + "pass go first.",
+  closest_split: "The groups needing the fewest more locked variables to reach 75% "
+               + "locked go first. A group already at 75% is skipped; a tie is a "
+               + "random pick.",
+  farthest_split: "The groups needing the most more locked variables to reach 75% "
+                + "locked go first. A group already at 75% is skipped; a tie is a "
+                + "random pick.",
 };
+
+/* The Group ordering part of a block's sentence. It used to be a two-way
+   ternary, which would have called every new ordering "biggest PF loss". */
+function schedOrderPhrase(order){
+  if(!order || order === "default") return "";
+  const p = {highest_pf: "biggest PF gain first", lowest_pf: "biggest PF loss first",
+             closest_split: "closest to split first",
+             farthest_split: "farthest from split first"}[order];
+  return ", " + (p || ((SCHED_LABEL[order] || order) + " first"));
+}
 
 function orderVocab(){
   if(VOCAB.orders && VOCAB.orders.length) return VOCAB.orders;
@@ -7803,8 +7821,7 @@ function schedFallbackPhrase(fb){
   const sel = (fb.select && fb.select !== "explicit")
     ? (SCHED_LABEL[fb.select] || fb.select) + " × " + (fb.select_n || 1) + " in " : "";
   const g = (fb.groups && fb.groups !== "any") ? ", " + (SCHED_LABEL[fb.groups] || fb.groups) : "";
-  const o = (fb.order && fb.order !== "default")
-    ? ", " + (fb.order === "highest_pf" ? "biggest PF gain" : "biggest PF loss") + " first" : "";
+  const o = schedOrderPhrase(fb.order);
   return sel + regs + g + o;
 }
 
@@ -7912,9 +7929,7 @@ function schedSentence(b){
   }
   const g = ((b.groups && b.groups !== "any")
           ? ", " + (SCHED_LABEL[b.groups] || b.groups) : "")
-          + ((b.order && b.order !== "default")
-          ? ", " + (b.order === "highest_pf" ? "biggest PF gain" : "biggest PF loss")
-            + " first" : "");
+          + schedOrderPhrase(b.order);
   const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
   const pp = b.pass_picks === "auto" ? " \u00b7 passes picked automatically"
     : b.pass_picks === "manual"
