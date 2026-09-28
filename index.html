@@ -1544,7 +1544,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260927-223516";
+const APP_BUILD = "20260927-230011";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3768,7 +3768,7 @@ function jobsModel(){
                : "q:" + [q.regime, q.bucket_id, q.group_id].join("|"),
         section: i === 0 ? "Queued up next" : "Queued after that",
         seed: sd, queue: q,
-        title: (sd && sd.label) || humanize(q.group_id) || "Queued work",
+        title: (sd && sd.label) || q.label || humanize(q.group_id) || "Queued work",
         line: queueLine(q), chip: null, chips: queueChips(q),
         regime: q.regime || null, cls: RC[q.regime] || "",
       });
@@ -3816,6 +3816,7 @@ function queueLine(q){
   const sw = queueSwept(q), all = (q.variables || []).length;
   return [sw ? "sweeps " + sw.length + " of " + all : "",
           QUEUE_SOURCE_WORD[q.source] || "",
+          q.held ? "waits for the build" : "",
           q.only_machine ? q.only_machine + " only" : ""].filter(Boolean).join(" · ");
 }
 /* WHAT IT WILL SWEEP, beside the group it belongs to. Trevor: *"I know it's not
@@ -3835,6 +3836,10 @@ function queueCard(q){
     : q.source === "backtest"
       ? "This round’s pass is applied and its two readings are owed. They run "
         + "before any new round. Nothing is swept; every variable is measured."
+    : q.held
+      ? "Seeded, so it goes first — but it needs the build that has these inputs. "
+        + "Each machine takes it the moment it is on that build; one still on "
+        + "older code skips it and keeps running the schedule."
     : q.narrow
       ? "A narrow seed: only the ticked variables are swept; the rest of the group "
         + "is held where it is."
@@ -3853,7 +3858,7 @@ function queueCard(q){
           <span class="when">${esc(String(q.bucket_id != null ? q.bucket_id : ""))}</span>
         </div>
         <div>
-          <div class="title">${esc(humanize(q.group_id) || "Queued work")}</div>
+          <div class="title">${esc(q.label || humanize(q.group_id) || "Queued work")}</div>
           <div class="sub">${esc(queueLine(q))}</div>
         </div>
         <div class="vhcap">${esc(note)}${sw ? " ✓ marks what it will sweep." : ""}</div>
@@ -3954,7 +3959,7 @@ function renderJobList(){
   let at = -1;
   jobs.forEach((j, i) => { if(isQ(j) || j.section === "Running now" ||
                               j.section === "Waiting on you") at = i; });
-  const note = queueNote(jobs.filter(isQ).length);
+  const note = queueNote(jobs.filter(isQ).length) + moreSeedsNote();
   let out = "", section = null;
   if(at < 0) out += note;
   jobs.forEach((j, i) => {
@@ -3966,6 +3971,20 @@ function renderJobList(){
     if(i === at) out += note;
   });
   return out + renderFailures();
+}
+
+/* THE QUEUE SHOWS FOUR; THE SEEDS MAY BE MORE. Trevor, 2026-09-27: *"seeds
+   always move to the front of the line."* Twelve A/B seeds went in that day, so
+   the four rows are all seeds -- and without this line the other eight would
+   not be anywhere on the page. */
+function moreSeedsNote(){
+  if(!QUEUE) return "";
+  const shown = new Set(QUEUE.map(q => q.seed_id).filter(Boolean));
+  const more = SEEDS.filter(sd => queuedSeed(sd) && !sd.claimed_by
+                                  && !shown.has(sd.seed_id)).length;
+  return more ? `<div class="notebody">+ <b>${more}</b> more seeded job${
+    more === 1 ? "" : "s"} queued behind these. Seeds go first on every machine
+    that can run them; the schedule’s rounds come after.</div>` : "";
 }
 
 function queueNote(n){
