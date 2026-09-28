@@ -1557,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-110749";
+const APP_BUILD = "20260928-112822";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6773,7 +6773,8 @@ function schedNewBlock(){
   return {
     id: Math.random().toString(16).slice(2, 10),
     name: "", buckets: [], regimes: [], select: "explicit", select_n: 1,
-    groups: "any", machines: [], until: {kind: "jobs", n: 3}, max_jobs: null,
+    groups: "any", order: "default", machines: [], until: {kind: "jobs", n: 3},
+    max_jobs: null,
   };
 }
 
@@ -6794,7 +6795,7 @@ document.addEventListener("click", async e => {
     + "[data-schedclear],"
     + "[data-schededit],[data-scheddel],[data-schedmove],[data-schedact],"
     + "[data-schedsel],[data-schedreg],[data-schedn],"
-    + "[data-schedgrp],[data-scheduntil],[data-schedval],"
+    + "[data-schedgrp],[data-schedord],[data-scheduntil],[data-schedval],"
     + "[data-schedscope],[data-schedcap]");
   if(!t) return;
   e.preventDefault();
@@ -6860,7 +6861,7 @@ document.addEventListener("click", async e => {
 
   // ---- per-block edits, all local ----
   const [id, val] = pair(d.schedsel || d.schedreg || d.schedn
-    || d.schedgrp || d.scheduntil || d.schedval || d.schedscope
+    || d.schedgrp || d.schedord || d.scheduntil || d.schedval || d.schedscope
     || d.schedcap || ":");
   const b = schedFind(id);
   if(!b) return;
@@ -6869,7 +6870,10 @@ document.addEventListener("click", async e => {
   if(d.schedsel !== undefined) b.select = (b.select === val) ? "explicit" : val;
   else if(d.schedreg !== undefined) schedToggle(b.regimes, val);
   else if(d.schedn !== undefined) b.select_n = Number(val);
-  else if(d.schedgrp !== undefined) b.groups = val;
+  /* A filter chip toggles off back to all groups; the ordering always has one
+     lit (Default is a real choice, not an absence). */
+  else if(d.schedgrp !== undefined) b.groups = (b.groups === val) ? "any" : val;
+  else if(d.schedord !== undefined) b.order = val;
   else if(d.scheduntil !== undefined){
     /* THE VALUE IS DROPPED WITH THE KIND. "3" means jobs under one condition
        and a PF under another; carrying it across would silently make "until PF
@@ -7451,8 +7455,8 @@ const SCHED_FALLBACK = {
   selects: ["lowest_pf", "highest_pf", "lowest_profit", "highest_profit",
             "most_defaults"],
   groups: ["any", "pinned", "exit", "entry", "ema"],
-  untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits",
-           "profit_up_pct", "giveback_below", "epoch_done"],
+  orders: ["default", "highest_pf", "lowest_pf"],
+  untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits", "epoch_done"],
   scopes: ["live", "frozen"],
 };
 
@@ -7461,7 +7465,8 @@ const SCHED_LABEL = {
   lowest_profit: "Least profit",
   highest_profit: "Most profit", worst_giveback: "Worst give-back",
   most_defaults: "Most defaults",
-  any: "Default order", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
+  any: "All groups", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
+  default: "Default",
   ema: "EMA lane", moved_giveback: "Moved give-back",
   jobs: "N jobs", pf_at_least: "PF reaches", pinned_cleared: "Pins cleared",
   bucket_splits: "It splits", profit_up_pct: "Profit up", giveback_below: "Give-back under",
@@ -7485,7 +7490,35 @@ function vocab(name){
    every bucket in the ticked regimes. The same day: *"Moved give back
    deleted."* -- a group filter, withdrawn the same way. */
 const SCHED_WITHDRAWN = {selects: ["explicit", "worst_giveback"],
-                         groups: ["moved_giveback"]};
+                         /* `any` is what no filter chip lit means now -- its
+                            "Default order" meaning moved to Group ordering. */
+                         groups: ["any", "moved_giveback"],
+                         /* Trevor, 2026-09-28: *"In the until section. Profit
+                            up and give back under gets deleted."* A saved block
+                            using either still reads and ends as before. */
+                         untils: ["profit_up_pct", "giveback_below"]};
+
+/* GROUP ORDERING is offered only as far as the machines can honour it. A
+   machine on the build before it publishes no `orders`, and would treat Highest
+   or Lowest PF as default without a word -- so until one publishes them, only
+   Default is on offer. No vocabulary at all (the artifact, a first load) uses the
+   full list. */
+/* Only for a page with no vocabulary at all; a machine's text wins. */
+const SCHED_ORDER_TEXT = {
+  default: "The regular schedule's order: every group gets one turn per pass, one "
+         + "already done this pass is skipped, and when all have had their turn "
+         + "every group starts the next pass equal.",
+  highest_pf: "The groups that raised the bucket's PF most in its last completed "
+            + "pass go first, each group's runs in that pass counted as one.",
+  lowest_pf: "The groups that lowered the bucket's PF most in its last completed "
+           + "pass go first.",
+};
+
+function orderVocab(){
+  if(VOCAB.orders && VOCAB.orders.length) return VOCAB.orders;
+  if(VOCAB.selects && VOCAB.selects.length) return ["default"];
+  return SCHED_FALLBACK.orders;
+}
 function vocabText(kind, key){
   return ((VOCAB[kind] || {})[key]) || "";
 }
@@ -7729,8 +7762,11 @@ function schedSentence(b){
     what = (SCHED_LABEL[sel] || sel) + " × " + (b.select_n || 1)
          + ((b.regimes || []).length ? " in " + b.regimes.join("/") : "");
   }
-  const g = (b.groups && b.groups !== "any")
-          ? ", " + (SCHED_LABEL[b.groups] || b.groups) : "";
+  const g = ((b.groups && b.groups !== "any")
+          ? ", " + (SCHED_LABEL[b.groups] || b.groups) : "")
+          + ((b.order && b.order !== "default")
+          ? ", " + (b.order === "highest_pf" ? "biggest PF gain" : "biggest PF loss")
+            + " first" : "");
   const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
   return esc("Target " + what + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
              + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "")) ;
@@ -7841,10 +7877,11 @@ function schedEditor(b){
               return chip("schedn", n, Number(b.select_n || 1) === n, "top " + n); }).join("")
           + '</div>')
 
-    /* "TARGET GROUPS", and "Any group" reads "Default order" -- Trevor,
-       2026-09-28. The note for it is this page's own until every machine
-       publishes the new sentence (a machine on the old build still sends "Any
-       group in the targeted buckets."). */
+    /* "TARGET GROUPS" is the FILTER -- which groups may run; no chip lit is all
+       of them, and tapping the lit one turns it off. Trevor, 2026-09-28:
+       *"Default order is going to be part of a new section underneath groups.
+       It's going to be named group ordering."* -- so what runs FIRST is its own
+       section below. */
     + '<div class="section-label" style="margin-top:12px">Target groups</div>'
     + '<div class="chips">'
     + vocab("groups").map(function(v){
@@ -7852,12 +7889,20 @@ function schedEditor(b){
                     SCHED_LABEL[v] || v); }).join("")
     + '</div>'
     + '<div class="tnote">' + ((b.groups || "any") === "any"
-        ? "<b>Default order.</b> Each bucket's regular schedule: every group gets "
-          + "one turn per pass, and one already done this pass is skipped. When "
-          + "all have had their turn the pass ends and every group starts the next "
-          + "one equal. First pass in the structural order (exits first, EMA "
-          + "groups last); later passes ranked by measured PF gain."
+        ? "<b>All groups</b> in the targeted buckets. Pick one to narrow it."
         : esc(vocabText("group_text", b.groups))) + '</div>'
+
+    + '<div class="section-label" style="margin-top:12px">Group ordering</div>'
+    + '<div class="chips">'
+    + orderVocab().map(function(v){
+        return chip("schedord", v, (b.order || "default") === v,
+                    SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + esc(vocabText("order_text", b.order || "default")
+        || SCHED_ORDER_TEXT[b.order || "default"] || "") + '</div>'
+    + (orderVocab().length === 1 && (VOCAB.selects || []).length
+        ? '<div class="tnote">Highest PF and Lowest PF appear when a machine on '
+          + 'the build that can run them publishes them.</div>' : "")
 
     /* MACHINES: taken out, 2026-09-28 (Trevor: *"Machines section can be
        completely taken out."*). A block's `machines` stays [] = any machine, the
