@@ -1557,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-095759";
+const APP_BUILD = "20260928-101643";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6864,7 +6864,9 @@ document.addEventListener("click", async e => {
     || d.schedcap || ":");
   const b = schedFind(id);
   if(!b) return;
-  if(d.schedsel !== undefined) b.select = val;
+  /* Tapping the lit target turns it off -- back to no target. With Named gone
+     there is no other chip that means "none". */
+  if(d.schedsel !== undefined) b.select = (b.select === val) ? "explicit" : val;
   else if(d.schedreg !== undefined) schedToggle(b.regimes, val);
   else if(d.schedbkt !== undefined) schedToggle(b.buckets, val);
   else if(d.schedn !== undefined) b.select_n = Number(val);
@@ -7448,8 +7450,8 @@ let VOCAB = {};
 let SCHED_EDIT = null;        // block id being edited, or null
 
 const SCHED_FALLBACK = {
-  selects: ["explicit", "lowest_pf", "highest_pf", "highest_profit",
-            "worst_giveback", "most_defaults"],
+  selects: ["lowest_pf", "highest_pf", "lowest_profit", "highest_profit",
+            "most_defaults"],
   groups: ["any", "pinned", "exit", "entry", "ema", "moved_giveback"],
   untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits",
            "profit_up_pct", "giveback_below", "epoch_done"],
@@ -7457,7 +7459,8 @@ const SCHED_FALLBACK = {
 };
 
 const SCHED_LABEL = {
-  explicit: "Named", lowest_pf: "Lowest PF", highest_pf: "Highest PF",
+  explicit: "No target", lowest_pf: "Lowest PF", highest_pf: "Highest PF",
+  lowest_profit: "Least profit",
   highest_profit: "Most profit", worst_giveback: "Worst give-back",
   most_defaults: "Most defaults",
   any: "Any group", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
@@ -7469,8 +7472,19 @@ const SCHED_LABEL = {
 };
 
 function vocab(name){
-  return (VOCAB[name] && VOCAB[name].length) ? VOCAB[name] : (SCHED_FALLBACK[name] || []);
+  const v = (VOCAB[name] && VOCAB[name].length) ? VOCAB[name] : (SCHED_FALLBACK[name] || []);
+  return name === "selects" ? v.filter(s => SCHED_WITHDRAWN.indexOf(s) < 0) : v;
 }
+/* 🔴 WITHDRAWN TARGETS, HIDDEN EVEN WHEN A MACHINE STILL OFFERS THEM. Trevor,
+   2026-09-28: *"take named out along with worst give back. And we're gonna add
+   least profit."* The offered list is published by each machine's
+   schedule_builder, which only changes at a job boundary -- so until every
+   publisher is on the new build the old list keeps arriving. Taking an option
+   AWAY is safe at once, so it is done here; ADDING one is not (an old scheduler
+   raises on a target it does not know), so "Least profit" appears only when a
+   machine that can run it publishes it. "Named" is what no chip lit means now:
+   every bucket in the ticked regimes. */
+const SCHED_WITHDRAWN = ["explicit", "worst_giveback"];
 function vocabText(kind, key){
   return ((VOCAB[kind] || {})[key]) || "";
 }
@@ -7786,8 +7800,6 @@ function schedEditor(b){
     return '<button type="button" class="chip' + (on ? " on" : "") + '" data-'
       + attr + '="' + esc(b.id) + ':' + esc(String(val)) + '">' + esc(label) + '</button>';
   };
-  const buckets = (BUCKETS || []).filter(function(x){
-    return String(x.regime).toUpperCase() !== "GLOBALS"; });
   return '<div class="tsec" style="margin-top:10px">'
 
     /* 🔴 CLEAR, NOT DELETE. Trevor, 2026-09-19: *"We need a Clear button
@@ -7804,18 +7816,21 @@ function schedEditor(b){
         return chip("schedsel", v, (b.select || "explicit") === v,
                     SCHED_LABEL[v] || v); }).join("")
     + '</div>'
-    + '<div class="tnote">' + esc(vocabText("select_text", b.select || "explicit")) + '</div>'
+    /* No chip lit is NO TARGET, said in this page's own words: a machine still
+       on the old build publishes Named's old sentence ("The buckets you named.")
+       for the same key. */
+    + '<div class="tnote">' + ((b.select || "explicit") === "explicit"
+        ? "<b>No target.</b> Every bucket in the regimes you tick — all of them "
+          + "if you tick none. Tap a target to rank them instead."
+        : esc(vocabText("select_text", b.select))) + '</div>'
     + '<div class="chips" style="margin-top:6px">'
     + ["BULL", "BEAR", "RANGING"].map(function(r){
         return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
     + '</div>'
+    /* The bucket-name chips went with Named (2026-09-28). A block saved with
+       names still resolves them -- the sentence above the editor says which. */
     + ((b.select || "explicit") === "explicit"
-        ? '<div class="chips" style="margin-top:6px">'
-          + buckets.map(function(x){
-              const k = String(x.regime).toUpperCase() + "|" + x.bucket_id;
-              return chip("schedbkt", k, (b.buckets || []).indexOf(k) >= 0,
-                          k.replace("|", "/")); }).join("")
-          + '</div>'
+        ? ""
         : '<div class="chips" style="margin-top:6px">'
           + [1, 2, 3].map(function(n){
               return chip("schedn", n, Number(b.select_n || 1) === n, "top " + n); }).join("")
