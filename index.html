@@ -623,6 +623,13 @@ article.jrow{cursor:default;}
   font-family:"Roboto Mono",ui-monospace,monospace;
   letter-spacing:0;text-transform:none;min-width:0;
 }
+/* The next round's RANGE chip is read the same way -- the same bright style,
+   so "RANGE 11 → 9" is not the faintest thing on its row. */
+.nrc .tvr.nrrange{
+  color:var(--text);border-color:rgba(140,160,172,.45);
+  font-family:"Roboto Mono",ui-monospace,monospace;
+  letter-spacing:0;min-width:0;
+}
 
 /* ---------- a variable is a button, and the graph is shared ---------- */
 /* THE NAME IS THE CONTROL. Trevor, 2026-09-17: *"The Words of the Variable
@@ -1557,7 +1564,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-131124";
+const APP_BUILD = "20260928-135119";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5450,192 +5457,122 @@ function optimizeBadge(t, nth){
     `</div></div>`;
 }
 
-/* ---------- the next round: the gate, said as the decision ----------
-   🔴 THIS IS THE DECISION; THE SWEEP BADGE ABOVE IS THE EVIDENCE. They are
-   read off different things -- that verdict comes from the binned response
-   curve, this comes from the win state, the point count and what the budget can
-   buy -- so they can disagree, and the disagreement is the fact worth having. A
-   variable whose centre keeps winning on a curve with no shape converged on
-   nothing.
+/* ---------- the next round: what the engine will build ----------
+   Trevor, 2026-09-28: *"I also want this next round to show what the next
+   optimization run will look like."*
 
-   🔴 WHAT IT WILL AND WILL NOT PROPOSE, and the line is the pass budget.
-   Narrowing keeps the point count and moves the bounds inward, so it cannot
-   change what a round costs and the card can state it outright. Widening moves
-   the bounds outward, and the amount depends on the WHOLE group's shape rather
-   than this variable's curve -- so the card states the evidence and leaves the
-   number to the engine, exactly as the verdict above does. The affordable point
-   count is the engine's too: it is published, never worked out here.
+   🔴 THE PUBLISHER RUNS THE ENGINE; THIS CARD ONLY SAYS WHAT IT GOT. The 09-17
+   version of this badge worked the next round out HERE -- NARROW from the
+   response curve, HALVE a centre win, WIDEN an edge -- and none of those is what
+   the engine runs (widening went 09-07, halving is a locked re-check's). Nothing
+   ever fed it. Now task_detail.next_round runs the engine's own round
+   preparation on the bucket as it stands and publishes the result: each
+   variable's action and range count, the grid, the tick model and our ETA per
+   machine. Nothing is solved here, so the card cannot disagree with the round.
 
-   🔴 A RANGE IS NOT A LADDER RUNG. Halving is a move along
-   FULL/HALF/QUARTER/EIGHTH and stops at the floor. A range rebuilt from the
-   curve is not on that ladder at all and has no floor to stop at -- which is
-   why the two say different words and only one of them can be held at EIGHTH. */
-const NR_CURVE_POINTS = 5;   /* under this, a range has no readable interior */
-const NR_LADDER = ["FULL", "HALF", "QUARTER", "EIGHTH"];
+   NO VALUES, by the same rule as every other chip on this card: counts,
+   actions and resolutions only. */
+const NR_ACTION = {
+  SWEEP:    ["in", "SWEEP"],
+  RECHECK:  ["in", "RE-CHECK"],
+  ONBOARD:  ["rider", "ONBOARD"],
+  HELD:     ["held", "HELD"],
+  SITS_OUT: ["held", "SITS OUT"],
+};
+/* Why a variable sweeps the count it does -- task_detail._why's codes. */
+const NR_WHY = {
+  lower:    "Won inside its range last round, so it sweeps 2 fewer values at the same step — a narrower range around where it landed.",
+  raise:    "Won at an edge last round, so it gets 2 values back — a wider range.",
+  floor:    "At 3 values, the fewest a range goes.",
+  own:      "Its own count, brought down by earlier wins inside its range.",
+  cap:      "Its own count is above the group's, so it sweeps the group's.",
+  group:    "The group's full count, set by the pass budget for this many variables.",
+  bound:    "Fewer than its count: a hard bound or an EMA pairing trims the range.",
+  recheck:  "Locked, and due its re-check: swept once to confirm it still holds.",
+  sits_out: "Locked, so it is not swept this round.",
+  onboard:  "Its first sweep, across its whole plausible range.",
+  held:     "Held at its current value this round.",
+};
 
-/* The centre of the swept range. For a variable whose CENTRE won, this is the
-   winning value -- which is what the narrowed range re-centres on. */
-function nrCentre(v){ return (Number(v.min) + Number(v.max)) / 2; }
-
-/* 🔴 WOULD A FINER STEP ACTUALLY BE FINER? An INT parameter's step reaches the
-   .set file as an integer, so half of 1 is not 0.5, it is 1 -- or worse, 0. The
-   engine makes this check per variable against its own value; the card makes
-   the same check against the step it was published, which is the same question
-   asked of the same number. 87 of 93 INT inputs in the EA hit this at some
-   level, so it is the common case and not a corner. */
-function nrFloorsToSame(v, nextStep){
-  if(String(v.param_type || "DOUBLE").toUpperCase() !== "INT") return false;
-  return Math.max(1, Math.round(nextStep)) >= Math.max(1, Math.round(Number(v.step)));
-}
-
-/* The peak bin and one either side -- the narrowest window the curve supports,
-   clamped so a peak beside an edge still yields two bins. Same arithmetic as
-   shapeDetail(), deliberately: two places proposing DIFFERENT narrowed ranges
-   off one curve would be worse than either. */
-function nrPeakWindow(v){
-  const bins = (v || {}).bins || [];
-  if(bins.length < 3) return null;
-  let k = 0;
-  bins.forEach((b, i) => { if(Number(b.result) > Number(bins[k].result)) k = i; });
-  return [Number(bins[Math.max(0, k - 1)].v),
-          Number(bins[Math.min(bins.length - 1, k + 1)].v)];
-}
-
-function nrRound(x){ return Number(Number(x).toPrecision(3)); }
-
-/* WHAT NEXT ROUND DOES TO ONE VARIABLE. Returns the chip, its colour, the
-   proposed sweep where there is one, and the sentence that says why. */
-function nrGate(v, pointsNext){
-  const shape = String(v.shape || "").toUpperCase();
-  const state = String(v.state || "").toUpperCase();
-  const res = String(v.resolution || "FULL").toUpperCase();
-  const pts = Number(v.points) || 0;
-  const step = Number(v.step);
-
-  if(state === "LOCKED")
-    return {chip: "EXCLUDED", cls: "noisy", why: `Locked. It is not swept next
-      round at all — it comes back on its own re-check, and a re-check is where
-      a locked variable earns a finer step.`};
-
-  if(shape.indexOf("EDGE-PIN") === 0){
-    const up = shape.indexOf("HIGH") >= 0;
-    return {chip: up ? "WIDEN UP" : "WIDEN DOWN", cls: "widen", why: `The best
-      passes sit at the ${up ? "ceiling" : "floor"} of the tested range, so the
-      bounds move ${up ? "up" : "down"}. <b>By how much is the engine's to say</b>
-      — the widened step count is solved across the whole group, not off this
-      curve.`};
-  }
-
-  if(shape.indexOf("NOISY") === 0 || shape.indexOf("MIXED") >= 0)
-    return {chip: "HELD", cls: "noisy", why: `The binned response has no shape,
-      so nothing here argues for moving the bounds or the step. <b>A winner on a
-      curve like this is close to a coin flip</b>, and narrowing around it would
-      bake that in for the rest of the epoch.`};
-
-  /* 🔴 ENOUGH POINTS TO READ A CURVE, then rebuild the range from it. This is
-     the FLOATING case: a value strictly inside the range won, the bins either
-     side of it say where the peak really sits, and the new bounds come from
-     that rather than from a ladder. */
-  if(shape.indexOf("INTERIOR") === 0 && pts >= NR_CURVE_POINTS){
-    const w = nrPeakWindow(v);
-    if(w){
-      const n = Number(pointsNext) || pts;
-      const nextStep = n > 1 ? (w[1] - w[0]) / (n - 1) : null;
-      if(nextStep && nrFloorsToSame(v, nextStep))
-        return {chip: "HELD", cls: "noisy", why: `The curve brackets the peak,
-          but this is an integer parameter and the tighter range still floors to
-          a step of ${esc(num(Math.max(1, Math.round(step))))}. <b>Nothing would
-          actually be finer</b>, so it holds where it is.`};
-      return {chip: "NARROW", cls: "narrow",
-        next: `${esc(num(nrRound(w[0])))} \u2192 ${esc(num(nrRound(w[1])))}` +
-              (nextStep ? ` \u00b7 \u0394${esc(num(nrRound(nextStep)))} at ${esc(n)} points` : ""),
-        why: `A value inside the range won and the bins either side say where the
-          peak sits, so the bounds come in to bracket it${
-          Number(pointsNext) && Number(pointsNext) !== pts
-            ? ` \u2014 at <b>${esc(n)}</b> points rather than ${esc(pts)}, which is what
-              the budget buys next round` : " at the same point count"}.`};
-    }
-  }
-
-  /* 🔴 THE CENTRE WON AND THERE IS NOTHING TO READ. Three points are the floor
-     and the ceiling and the middle: the middle winning says the peak is
-     somewhere between its neighbours and nothing more. So the same bounds are
-     looked at twice as closely -- half the step, half the span, the point count
-     and therefore the pass cost untouched. */
-  if(state === "CENTER" && pts < NR_CURVE_POINTS){
-    const at = NR_LADDER.indexOf(res);
-    if(at >= 0 && at >= NR_LADDER.length - 1)
-      return {chip: "HELD", cls: "noisy", why: `The centre won again, but the
-        resolution ladder is at <b>EIGHTH</b> and there is no finer rung. It
-        holds here and keeps its value.`};
-    const nextStep = step / 2;
-    if(nrFloorsToSame(v, nextStep))
-      return {chip: "HELD", cls: "noisy", why: `The centre won, but this is an
-        integer parameter and a finer step still floors to
-        ${esc(num(Math.max(1, Math.round(step))))}. <b>Halving would change
-        nothing that reaches the .set file</b>, so it holds at ${esc(res)}.`};
-    const c = nrCentre(v), half = nextStep * (pts - 1) / 2;
-    return {chip: "HALVE", cls: "narrow",
-      next: `${esc(num(nrRound(c - half)))} \u2192 ${esc(num(nrRound(c + half)))}` +
-            ` \u00b7 \u0394${esc(num(nrRound(nextStep)))} at the same ${esc(pts)} points`,
-      why: `The centre won at ${esc(pts)} points, which says the peak is between
-        its neighbours and nothing more. <b>Same ground, looked at twice as
-        closely</b>: half the step, half the span, the same number of passes.` +
-        (at >= 0 ? ` ${esc(res)} \u2192 ${esc(NR_LADDER[at + 1])}.` : "")};
-  }
-
-  return {chip: "HELD", cls: "noisy", why: `Nothing this round argues for moving
-    the bounds or the step. It sweeps again as it is.`};
+function nrHours(s){
+  const h = Number(s) / 3600;
+  return !isFinite(h) ? "?" : h < 1 ? Math.round(h * 60) + " min"
+       : h < 10 ? h.toFixed(1) + " h" : Math.round(h) + " h";
 }
 
 function nextRoundBadge(t){
   const d = (t || {}).detail || {};
-  const nr = d.next_round || {};
-  const vars = Array.isArray(nr.vars) ? nr.vars : [];
-  if(!vars.length)
+  const nr = d.next_round;
+  const wrap = (sub, body) => `<div class="card"><div class="card-in">
+      <div class="tlab">Next round</div>
+      <div class="sub" style="margin:0 0 6px">${sub}</div>${body || ""}
+    </div></div>`;
+  if(!nr || !nr.state)
     return soonBadge("Next round", `<b>Nothing published about the next round.</b>
-      What each variable does next -- a finer step, a rebuilt range, or nothing at
-      all -- is decided when the round is planned, from this sweep's own shape and
-      what the pass budget can buy. None of that is forwarded to the app yet, so
-      this card cannot say what is coming.`);
+      The machine that published this snapshot is on older code. The next round
+      shows here once a machine on the current build publishes.`);
+  if(nr.state === "running")
+    return wrap(`<b>This group's round is running now.</b> Its next round is
+      planned from this one's result, once it is applied.`);
+  if(nr.state === "awaiting_pick")
+    return wrap(`<b>This group's round is waiting on your pass pick.</b> The next
+      round is planned from the pass you choose.`);
+  if(nr.state === "nothing")
+    return wrap(`<b>Nothing to sweep.</b> Every variable in this group is locked
+      and sitting out its next round.`);
 
-  const pointsNext = Number(nr.points_next) || null;
+  const vars = Array.isArray(nr.vars) ? nr.vars : [];
+  const swept = vars.filter(v => v.points);
+  const grid = Number(nr.grid) || 0;
+  const cells = swept.length > 1 && swept.length <= 9
+    ? swept.map(v => esc(v.points)).join(" × ") + " = " : "";
+  const model = nr.model === "ohlc" ? "OHLC" : nr.model === "real" ? "Real ticks" : "";
+  const etas = Array.isArray(nr.eta) ? nr.eta : [];
+  /* MT5 ENUMERATES A SMALL GRID AND SEARCHES A BIG ONE -- eta_model's own line,
+     so "runs about N" is its learned number, never worked out here. */
+  const runs = etas.length && etas[0].passes
+    ? (grid && Number(etas[0].passes) >= grid
+        ? " · every cell runs"
+        : ` · the search runs about ${esc(Number(etas[0].passes).toLocaleString())}`)
+    : "";
+  const head = `<div class="tshaped" style="margin:0 0 4px">${
+      model ? esc(model) + " · " : ""}${esc(nr.swept || swept.length)} of ${
+      esc(nr.total || vars.length)} variables · ${cells}${
+      esc(grid.toLocaleString())} cells${runs}</div>` +
+    (etas.length ? `<div class="tshaped" style="margin:0 0 8px">${etas.map(e =>
+      `~${esc(nrHours(e.seconds))} on the ${esc(e.machine)}${
+        e.low && e.high && Math.round(e.low) !== Math.round(e.high)
+          ? ` (${esc(nrHours(e.low))}–${esc(nrHours(e.high))})` : ""}`)
+      .join(" · ")}</div>` : "");
+
   const rows = vars.map(v => {
-    const g = nrGate(v, pointsNext);
+    const a = NR_ACTION[v.action] || ["held", String(v.action || "")];
+    const pts = Number(v.points) || 0, last = Number(v.last) || 0;
+    const range = pts
+      ? `<span class="tvr nrrange" title="How many values it is swept over">RANGE ${
+          last && last !== pts ? esc(last) + " → " : ""}${esc(pts)}</span>` : "";
+    let why = NR_WHY[v.why] || "";
+    if(v.action === "SITS_OUT" && v.rounds_to_recheck)
+      why = `Locked, so it sits out; re-checked after ${esc(v.rounds_to_recheck)} more ${
+        Number(v.rounds_to_recheck) === 1 ? "round" : "rounds"} of this group.`;
     return `<div class="nrv">
-        <div class="nrn">${esc(v.name)}</div>
+        <div class="nrn">${esc(spaceOut(stripRegime(v.name)))}</div>
         <div class="nrc">
-          <span class="tshape ${g.cls}">${esc(g.chip)}</span>
-          <span class="nrw">${esc(String(v.state || "").toUpperCase())} \u00b7 ${
-            esc(Number(v.points) || "\u2014")} points \u00b7 ${
-            esc(String(v.resolution || "FULL").toUpperCase())}</span>
+          <span class="tmem ${a[0]}">${esc(a[1])}</span>${stateChip(v)}${range}
+          <span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
+            esc(v.resolution || "—")}</span>
         </div>
-        <div class="tshaped">${esc(num(Number(v.min)))} \u2192 ${esc(num(Number(v.max)))} \u00b7 \u0394${
-          esc(num(Number(v.step)))}${g.next ? `  \u21d2  ${g.next}` : ""}</div>
-        <div class="mdf">${g.why}</div>
+        ${why ? `<div class="mdf">${why}</div>` : ""}
       </div>`;
   }).join("");
 
-  /* THE BUDGET IS THE ENGINE'S NUMBER AND IS SHOWN AS ONE. The card does not
-     solve step**vars <= budget -- it prints what it was handed, because a
-     number invented here would look like the engine's and disagree with it. */
-  const foot = !pointsNext ? `<div class="vhcap">The point count each variable
-      gets next round is the engine's to decide, and it has not been published --
-      so a rebuilt range above is shown at the count this round used.</div>`
-    : `<div class="vhcap">Next round can buy <b>${esc(pointsNext)} points</b> per
-      variable across ${esc(nr.vars_next || vars.length)} active ones${
-      nr.budget ? `, against a ceiling of ${esc(Number(nr.budget).toLocaleString())}
-      passes for the group` : ""}. That count is the engine's, not this card's:
-      narrowing keeps it and costs nothing extra, which is why a narrowed range
-      can be proposed here and a widened one cannot.</div>`;
-
-  return `<div class="card"><div class="card-in">
-      <div class="tlab">Next round</div>
-      <div class="sub" style="margin:0 0 6px">What each variable sweeps next, and
-        the gate that decided it. ⚠️ Proposed, not applied \u2014 the round is
-        planned when it starts.</div>
-      ${rows}${foot}
-    </div></div>`;
+  return wrap(`What this group's next optimization in this bucket sweeps, built
+      by the same code that will build it, from the bucket as it stands now.`,
+    head + rows +
+    `<div class="vhcap">The group's count is <b>${esc(nr.group_count)}</b> values
+      for ${esc(nr.active)} active variables, from the pass budget; a variable
+      that keeps winning inside its range narrows below it. A second pass follows
+      in the same round only if a variable pins at an edge by 2σ or more.</div>`);
 }
 
 /* ---------- the metrics badge: one graph, several metrics ---------- */
@@ -6151,6 +6088,12 @@ function sweepVars(all, swept){
         (g.step ? `Δ${esc(num(g.step))}` : "")
       : (g && g.resolution ? esc(g.resolution) : (v.resolution ? esc(v.resolution) : ""));
     const rider = !!(g && g.rider);
+    /* 2026-09-28 -- THE RANGE COUNT. Trevor: *"The job card should show range
+       count."* How many values this task swept the variable over -- a count,
+       never a value. A seed's grid row already says it in `fine`; an onboarding
+       sweep reads ONBOARD, since it spans the variable's whole range. */
+    const count = g && !hasGrid
+      ? (g.onboard ? "ONBOARD" : g.points ? "RANGE " + g.points : "") : "";
     /* Swept, not the group's, and not declared a rider: say so loudly. */
     const stray = !!(g && !rider && !by[name]);
     /* THE TICK IS WHAT THIS TASK SWEPT. Trevor, 2026-09-23: *"Lets still have
@@ -6166,6 +6109,8 @@ function sweepVars(all, swept){
         <span class="tmem ${mem[0]}"${g || rider ? "" : ` title="Not swept by this task — held where the task before left it."`}>${mem[1]}</span>` +
       stateChip(v) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
+      (count ? `<span class="tvr" title="How many values this task swept it over">${
+         esc(count)}</span>` : "") +
       (fine ? `<span class="tvr">${fine}</span>` : "") +
       /* A RIDER CARRIES NO STATE, and that absence is correct rather than
          missing data: DEFAULT/FLOATING/CENTER/PINNED/LOCKED describe a
@@ -6223,10 +6168,13 @@ function taskSwept(list, states){
         (v.points && v.step ? " × " : "") +
         (v.step ? `Δ${esc(num(v.step))}` : "")
       : (v.resolution ? esc(v.resolution) : "");
+    const count = !hasGrid
+      ? (v.onboard ? "ONBOARD" : v.points ? "RANGE " + v.points : "") : "";
     return `<div class="tvar swept">
         <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
       stateChip(st) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
+      (count ? `<span class="tvr">${esc(count)}</span>` : "") +
       /* ALWAYS A BOX, even with nothing in it -- the same reason taskVars keeps
          an empty one: an absent chip pulls the row's right edge out of line. */
       `<span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
