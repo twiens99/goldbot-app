@@ -1403,6 +1403,19 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 }
 .lv-ohlc b{font-weight:500;color:var(--text);}
 .lv-chart{height:300px;position:relative;}
+/* THE STUDIES UNDER THE CANDLES (2026-09-27) are their own charts, kept in step
+   with the candles, so each has its own scale -- as overlays in one chart, the
+   candles' prices ran down beside them. Only the last one shows the time axis. */
+.lv-sub{height:92px;position:relative;border-top:1px solid var(--line);}
+.lv-sub.last{height:118px;}
+/* Each pane's name and its value, pinned top-left over the pane. */
+.lv-pane{
+  position:absolute;left:8px;top:4px;z-index:3;pointer-events:none;
+  font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+  color:var(--faint);
+}
+.lv-pane b{font-weight:500;color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;
+  letter-spacing:0;text-transform:none;margin-left:6px;}
 .lv-legend{
   display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 13px 11px;
   font-size:.7rem;color:var(--dim);border-top:1px solid var(--line);
@@ -1544,7 +1557,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260927-230158";
+const APP_BUILD = "20260928-063946";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8441,6 +8454,7 @@ function lvPaintFast(){
   if(LV.series) lvChartLive();
 }
 async function lvMaybeBars(force){
+  if(await lvMaybeAxisBars()) lvStudiesSet();
   const tf = LV.tf, c = LV.bars[tf];
   if(!force && c && Date.now() - c.at < 60000) return;
   try{
@@ -8729,6 +8743,8 @@ function lvSkeleton(){
     +   '</div>'
     +   '<div class="lv-ohlc" id="lvohlc"></div>'
     +   '<div class="lv-chart" id="lvchart"></div>'
+    +   '<div class="lv-sub" id="lvslopec"><div class="lv-pane" id="lvpslope"></div></div>'
+    +   '<div class="lv-sub last" id="lvmacdc"><div class="lv-pane" id="lvpmacd"></div></div>'
     +   '<div class="lv-legend">'
     +     '<span><span style="color:var(--gold)">▲▼</span>Entry</span>'
     +     '<span><span class="lv-good">●</span>/<span class="lv-bad">●</span>Exit, won / lost</span>'
@@ -8736,6 +8752,11 @@ function lvSkeleton(){
     +     '<span><span class="lv-band" style="background:var(--bull)"></span>'
     +       '<span class="lv-band" style="background:var(--bear)"></span>'
     +       '<span class="lv-band" style="background:var(--range)"></span>Bottom band: regime</span>'
+    +     '<span><span style="color:#5FBE95">━</span><span style="color:#E0685A">━</span>'
+    +       '<span style="color:#6FA8D4">━</span>Slope line: BULL / BEAR / RANGING; '
+    +       'dashes are the cut-offs</span>'
+    +     '<span><span class="lv-good">▮</span><span class="lv-bad">▮</span>MACD main, '
+    +       'line = signal</span>'
     +   '</div>'
     + '</div>'
     + '<div class="section-label">Open trades <span class="hcount" id="lvopenn"></span></div>'
@@ -9165,9 +9186,11 @@ function lvEnsureChart(){
       layout: {background: {type: "solid", color: LV_C.card}, textColor: LV_C.dim, fontSize: 11,
                fontFamily: "Roboto Mono, ui-monospace, monospace", attributionLogo: false},
       grid: {vertLines: {color: LV_C.grid}, horzLines: {color: LV_C.grid}},
-      rightPriceScale: {borderColor: LV_C.line, scaleMargins: {top: 0.12, bottom: 0.11}},
+      rightPriceScale: {borderColor: LV_C.line, scaleMargins: {top: 0.12, bottom: 0.11},
+                        minimumWidth: LV_AXIS_W},
+      /* The time axis is drawn once, under the last study pane. */
       timeScale: {borderColor: LV_C.line, timeVisible: true, secondsVisible: false,
-                  rightOffset: 4, barSpacing: 6},
+                  rightOffset: 4, barSpacing: 6, visible: false},
       crosshair: {mode: LC.CrosshairMode.Normal,
                   vertLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2},
                   horzLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2}},
@@ -9181,6 +9204,31 @@ function lvEnsureChart(){
     LV.trail = LV.chart.addLineSeries({lineType: LC.LineType.WithSteps, lineWidth: 2,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
     LV.chart.priceScale("band").applyOptions({scaleMargins: {top: 0.945, bottom: 0}, visible: false});
+    /* THE TWO STUDY PANES, each its own chart with its own scale, kept in step
+       with the candles by lvSyncCharts. Built only if their boxes exist. */
+    const sb = document.getElementById("lvslopec"), mb = document.getElementById("lvmacdc");
+    if(sb && mb){
+      LV.slopeChart = LC.createChart(sb, lvSubOpts(LC, false));
+      LV.macdChart = LC.createChart(mb, lvSubOpts(LC, true));
+      LV.slope = LV.slopeChart.addLineSeries({lineWidth: 2, lineType: LC.LineType.WithSteps,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        priceFormat: {type: "price", precision: 4, minMove: 0.0001},
+        /* The cut-offs are always in view, so where the line sits against them
+           reads at a glance even on a quiet stretch. */
+        autoscaleInfoProvider: original => {
+          const r = original(), a = lvAxis();
+          if(!a) return r;
+          const lo = Math.min(r ? r.priceRange.minValue : 0, a.bear_max * 1.4);
+          const hi = Math.max(r ? r.priceRange.maxValue : 0, a.bull_min * 1.4);
+          return {priceRange: {minValue: lo, maxValue: hi}};
+        }});
+      LV.macdH = LV.macdChart.addHistogramSeries({priceLineVisible: false,
+        lastValueVisible: false, base: 0});
+      LV.macdS = LV.macdChart.addLineSeries({lineWidth: 1, color: LV_C.dim,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+      lvSyncCharts();
+    }
+    LV.slopeLines = []; LV.studyAxis = "";
     lvMakeSeries();
     LV.chart.subscribeCrosshairMove(p => {
       const b = p && p.seriesData && LV.series ? p.seriesData.get(LV.series) : null;
@@ -9192,7 +9240,10 @@ function lvEnsureChart(){
 }
 function lvDestroyChart(){
   if(LV.chart){ try{ LV.chart.remove(); }catch(e){} }
+  [LV.slopeChart, LV.macdChart].forEach(c => { if(c){ try{ c.remove(); }catch(e){} } });
   LV.chart = LV.chartP = LV.series = LV.band = LV.path = LV.trail = null;
+  LV.slopeChart = LV.macdChart = LV.slope = LV.macdH = LV.macdS = null;
+  LV.slopeLines = []; LV.studyAxis = "";
   LV.lines = []; LV.sig = "";
 }
 function lvMakeSeries(){
@@ -9259,6 +9310,262 @@ function lvBandPoint(b){
   return {time: b.time, value: 1, color: (r && LV_BAND[r]) || "rgba(0,0,0,0)"};
 }
 function lvBandData(){ return lvBars().map(lvBandPoint); }
+
+/* ---------- THE STUDIES UNDER THE CANDLES (2026-09-27) ----------
+   Trevor: *"I want the MACD added below the graph. I also want the Same D1 Slope
+   line added. The one that is defining the Slope buckets. 1 single line ...
+   color coded in sections ... Green for Bull, Red for Bear, and Blue for
+   Ranging."* And: *"the D1 line needs to reflect the same D1, even if i'm
+   looking at the 1min vs the 1 day chart."*
+
+   🔴 THE SLOPE'S DEFINITION IS NOT IN THIS FILE, AND MUST NOT BE. This page is
+   public, and how a regime is decided is method. The definition arrives in the
+   private snapshot (`regime_axis`, which the publisher reads from the EA's own
+   source) and is kept on this phone, so a snapshot from a machine still on older
+   code does not blank the pane. With no definition, the pane says so rather than
+   guess: a line from a guessed formula would be a confident wrong answer.
+
+   ONE VALUE PER DAY, ON EVERY TIMEFRAME. The EA reads the slope off the last
+   CLOSED bar of the axis timeframe, so the value holds from one bar's open to the
+   next. Every candle gets the value of the axis bar it falls in, computed from
+   the axis bars (fetched whatever timeframe is showing). So a minute candle and
+   a day candle of the same day read the same number. Checked 2026-09-27 against
+   the EA's own heartbeat value: equal to the fifth decimal.
+
+   MACD is MT5's own: the main line (fast EMA minus slow EMA) as the histogram,
+   the signal a simple average of it, with the default periods. */
+const LV_MACD = {fast: 12, slow: 26, signal: 9};
+const LV_AXIS_KEY = "gb.axis.v1";
+const LV_REGIME_LINE = {BULL: "#5FBE95", BEAR: "#E0685A", RANGING: "#6FA8D4"};
+/* ONE AXIS WIDTH FOR ALL THREE CHARTS, so a candle and its slope and MACD
+   values sit in the same column. */
+const LV_AXIS_W = 64;
+
+function lvSubOpts(LC, last){
+  return {
+    autoSize: true,
+    layout: {background: {type: "solid", color: LV_C.card}, textColor: LV_C.dim, fontSize: 10,
+             fontFamily: "Roboto Mono, ui-monospace, monospace", attributionLogo: false},
+    grid: {vertLines: {color: LV_C.grid}, horzLines: {color: LV_C.grid}},
+    /* Room at the top for the pane's name. */
+    rightPriceScale: {borderColor: LV_C.line, scaleMargins: {top: 0.24, bottom: 0.08},
+                      minimumWidth: LV_AXIS_W},
+    timeScale: {borderColor: LV_C.line, timeVisible: true, secondsVisible: false,
+                rightOffset: 4, barSpacing: 6, visible: !!last},
+    crosshair: {mode: LC.CrosshairMode.Normal,
+                vertLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2},
+                horzLine: {color: LV_C.faint, labelBackgroundColor: LV_C.card2}},
+    handleScroll: {vertTouchDrag: false},
+  };
+}
+/* THE THREE CHARTS MOVE AS ONE: a pan or zoom on any of them moves the others,
+   and a finger on any of them puts the crosshair on the same candle in all
+   three. Every study series carries a point (or a blank) for every candle, so
+   the charts share one bar index and a logical range means the same candles in
+   each. Only REAL moves are forwarded -- a synthetic one carries no
+   sourceEvent -- so the charts cannot bounce a move between them. */
+function lvSyncCharts(){
+  const all = () => [LV.chart, LV.slopeChart, LV.macdChart].filter(Boolean);
+  const same = (a, b) => a && b && Math.abs(a.from - b.from) < 1e-6 && Math.abs(a.to - b.to) < 1e-6;
+  let busy = false;
+  all().forEach(src => {
+    src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+      if(busy || !r) return;
+      busy = true;
+      try{
+        all().forEach(o => {
+          if(o !== src && !same(o.timeScale().getVisibleLogicalRange(), r))
+            o.timeScale().setVisibleLogicalRange(r);
+        });
+      }finally{ busy = false; }
+    });
+    src.subscribeCrosshairMove(p => {
+      if(!p || !p.sourceEvent) return;
+      all().forEach(o => {
+        if(o === src) return;
+        const tg = lvCrossTarget(o, p.time);
+        if(tg) o.setCrosshairPosition(tg.price, p.time, tg.series);
+        else o.clearCrosshairPosition();
+      });
+    });
+  });
+}
+function lvCrossTarget(chart, t){
+  const bars = lvBars(), i = t == null ? -1 : lvIdx(bars, t);
+  if(i < 0) return null;
+  if(chart === LV.chart) return LV.series ? {series: LV.series, price: bars[i].close} : null;
+  const st = LV.study;
+  if(!st) return null;
+  if(chart === LV.slopeChart)
+    return st.slope[i] != null ? {series: LV.slope, price: st.slope[i]} : null;
+  if(chart === LV.macdChart)
+    return {series: LV.macdS, price: st.sig[i] != null ? st.sig[i] : st.main[i]};
+  return null;
+}
+
+function lvAxisOk(a){
+  return !!(a && typeof a === "object" && LV_TF_SEC[a.tf] && (a.ma === "SMA" || a.ma === "EMA")
+    && a.period >= 1 && a.lookback >= 1 && isFinite(a.bull_min) && isFinite(a.bear_max));
+}
+function lvAxis(){
+  let a = null;
+  try{ a = LAST_SNAPSHOT && LAST_SNAPSHOT.regime_axis; }catch(e){}
+  if(lvAxisOk(a)){
+    try{ localStorage.setItem(LV_AXIS_KEY, JSON.stringify(a)); }catch(e){}
+    return a;
+  }
+  try{
+    const c = JSON.parse(localStorage.getItem(LV_AXIS_KEY) || "null");
+    if(lvAxisOk(c)) return c;
+  }catch(e){}
+  return null;
+}
+function lvRegimeOf(s, a){
+  return s >= a.bull_min ? "BULL" : (s < a.bear_max ? "BEAR" : "RANGING");
+}
+/* The axis bars, with the forming one from /now when it is newer than the list. */
+function lvAxisBars(a){
+  const c = LV.bars[a.tf], arr = c && Array.isArray(c.bars) ? c.bars.slice() : [];
+  const f = LV.data && LV.data.forming && LV.data.forming[a.tf];
+  if(f && (!arr.length || f[0] > arr[arr.length - 1].time))
+    arr.push({time: f[0], open: f[1], high: f[2], low: f[3], close: f[4]});
+  return arr;
+}
+/* slope[D] = the value in force DURING axis bar D: the average at the last
+   closed bar (D-1) against the one `lookback` bars before it. Index n is the bar
+   after the last one loaded, for candles past the end of the list. */
+function lvAxisSlopes(a){
+  const bars = lvAxisBars(a), n = bars.length, ma = new Array(n);
+  const k = 2 / (a.period + 1);
+  let sum = 0;
+  for(let i = 0; i < n; i++){
+    const c = bars[i].close;
+    if(a.ma === "SMA"){
+      sum += c; if(i >= a.period) sum -= bars[i - a.period].close;
+      ma[i] = i >= a.period - 1 ? sum / a.period : null;
+    } else ma[i] = i ? c * k + ma[i - 1] * (1 - k) : c;
+  }
+  const out = new Array(n + 1).fill(null);
+  for(let d = 1; d <= n; d++){
+    const cur = ma[d - 1], prev = d - 1 - a.lookback >= 0 ? ma[d - 1 - a.lookback] : null;
+    if(cur != null && prev) out[d] = (cur - prev) / prev;
+  }
+  return {bars, out};
+}
+function lvStudyCalc(){
+  const bars = lvBars(), n = bars.length, a = lvAxis();
+  const k1 = 2 / (LV_MACD.fast + 1), k2 = 2 / (LV_MACD.slow + 1);
+  const main = new Array(n), sig = new Array(n), slope = new Array(n).fill(null);
+  let e1 = 0, e2 = 0, sum = 0;
+  for(let i = 0; i < n; i++){
+    const c = bars[i].close;
+    e1 = i ? c * k1 + e1 * (1 - k1) : c;
+    e2 = i ? c * k2 + e2 * (1 - k2) : c;
+    main[i] = e1 - e2;
+    sum += main[i]; if(i >= LV_MACD.signal) sum -= main[i - LV_MACD.signal];
+    sig[i] = i >= LV_MACD.signal - 1 ? sum / LV_MACD.signal : null;
+  }
+  if(a){
+    const ax = lvAxisSlopes(a), span = LV_TF_SEC[a.tf];
+    for(let i = 0; i < n; i++){
+      const j = lvIdx(ax.bars, bars[i].time);
+      if(j < 0) continue;
+      const d = bars[i].time >= ax.bars[j].time + span ? j + 1 : j;
+      const s = ax.out[Math.min(d, ax.out.length - 1)];
+      if(s != null) slope[i] = s;
+    }
+  }
+  LV.study = {main, sig, slope, axis: a};
+  return LV.study;
+}
+function lvStudyPoint(i){
+  const st = LV.study, t = lvBars()[i].time;
+  const m = st.main[i], s = st.sig[i], v = st.slope[i];
+  return {
+    h: i >= LV_MACD.slow - 1
+      ? {time: t, value: m, color: m >= 0 ? "rgba(95,190,149,.6)" : "rgba(224,104,90,.6)"}
+      : {time: t},
+    s: i >= LV_MACD.slow + LV_MACD.signal - 2 && s != null ? {time: t, value: s} : {time: t},
+    l: v != null && st.axis ? {time: t, value: v, color: LV_REGIME_LINE[lvRegimeOf(v, st.axis)]}
+                            : {time: t},
+  };
+}
+/* The cut-offs as dashed lines, redrawn only when the definition changes. */
+function lvSlopeCutoffs(a){
+  const key = a ? JSON.stringify(a) : "";
+  if(key === LV.studyAxis) return;
+  LV.slopeLines.forEach(l => { try{ LV.slope.removePriceLine(l); }catch(e){} });
+  LV.slopeLines = !a ? [] : [a.bull_min, a.bear_max].map(p => LV.slope.createPriceLine({
+    price: p, color: LV_C.faint, lineWidth: 1, lineStyle: LV.LC.LineStyle.Dashed,
+    axisLabelVisible: false}));
+  LV.studyAxis = key;
+}
+function lvStudiesSet(){
+  if(!LV.slope) return;
+  const st = lvStudyCalc(), n = lvBars().length, H = [], S = [], L = [];
+  for(let i = 0; i < n; i++){ const p = lvStudyPoint(i); H.push(p.h); S.push(p.s); L.push(p.l); }
+  LV.macdH.setData(H); LV.macdS.setData(S); LV.slope.setData(L);
+  lvSlopeCutoffs(st.axis);
+  lvPaneLabels(null);
+  const r = LV.chart && LV.chart.timeScale().getVisibleLogicalRange();
+  if(r) [LV.slopeChart, LV.macdChart].forEach(c => { if(c) c.timeScale().setVisibleLogicalRange(r); });
+  requestAnimationFrame(lvAlignAxes);
+}
+/* The price axes are as wide as their widest label, which differs per chart, so
+   all three take the widest -- otherwise the candle columns drift apart. */
+function lvAlignAxes(){
+  const all = [LV.chart, LV.slopeChart, LV.macdChart].filter(Boolean);
+  let w = LV_AXIS_W;
+  all.forEach(c => { try{ w = Math.max(w, Math.ceil(c.priceScale("right").width())); }catch(e){} });
+  all.forEach(c => { try{
+    if(c.priceScale("right").width() !== w) c.applyOptions({rightPriceScale: {minimumWidth: w}});
+  }catch(e){} });
+}
+/* After bars from time `t` on changed: only those points move. A definition that
+   arrived since the last full draw redraws the whole line. */
+function lvStudiesFrom(t){
+  if(!LV.slope) return;
+  const a = lvAxis();
+  if((a ? JSON.stringify(a) : "") !== LV.studyAxis) return lvStudiesSet();
+  lvStudyCalc();
+  const bars = lvBars();
+  for(let i = Math.max(0, lvIdx(bars, t)); i < bars.length; i++){
+    const p = lvStudyPoint(i);
+    LV.macdH.update(p.h); LV.macdS.update(p.s); LV.slope.update(p.l);
+  }
+}
+/* The axis bars when another timeframe is showing: every 10 min is plenty for
+   a value that moves once per axis bar. True when fresh bars arrived. */
+async function lvMaybeAxisBars(){
+  const a = lvAxis();
+  if(!a || a.tf === LV.tf) return false;
+  const c = LV.bars[a.tf];
+  if(c && Date.now() - c.at < 600000) return false;
+  try{
+    const d = await lvGet("/bars?tf=" + a.tf);
+    LV.bars[a.tf] = {at: Date.now(), bars: (Array.isArray(d.bars) ? d.bars : [])
+      .map(b => ({time: b[0], open: b[1], high: b[2], low: b[3], close: b[4]}))};
+    return true;
+  }catch(e){
+    if(!c) LV.bars[a.tf] = {at: Date.now(), bars: [], err: lvErrText(e)};
+    return false;
+  }
+}
+/* Each pane's name and its value: under the crosshair, else the newest candle. */
+function lvPaneLabels(bar){
+  const ps = document.getElementById("lvpslope"), pm = document.getElementById("lvpmacd");
+  if(!ps || !pm || !LV.study) return;
+  const bars = lvBars(), i = bar ? lvIdx(bars, bar.time) : bars.length - 1;
+  const st = LV.study, a = st.axis;
+  const v = i >= 0 ? st.slope[i] : null;
+  ps.innerHTML = !a
+    ? "Slope <b>waiting for its definition from the fleet</b>"
+    : esc(a.tf) + " slope" + (v == null ? "" : ` <b style="color:${LV_REGIME_LINE[lvRegimeOf(v, a)]}">${
+        (v >= 0 ? "+" : "") + v.toFixed(5)} ${lvRegimeOf(v, a)}</b>`);
+  const m = i >= LV_MACD.slow - 1 ? st.main[i] : null, s = i >= 0 ? st.sig[i] : null;
+  pm.innerHTML = `MACD ${LV_MACD.fast}·${LV_MACD.slow}·${LV_MACD.signal}` + (m == null ? ""
+    : ` <b>${m.toFixed(2)}</b>` + (s == null ? "" : ` <b>/ ${s.toFixed(2)}</b>`));
+}
 function lvApplyBars(tf, bars){
   const old = LV.bars[tf] && LV.bars[tf].bars;
   LV.bars[tf] = {at: Date.now(), bars};
@@ -9271,6 +9578,7 @@ function lvApplyBars(tf, bars){
       LV.series.update(b);
       LV.band.update(lvBandPoint(b));
     });
+    lvStudiesFrom(lastT);
     lvMarks(true);
   } else lvSetSeriesData(!!(old && old.length));   // a first load: the caller decides the view
 }
@@ -9279,6 +9587,7 @@ function lvSetSeriesData(fit){
   const bars = lvBars();
   LV.series.setData(bars);
   LV.band.setData(lvBandData());
+  lvStudiesSet();
   lvMarks(true);
   lvOhlc(lvLastBar());
   /* NOT scrollToRealTime(): it ANIMATES, so it finished after a trade tap had
@@ -9299,6 +9608,7 @@ function lvChartLive(){
     if(bar.time === arr[arr.length - 1].time) arr[arr.length - 1] = bar; else arr.push(bar);
     LV.series.update(bar);
     LV.band.update(lvBandPoint(bar));
+    lvStudiesFrom(bar.time);
     lvOhlc(bar);
   }
   lvMarks(false);
@@ -9420,6 +9730,7 @@ function lvPath(list){
 function lvOhlc(bar){
   const el = document.getElementById("lvohlc");
   if(!el) return;
+  lvPaneLabels(bar);
   if(!bar){ el.textContent = lvBars().length ? "" : "No bars yet on this timeframe."; return; }
   const ch = bar.close - bar.open;
   el.innerHTML = `${lvBarWhen(bar.time)} O <b>${lvPx(bar.open)}</b> H <b>${lvPx(bar.high)}</b> ` +
