@@ -169,6 +169,15 @@ button.chip.on{
   box-shadow:0 0 0 2px rgba(224,180,87,.28);
 }
 button.chip.on::before{content:"\2713\00a0";}
+/* PASS PICKS' FALLBACK -- "another entire block opens up tabbed over". Indented
+   under Manual with a gold rule down its side, so it reads as a block inside
+   the block rather than more rows of the same one. */
+.schedfb{
+  margin:10px 0 2px 8px;padding:10px 10px 10px 12px;
+  border-left:3px solid var(--gold);border-radius:0 8px 8px 0;
+  background:rgba(224,180,87,.05);
+  display:flex;flex-direction:column;gap:5px;
+}
 .when{font-size:.69rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
 
 .title{font-size:1rem;font-weight:700;letter-spacing:-.012em;line-height:1.25;
@@ -1583,7 +1592,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-144602";
+const APP_BUILD = "20260928-154300";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3959,6 +3968,8 @@ function pickCard(pk){
             pass is picked.${pk.holds_regime ? ` A pending pick holds <b>every
             ${esc(pk.regime)} round</b>, so no ${esc(pk.regime)} work runs until
             this is done.` : ""}</div>
+          ${pk.wait ? `<div class="opsh">Timer</div>
+            <div class="opsnote">${pickWaitLine(pk.wait)}</div>` : ""}
           <div class="opsh">What to do</div>
           ${none ? `<div class="opsnote"><b>There is no valid pass to pick.</b> Every
             pass this sweep ran was refused (disqualified) — see the table
@@ -6742,6 +6753,9 @@ function schedNewBlock(){
     name: "", buckets: [], regimes: [], select: "explicit", select_n: 1,
     groups: "any", order: "default", machines: [], until: {kind: "jobs", n: 3},
     max_jobs: null,
+    /* 2026-09-28 -- Pass picks: null = the regular rule. Manual adds
+       pick_timer_min and a fallback when chosen. */
+    pass_picks: null,
   };
 }
 
@@ -6763,7 +6777,10 @@ document.addEventListener("click", async e => {
     + "[data-schededit],[data-scheddel],[data-schedmove],[data-schedact],"
     + "[data-schedsel],[data-schedreg],[data-schedn],"
     + "[data-schedgrp],[data-schedord],[data-scheduntil],[data-schedval],"
-    + "[data-schedscope],[data-schedcap]");
+    + "[data-schedscope],[data-schedcap],"
+    /* 2026-09-28 -- Pass picks, its timer, and the fallback block's chips. */
+    + "[data-schedpp],[data-schedtimer],[data-schedfbreg],[data-schedfbsel],"
+    + "[data-schedfbn],[data-schedfbgrp],[data-schedfbord]");
   if(!t) return;
   e.preventDefault();
   e.stopPropagation();
@@ -6829,7 +6846,8 @@ document.addEventListener("click", async e => {
   // ---- per-block edits, all local ----
   const [id, val] = pair(d.schedsel || d.schedreg || d.schedn
     || d.schedgrp || d.schedord || d.scheduntil || d.schedval || d.schedscope
-    || d.schedcap || ":");
+    || d.schedcap || d.schedpp || d.schedtimer || d.schedfbreg || d.schedfbsel
+    || d.schedfbn || d.schedfbgrp || d.schedfbord || ":");
   const b = schedFind(id);
   if(!b) return;
   /* Tapping the lit target turns it off -- back to no target. With Named gone
@@ -6852,6 +6870,24 @@ document.addEventListener("click", async e => {
   }
   else if(d.schedscope !== undefined) b.until.scope = val;
   else if(d.schedcap !== undefined) b.max_jobs = Number(val) || null;
+  /* PASS PICKS: tapping the lit one turns it off -- back to the regular rule.
+     Manual brings its timer and an empty fallback (= the normal rotation's
+     next job) the moment it is chosen, so the block is complete as shown. */
+  else if(d.schedpp !== undefined){
+    b.pass_picks = (b.pass_picks === val) ? null : val;
+    if(b.pass_picks === "manual"){
+      if(!b.pick_timer_min) b.pick_timer_min = Number(VOCAB.pick_timer_default || 15);
+      schedFb(b);
+    }
+  }
+  else if(d.schedtimer !== undefined) b.pick_timer_min = Number(val);
+  else if(d.schedfbreg !== undefined) schedToggle(schedFb(b).regimes, val);
+  else if(d.schedfbsel !== undefined){
+    const f = schedFb(b); f.select = (f.select === val) ? "explicit" : val; }
+  else if(d.schedfbn !== undefined) schedFb(b).select_n = Number(val);
+  else if(d.schedfbgrp !== undefined){
+    const f = schedFb(b); f.groups = (f.groups === val) ? "any" : val; }
+  else if(d.schedfbord !== undefined) schedFb(b).order = val;
   repaintSettings();
 });
 
@@ -7704,6 +7740,105 @@ function schedBlockCard(b, i, isActive, sch, isPast){
 
 /* THE BLOCK AS ONE SENTENCE. A builder that only shows chips makes you
    reassemble the meaning in your head every time you read it. */
+/* ---------- PASS PICKS (2026-09-28) ----------
+   Trevor: *"I want an option underneath target bucket. 'Pass picks' Automatic
+   or Manual. Manual comes with a timer. 15 min. Upon clicking manual, another
+   entire block opens up tabbed over kinda thing. And this block runs only if
+   the timer runs out before a pass is picked. It inserts 1 job at a time."*
+   Offered only once a machine publishes `pass_picks` -- an engine without them
+   would read either choice as nothing. Nothing lit is the regular rule. */
+const PP_LABEL = {auto: "Automatic", manual: "Manual"};
+
+function schedNewFallback(){
+  return {regimes: [], buckets: [], select: "explicit", select_n: 1,
+          groups: "any", order: "default"};
+}
+function schedFb(b){ return b.fallback || (b.fallback = schedNewFallback()); }
+
+/* The fallback's target in one line -- what a timed-out wait will run. */
+function schedFallbackPhrase(fb){
+  fb = fb || {};
+  const regs = (fb.regimes || []).length ? fb.regimes.join(" + ") : "every bucket";
+  const sel = (fb.select && fb.select !== "explicit")
+    ? (SCHED_LABEL[fb.select] || fb.select) + " × " + (fb.select_n || 1) + " in " : "";
+  const g = (fb.groups && fb.groups !== "any") ? ", " + (SCHED_LABEL[fb.groups] || fb.groups) : "";
+  const o = (fb.order && fb.order !== "default")
+    ? ", " + (fb.order === "highest_pf" ? "biggest PF gain" : "biggest PF loss") + " first" : "";
+  return sel + regs + g + o;
+}
+
+function schedPassPicks(b, chip){
+  const pp = VOCAB.pass_picks || [];
+  if(!pp.length) return "";
+  const cur = b.pass_picks || null;
+  let h = '<div class="section-label" style="margin-top:12px">Pass picks</div>'
+    + '<div class="chips">'
+    + pp.map(function(v){ return chip("schedpp", v, cur === v, PP_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">' + (cur ? esc(vocabText("pass_picks_text", cur))
+        : "<b>Not set</b> — the regular rule: BULL and BEAR apply their top pass, "
+          + "RANGING waits for your pick while the machine moves on.") + '</div>';
+  if(cur !== "manual") return h;
+  const presets = (VOCAB.pick_timer_presets || []).length ? VOCAB.pick_timer_presets : [5, 15, 30, 60];
+  const t = Number(b.pick_timer_min || VOCAB.pick_timer_default || 15);
+  const fb = b.fallback || schedNewFallback();
+  return h
+    + '<div class="section-label" style="margin-top:10px">Timer</div>'
+    + '<div class="chips">'
+    + presets.map(function(m){ return chip("schedtimer", m, t === Number(m), m + " min"); }).join("")
+    + '<input class="pickin schedin" type="number" inputmode="decimal" step="any" min="1" '
+    + 'placeholder="min" data-schedtimerin="' + esc(b.id) + '" value="' + esc(t) + '">'
+    + '</div>'
+    + '<div class="tnote">How long the machine holds for your pick. A pick inside it goes '
+    + 'straight to that pass’s backtests.</div>'
+    /* THE FALLBACK, "tabbed over": its own block, indented under Manual. A
+       target and nothing else -- no Until (it runs one job per turn), no Pass
+       picks (its jobs apply themselves), no fallback of its own. */
+    + '<div class="schedfb">'
+    + '<div class="section-label" style="margin:0 0 2px">If the timer runs out</div>'
+    + '<div class="tnote" style="margin-bottom:6px">One job at a time from here, checking for '
+    + 'your pick after each. These jobs apply their own top pass.</div>'
+    + '<div class="section-label">Target bucket</div>'
+    + '<div class="chips">'
+    + ["BULL", "BEAR", "RANGING"].map(function(r){
+        return chip("schedfbreg", r, (fb.regimes || []).indexOf(r) >= 0, r); }).join("")
+    + vocab("selects").map(function(v){
+        return chip("schedfbsel", v, (fb.select || "explicit") === v, SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + ((fb.select || "explicit") === "explicit" ? ""
+        : '<div class="chips" style="margin-top:6px">'
+          + [1, 2, 3].map(function(n){
+              return chip("schedfbn", n, Number(fb.select_n || 1) === n, "top " + n); }).join("")
+          + '</div>')
+    + '<div class="section-label" style="margin-top:8px">Target groups</div>'
+    + '<div class="chips">'
+    + vocab("groups").map(function(v){
+        return chip("schedfbgrp", v, (fb.groups || "any") === v, SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="section-label" style="margin-top:8px">Group ordering</div>'
+    + '<div class="chips">'
+    + orderVocab().map(function(v){
+        return chip("schedfbord", v, (fb.order || "default") === v, SCHED_LABEL[v] || v); }).join("")
+    + '</div>'
+    + '<div class="tnote">Runs: <b>' + esc(schedFallbackPhrase(fb)) + '</b>.</div>'
+    + '</div>';
+}
+
+/* The pick card's timer line. */
+function pickWaitLine(w){
+  const who = esc(w.machine || "the machine");
+  const fill = w.fallback ? "its fallback block" : "the normal rotation";
+  if(!w.expired){
+    const left = Math.max(1, Math.ceil(Number(w.minutes_left) || 0));
+    return `<b>${left} min left.</b> Pick before then and the ${who} goes straight to
+      this pass's backtests. After that it runs ${fill} one job at a time until
+      you pick.`;
+  }
+  return `<b>The timer ran out.</b> The ${who} is running ${fill} one job at a
+    time${w.fillers ? ` (${esc(w.fillers)} so far)` : ""}, and applies your pick
+    as soon as the job it is on ends.`;
+}
+
 function schedSentence(b){
   const sel = b.select || "explicit";
   let what;
@@ -7736,8 +7871,13 @@ function schedSentence(b){
           ? ", " + (b.order === "highest_pf" ? "biggest PF gain" : "biggest PF loss")
             + " first" : "");
   const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
+  const pp = b.pass_picks === "auto" ? " \u00b7 passes picked automatically"
+    : b.pass_picks === "manual"
+      ? " \u00b7 you pick (" + Number(b.pick_timer_min || 15) + " min, then "
+        + schedFallbackPhrase(b.fallback) + ")"
+    : "";
   return esc("Target " + what + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
-             + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "")) ;
+             + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "") + pp) ;
 }
 
 function schedUntilPhrase(u){
@@ -7844,6 +7984,9 @@ function schedEditor(b){
           + [1, 2, 3].map(function(n){
               return chip("schedn", n, Number(b.select_n || 1) === n, "top " + n); }).join("")
           + '</div>')
+
+    /* PASS PICKS, underneath Target bucket (Trevor, 2026-09-28). */
+    + schedPassPicks(b, chip)
 
     /* "TARGET GROUPS" is the FILTER -- which groups may run; no chip lit is all
        of them, and tapping the lit one turns it off. Trevor, 2026-09-28:
@@ -10349,6 +10492,15 @@ else stickTop();
    updated in place and the chips catch up at the next tap. The input already
    shows what you typed; repainting only to agree with it costs the cursor. */
 document.addEventListener("input", e => {
+  /* The Pass-picks timer's own minutes, same no-repaint rule. */
+  const ti = e.target.closest("[data-schedtimerin]");
+  if(ti){
+    const blk = schedDraft().find(function(x){
+      return x.id === ti.getAttribute("data-schedtimerin"); });
+    const v = Number(ti.value.trim());
+    if(blk && v > 0) blk.pick_timer_min = v;
+    return;
+  }
   const si = e.target.closest("[data-schedvalin]");
   if(si){
     const blk = schedDraft().find(function(x){
