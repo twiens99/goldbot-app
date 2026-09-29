@@ -479,6 +479,17 @@ article.jrow{cursor:default;}
 button.chip[disabled]{opacity:.4;cursor:default;}
 .mstime{background:var(--card-2);color:var(--text);border:1px solid var(--line);
   border-radius:8px;padding:6px 8px;font:inherit;font-size:.85rem;}
+/* The Status page (2026-09-29): tappable rows and history lines. */
+.strow{display:block;width:100%;text-align:left;background:none;border:0;
+  border-top:1px solid var(--line);padding:10px 0;color:var(--text);font:inherit;cursor:pointer;}
+.strow:first-of-type{border-top:0;}
+.strow .lrow .stmeta{flex:1;text-align:right;}
+.stname{font-weight:700;font-size:.9rem;}
+.stmeta{font-size:.76rem;color:var(--dim);line-height:1.4;}
+.sthist{padding:8px 0;border-top:1px solid var(--line);}
+.sthist:first-child{border-top:0;}
+.stup{color:var(--good);}
+.stdn{color:var(--bad);}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);
@@ -1583,6 +1594,9 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     <section class="page" id="page-home"></section>
     <section class="page" id="page-active" hidden></section>
     <section class="page" id="page-results" hidden></section>
+    <!-- STATUS (2026-09-29), no tab: a home badge under Results. Each bucket's
+         epoch, its groups, their variables. See renderStatus. -->
+    <section class="page" id="page-status" hidden></section>
     <!-- 🔴 NO TAB OF ITS OWN. Trevor, 2026-09-19: the Schedule is a badge under
          Results on the home screen, not a section of Settings. A fifth tab would
          buy a permanent seat in a four-icon bar for something you open when you
@@ -1623,7 +1637,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-115933";
+const APP_BUILD = "20260929-124426";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5580,6 +5594,326 @@ function nrHours(s){
        : h < 10 ? h.toFixed(1) + " h" : Math.round(h) + " h";
 }
 
+/* ==========================================================================
+   STATUS -- each bucket's epoch, its groups, their variables (2026-09-29)
+   ==========================================================================
+   Trevor: *"Under results in the home screen, I want status bar. In here, I want
+   to be able to see how many groups are left for each bucket or regime. What
+   epoch is that bucket on. How many and which groups have run. Which groups are
+   left. Along with group history. I want to click on any group and the variables
+   show up with their status. I want to know their next swept range count. And I
+   want to see their history."*
+
+   HIS "EPOCH" IS A BUCKET'S PASS (09-28): every group gets one turn, then every
+   group starts the next epoch equal -- not the V3.0.0 campaign. The count comes
+   from the publisher replaying the ledger the way the PICKER does
+   (app_snapshot.status_from), so "left" is what the schedule will offer.
+
+   Three sources, each for one thing:
+     STATUS.buckets / round_epoch -- epochs and done/left (the picker's replay)
+     STATUS.next                  -- each group's next round, per variable (the
+                                     engine's own; the job card's Next round)
+     LEDGER                       -- group and variable HISTORY: every round of
+                                     this campaign, and each task's variable states
+   Counts and states only, never a value. */
+let STATUS = {};
+let ST_NAV = {bucket: null, group: null, variable: null};
+
+function statusSummary(){
+  const bs = STATUS.buckets || [];
+  if(!bs.length) return "Arrives with the publisher update";
+  return bs.map(b => `${esc(b.regime)} <span class="hcount">${esc(b.left)}</span> left`)
+    .join(" · ") + " this epoch";
+}
+
+function repaintStatus(){
+  const el = document.getElementById("page-status");
+  if(el) el.innerHTML = renderStatus();
+}
+
+/* A group's rounds this campaign, newest first. GLOBALS is matched by group
+   alone: its rows are charged to whichever regime ran them. */
+function stRounds(key, gid){
+  const [regime, bid] = String(key).split("|");
+  return LEDGER.filter(r => r.group_id === gid && (regime === "GLOBALS"
+      || (String(r.regime).toUpperCase() === regime && String(r.bucket_id) === bid)))
+    .slice().sort((a, b) => String(b.recorded_at).localeCompare(String(a.recorded_at)));
+}
+
+function stEpochOf(r){
+  const e = (STATUS.round_epoch || {})[String(r.round_no)];
+  return e ? "Epoch " + e : "";
+}
+
+function stPf(r){
+  const a = r.bucket_pf_before, b = r.bucket_pf_after;
+  if(a == null && b == null) return "";
+  const d = (a != null && b != null) ? Number(b) - Number(a) : null;
+  return `PF ${a != null ? esc(Number(a).toFixed(2)) : "—"} → ${
+    b != null ? esc(Number(b).toFixed(2)) : "—"}${d != null && Math.abs(d) >= 0.005
+      ? ` <span class="${d > 0 ? "stup" : "stdn"}">(${d > 0 ? "+" : ""}${esc(d.toFixed(2))})</span>` : ""}`;
+}
+
+function renderStatus(){
+  const home = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  if(!(STATUS.buckets || []).length)
+    return '<div class="home">' + home + '<div class="section-label">Status</div>'
+      + '<div class="card"><div class="card-in"><div class="tnote">This snapshot has no '
+      + 'status yet &mdash; it arrives once a machine on the update that adds it publishes.'
+      + '</div></div></div></div>';
+  if(ST_NAV.variable && ST_NAV.group) return stVariablePage();
+  if(ST_NAV.group) return stGroupPage();
+  if(ST_NAV.bucket) return stBucketPage();
+  return stOverview(home);
+}
+
+function stBar(done, total){
+  const pct = total ? Math.round(100 * done / total) : 0;
+  return `<div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div>`;
+}
+
+function stOverview(home){
+  const bs = STATUS.buckets || [];
+  const regimes = ["BULL", "BEAR", "RANGING"].filter(r => bs.some(b => b.regime === r));
+  const cards = regimes.map(r => {
+    const mine = bs.filter(b => b.regime === r);
+    const left = mine.reduce((a, b) => a + b.left, 0), tot = mine.reduce((a, b) => a + b.total, 0);
+    return '<div class="card"><div class="card-in">'
+      + `<div class="trow lrow"><span class="tname">${esc(r)}</span>`
+      + `<span class="chip">${esc(left)} of ${esc(tot)} groups left</span></div>`
+      + mine.map(b => `<button type="button" class="strow" data-stb="${esc(b.key)}">`
+          + `<div class="lrow"><span class="stname">Bucket ${esc(b.bucket_id)}</span>`
+          + `<span class="chip gold">Epoch ${esc(b.epoch)}</span>`
+          + `<span class="stmeta">${esc(b.done)} run · ${esc(b.left)} left</span>`
+          + `<span class="hcar">›</span></div>${stBar(b.done, b.total)}</button>`).join("")
+      + '</div></div>';
+  }).join("");
+  const g = STATUS.globals;
+  const glob = g && (g.groups || []).length
+    ? '<div class="card"><div class="card-in"><div class="tname">GLOBALS</div>'
+      + '<div class="tnote">Shared by every regime. A GLOBALS group counts toward every '
+      + 'bucket\'s epoch when it runs, but never ends one.</div>'
+      + g.groups.map(gid => {
+          const rs = stRounds("GLOBALS|" + g.bucket_id, gid);
+          return `<button type="button" class="strow" data-stg="${esc("GLOBALS|" + g.bucket_id + "|" + gid)}">`
+            + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>`
+            + `<span class="hcar">›</span></div><div class="stmeta">${stRunText(rs)}</div></button>`;
+        }).join("") + '</div></div>'
+    : "";
+  return '<div class="home">' + home + '<div class="section-label">Status</div>'
+    + '<div class="tnote" style="margin:0 2px 4px">An epoch is one turn for every group in a '
+    + 'bucket; when all have had theirs, every group starts the next epoch equal.</div>'
+    + cards + glob + '</div>';
+}
+
+/* WHAT COUNTS AS A RUN: a completed round the schedule counted. A FAILED round
+   and a seed's uncounted one are history, but not a turn -- the epoch replay
+   ignores them, and a row saying "run 1×" under "Left this epoch" contradicted
+   it (BEAR Session Weights, 09-14: one failed attempt). Caught in the browser
+   check. */
+function stCounted(r){ return !r.failed && r.counted !== false; }
+function stRunText(rounds){
+  const ok = rounds.filter(stCounted), bad = rounds.filter(r => r.failed).length;
+  const last = ok[0];
+  return (ok.length ? "run " + esc(ok.length) + "× · last " + esc(fmtWhen(last.recorded_at))
+      + (stPf(last) ? " · " + stPf(last) : "") : "never run this campaign")
+    + (bad ? ` · <span class="stdn">${esc(bad)} failed attempt${bad === 1 ? "" : "s"}</span>` : "");
+}
+
+function stGroupRow(key, g){
+  const gid = g.group_id;
+  const nr = (STATUS.next || {})[key + "|" + gid] || {};
+  const rounds = stRounds(key, gid);
+  const flag = nr.state === "running" ? '<span class="chip gold">running</span>'
+    : nr.state === "awaiting_pick" ? '<span class="chip warn">awaiting pick</span>'
+    : g.parked ? '<span class="chip bad">parked</span>' : "";
+  return `<button type="button" class="strow" data-stg="${esc(key + "|" + gid)}">`
+    + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${flag}`
+    + `<span class="hcar">›</span></div>`
+    + `<div class="stmeta">${stRunText(rounds)}</div></button>`;
+}
+
+function stBucketPage(){
+  const b = (STATUS.buckets || []).find(x => x.key === ST_NAV.bucket);
+  if(!b){ ST_NAV = {bucket: null, group: null, variable: null}; return renderStatus(); }
+  const left = b.groups.filter(g => !g.done && !g.parked);
+  const done = b.groups.filter(g => g.done && !g.parked);
+  const parked = b.groups.filter(g => g.parked);
+  const sec = (title, list) => list.length
+    ? `<div class="section-label" style="margin-top:12px">${esc(title)} (${esc(list.length)})</div>`
+      + '<div class="card"><div class="card-in">' + list.map(g => stGroupRow(b.key, g)).join("")
+      + '</div></div>' : "";
+  return '<div class="home">'
+    + '<button type="button" class="backbtn" data-stback="overview">‹ Status</button>'
+    + '<div class="card"><div class="card-in">'
+    + `<div class="trow lrow"><span class="tname">${esc(b.regime)} · bucket ${esc(b.bucket_id)}</span>`
+    + `<span class="chip gold">Epoch ${esc(b.epoch)}</span></div>`
+    + `<div class="tnote">${esc(b.done)} of ${esc(b.total)} groups have run this epoch; `
+    + `${esc(b.left)} left.${b.epochs_done ? " " + esc(b.epochs_done) + " epoch"
+        + (b.epochs_done === 1 ? "" : "s") + " finished before this one." : ""}</div>`
+    + stBar(b.done, b.total) + '</div></div>'
+    + sec("Left this epoch", left) + sec("Run this epoch", done) + sec("Parked", parked)
+    + '</div>';
+}
+
+function stGroupPage(){
+  const [regime, bid, gid] = String(ST_NAV.group).split("|");
+  const key = regime + "|" + bid;
+  const nr = (STATUS.next || {})[ST_NAV.group] || {};
+  const rounds = stRounds(key, gid);
+  const b = (STATUS.buckets || []).find(x => x.key === key);
+  const g = b ? b.groups.find(x => x.group_id === gid) : null;
+  const where = regime === "GLOBALS" ? "Shared by every regime"
+    : `${regime} · bucket ${bid} · Epoch ${b ? b.epoch : "?"}: ${g && g.done ? "run this epoch"
+        : g && g.parked ? "parked" : "not yet run this epoch"}`;
+  let vars;
+  if(nr.state === "running")
+    vars = '<div class="tnote">Its round is running now; the next one is planned from its result.</div>';
+  else if(nr.state === "awaiting_pick")
+    vars = '<div class="tnote">Its round is waiting on your pass pick; the next one is planned from the pass you choose.</div>';
+  else if(nr.state === "nothing")
+    vars = '<div class="tnote">Every variable is locked and sitting out its next round.</div>';
+  else if(Array.isArray(nr.vars) && nr.vars.length){
+    const sw = nr.vars.filter(v => v.points);
+    vars = `<div class="tshaped" style="margin:0 0 6px">${esc(nr.swept || sw.length)} of ${
+        esc(nr.total || nr.vars.length)} variables · ${sw.length > 1 && sw.length <= 9
+          ? sw.map(v => esc(v.points)).join(" × ") + " = " : ""}${esc(Number(nr.grid || 0).toLocaleString())} cells</div>`
+      + nr.vars.map(v => nrRow(v, ` data-stv="${esc(v.name)}" role="button" tabindex="0" style="cursor:pointer"`)).join("")
+      + '<div class="tnote" style="margin-top:6px">Tap a variable for its history.</div>';
+  } else {
+    vars = '<div class="tnote">No next round published for this group.</div>';
+  }
+  const hist = rounds.length ? rounds.map(r => '<div class="sthist">'
+      + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
+      + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+      + (r.counted === false ? '<span class="chip">seed · not counted</span>' : "")
+      + `<span class="stmeta">${esc(r.machine || "")}</span></div>`
+      + `<div class="stmeta">${r.failed ? '<span class="stdn">failed — did not count</span>'
+          + (r.fail_reason ? " — " + esc(r.fail_reason) : "")
+          : (r.applied_pass != null || r.picked_pass != null
+              ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
+                  r.applied_pass != null ? r.applied_pass_style : r.picked_pass_style))
+              : "no pass applied")
+            + (stPf(r) ? " · " + stPf(r) : "")}</div></div>`).join("")
+    : '<div class="tnote">Not run this campaign.</div>';
+  return '<div class="home">'
+    + `<button type="button" class="backbtn" data-stback="${regime === "GLOBALS" ? "overview" : "bucket"}">‹ ${
+        regime === "GLOBALS" ? "Status" : esc(regime) + " " + esc(bid)}</button>`
+    + '<div class="card"><div class="card-in">'
+    + `<div class="tname">${esc(humanize(gid))}</div><div class="tnote">${esc(where)}</div></div></div>`
+    + '<div class="section-label" style="margin-top:12px">Variables · next round</div>'
+    + '<div class="card"><div class="card-in">' + vars + '</div></div>'
+    + `<div class="section-label" style="margin-top:12px">History (${esc(rounds.length)})</div>`
+    + '<div class="card"><div class="card-in">' + hist + '</div></div>'
+    + '</div>';
+}
+
+function stVariablePage(){
+  const [regime, bid, gid] = String(ST_NAV.group).split("|");
+  const name = ST_NAV.variable;
+  const nr = (STATUS.next || {})[ST_NAV.group] || {};
+  const now = (nr.vars || []).find(v => v.name === name);
+  const rounds = stRounds(regime + "|" + bid, gid);
+  /* ONE LINE PER ROUND, not per task. A round is several tasks (the sweep, a
+     second pass, the two backtests), and listed one by one they said the wrong
+     things: a backtest row read "SWEPT", and with the backtests dropped the
+     sweeps alone mostly predate per-task states and read "NOT SWEPT" with
+     nothing after it. What a round did to a variable is two facts: whether any
+     SWEEP in it swept the variable (and over how many values), and the state
+     the round LEFT it in -- its newest task's, which is after the apply. */
+  const rows = [];
+  rounds.forEach(r => {
+    const tasks = ((r.reports || {}).tasks || []).map(t => {
+      const d = t.detail || {};
+      return {d: d, kind: String(d.kind || t.kind || "").toUpperCase(),
+              v: (taskRows(d) || []).find(x => x && x.name === name)};
+    }).filter(x => x.v);
+    if(!tasks.length && !r.failed) return;
+    /* The COUNT rides on the task's swept list (task_detail._mark_points), the
+       same place the job card's RANGE chip reads it -- not on the state rows. */
+    const sw = x => ((x.d.swept) || []).find(s => s && s.name === name);
+    /* A SWEEP is any task that is not a backtest (a kind ending in TEST); the
+       report-style names themselves stay out of this public file. */
+    const swept = tasks.filter(x => !/TEST$/.test(x.kind) && (sw(x) || x.v.swept === true));
+    const after = tasks.slice()
+      .sort((a, b) => String(b.d.at || "").localeCompare(String(a.d.at || "")))
+      .find(x => x.v.state || x.v.unrec);
+    const pts = swept.map(x => Number((sw(x) || {}).points)).find(n => n > 0);
+    const onboard = swept.some(x => (sw(x) || {}).onboard);
+    rows.push('<div class="sthist">'
+      + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
+      + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+      + `<span class="stmeta">${r.failed ? '<span class="stdn">failed</span>'
+          : (r.applied_pass != null || r.picked_pass != null)
+            ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
+                r.applied_pass != null ? r.applied_pass_style : r.picked_pass_style)) : ""}</span></div>`
+      + `<div class="nrc" style="margin-top:4px">${swept.length
+          ? `<span class="tmem in">SWEPT · ${esc(swept.map(x => x.kind).join(" + "))}</span>`
+          : '<span class="tmem held">NOT SWEPT</span>'}`
+      + (pts ? `<span class="tvr nrrange">RANGE ${esc(pts)}</span>`
+          : onboard ? '<span class="tmem rider">ONBOARD</span>' : "")
+      + (after ? '<span class="stmeta" style="margin:0 2px">left it</span>' + stateChip(after.v) : "")
+      + '</div></div>');
+  });
+  return '<div class="home">'
+    + `<button type="button" class="backbtn" data-stback="group">‹ ${esc(humanize(gid))}</button>`
+    + '<div class="card"><div class="card-in">'
+    + `<div class="tname">${esc(spaceOut(stripRegime(name)))}</div>`
+    + `<div class="tnote">${esc(humanize(gid))} · ${esc(regime)}${regime === "GLOBALS" ? "" : " " + esc(bid)}</div>`
+    + '</div></div>'
+    + '<div class="section-label" style="margin-top:12px">Now · next round</div>'
+    + '<div class="card"><div class="card-in">' + (now ? nrRow(now)
+        : '<div class="tnote">Not in a planned next round right now.</div>') + '</div></div>'
+    + `<div class="section-label" style="margin-top:12px">History (${esc(rows.length)})</div>`
+    + '<div class="card"><div class="card-in">' + (rows.length ? rows.join("")
+        : '<div class="tnote">No task this campaign recorded this variable.</div>')
+    + '<div class="tnote" style="margin-top:6px">Every round of its group this campaign, newest '
+    + 'first: whether it was swept, over how many values, and the state the round left it in.</div>'
+    + '</div></div></div>';
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-stb],[data-stg],[data-stv],[data-stback]");
+  if(!t) return;
+  const d = t.dataset;
+  if(d.stb !== undefined) ST_NAV = {bucket: d.stb, group: null, variable: null};
+  else if(d.stg !== undefined){
+    const [r, b] = d.stg.split("|");
+    ST_NAV = {bucket: r === "GLOBALS" ? null : r + "|" + b, group: d.stg, variable: null};
+  }
+  else if(d.stv !== undefined) ST_NAV = Object.assign({}, ST_NAV, {variable: d.stv});
+  else if(d.stback === "overview") ST_NAV = {bucket: null, group: null, variable: null};
+  else if(d.stback === "bucket") ST_NAV = Object.assign({}, ST_NAV, {group: null, variable: null});
+  else if(d.stback === "group") ST_NAV = Object.assign({}, ST_NAV, {variable: null});
+  repaintStatus();
+  window.scrollTo(0, 0);
+});
+
+/* ONE VARIABLE OF A NEXT ROUND: what it will do, its state, how many values it is
+   swept over, its resolution, and why. Lifted out of nextRoundBadge 2026-09-29 so
+   the Status page draws the SAME row (`attrs` makes it tappable there) -- two
+   renderers of one row are two sets of words for one fact. */
+function nrRow(v, attrs){
+  const a = NR_ACTION[v.action] || ["held", String(v.action || "")];
+  const pts = Number(v.points) || 0, last = Number(v.last) || 0;
+  const range = pts
+    ? `<span class="tvr nrrange" title="How many values it is swept over">RANGE ${
+        last && last !== pts ? esc(last) + " → " : ""}${esc(pts)}</span>` : "";
+  let why = NR_WHY[v.why] || "";
+  if(v.action === "SITS_OUT" && v.rounds_to_recheck)
+    why = `Locked, so it sits out; re-checked after ${esc(v.rounds_to_recheck)} more ${
+      Number(v.rounds_to_recheck) === 1 ? "round" : "rounds"} of this group.`;
+  return `<div class="nrv"${attrs || ""}>
+      <div class="nrn">${esc(spaceOut(stripRegime(v.name)))}</div>
+      <div class="nrc">
+        <span class="tmem ${a[0]}">${esc(a[1])}</span>${stateChip(v)}${range}
+        <span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
+          esc(v.resolution || "—")}</span>
+      </div>
+      ${why ? `<div class="mdf">${why}</div>` : ""}
+    </div>`;
+}
+
 function nextRoundBadge(t){
   const d = (t || {}).detail || {};
   const nr = d.next_round;
@@ -5625,26 +5959,7 @@ function nextRoundBadge(t){
           ? ` (${esc(nrHours(e.low))}–${esc(nrHours(e.high))})` : ""}`)
       .join(" · ")}</div>` : "");
 
-  const rows = vars.map(v => {
-    const a = NR_ACTION[v.action] || ["held", String(v.action || "")];
-    const pts = Number(v.points) || 0, last = Number(v.last) || 0;
-    const range = pts
-      ? `<span class="tvr nrrange" title="How many values it is swept over">RANGE ${
-          last && last !== pts ? esc(last) + " → " : ""}${esc(pts)}</span>` : "";
-    let why = NR_WHY[v.why] || "";
-    if(v.action === "SITS_OUT" && v.rounds_to_recheck)
-      why = `Locked, so it sits out; re-checked after ${esc(v.rounds_to_recheck)} more ${
-        Number(v.rounds_to_recheck) === 1 ? "round" : "rounds"} of this group.`;
-    return `<div class="nrv">
-        <div class="nrn">${esc(spaceOut(stripRegime(v.name)))}</div>
-        <div class="nrc">
-          <span class="tmem ${a[0]}">${esc(a[1])}</span>${stateChip(v)}${range}
-          <span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
-            esc(v.resolution || "—")}</span>
-        </div>
-        ${why ? `<div class="mdf">${why}</div>` : ""}
-      </div>`;
-  }).join("");
+  const rows = vars.map(v => nrRow(v)).join("");
 
   return wrap(`What this group's next optimization in this bucket sweeps, built
       by the same code that will build it, from the bucket as it stands now.`,
@@ -6652,6 +6967,9 @@ function renderHome(){
     + homeButton("results", "✓", "Results",
         `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
         `completed · ${campaignProgress()}`, "var(--good)")
+    /* STATUS, directly under Results. Trevor, 2026-09-29: *"Under results in
+       the home screen, I want status bar."* */
+    + homeButton("status", "▤", "Status", statusSummary(), "var(--dim)")
     /* SETTINGS, under Results. Trevor, 2026-09-18: *"On the homescreen. I
        want another Badge Here. Settings ... Each Number Can be it's own
        Badge."* -- so it is a PAGE OF BADGES rather than a form, and each
@@ -10322,6 +10640,7 @@ function paint(stamp){
   document.getElementById("page-settings").innerHTML = renderSettings();
   document.getElementById("page-track").innerHTML = renderTrack();
   repaintSchedule();
+  repaintStatus();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
@@ -10501,6 +10820,8 @@ function applySnapshot(d, source){
   LEASES = Array.isArray(d.leases) ? d.leases : [];
   /* 2026-09-29 -- the Machine settings card. Absent on a snapshot from an older
      publisher; the card then shows only what each beacon carries. */
+  /* 2026-09-29 -- the Status page (collect_status). {} on an older publisher. */
+  STATUS = (d.status && typeof d.status === "object") ? d.status : {};
   MACHINE_SETTINGS = (d.machine_settings && typeof d.machine_settings === "object")
     ? d.machine_settings : {};
   MS_VOCAB = (d.machine_settings_vocab && typeof d.machine_settings_vocab === "object")
@@ -10656,7 +10977,7 @@ const POLL_MS = 20000;
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
-const PAGES = ["home", "active", "results", "schedule", "settings", "live", "track"];
+const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
