@@ -490,9 +490,13 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .sthist:first-child{border-top:0;}
 .stup{color:var(--good);}
 .stdn{color:var(--bad);}
-/* A group's legitimate runs, numbered and coloured by order (stRunPill). */
+/* A group's counted runs, one pill per EPOCH, in that epoch's colour (stEpochPill). */
 .strun{font-size:.64rem;font-weight:700;letter-spacing:.03em;padding:1px 7px;
   border:1px solid;border-radius:999px;line-height:1.5;}
+/* A bucket's bar, one segment per open epoch (stBar). */
+.stbar{display:flex;}
+.stbar i{border-radius:0;flex:none;}
+.stlegend{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:4px;}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);
@@ -1640,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-130931";
+const APP_BUILD = "20260929-143506";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5607,10 +5611,12 @@ function nrHours(s){
    show up with their status. I want to know their next swept range count. And I
    want to see their history."*
 
-   HIS "EPOCH" IS A BUCKET'S PASS (09-28): every group gets one turn, then every
-   group starts the next epoch equal -- not the V3.0.0 campaign. The count comes
-   from the publisher replaying the ledger the way the PICKER does
-   (app_snapshot.status_from), so "left" is what the schedule will offer.
+   EPOCH N IS EVERY GROUP'S Nth RUN (2026-09-29, one definition GOLDbot-wide --
+   it replaced 09-28's reset). A bucket is on the epoch after the fewest runs any
+   runnable group has had; a group that ran ahead has already done later epochs
+   and waits. Not the V3.0.0 campaign. The count comes from the publisher
+   (app_snapshot.status_from), by the rule the PICKER ranks by, so "left" is what
+   the schedule will offer.
 
    Three sources, each for one thing:
      STATUS.buckets / round_epoch -- epochs and done/left (the picker's replay)
@@ -5643,11 +5649,6 @@ function stRounds(key, gid){
     .slice().sort((a, b) => String(b.recorded_at).localeCompare(String(a.recorded_at)));
 }
 
-function stEpochOf(r){
-  const e = (STATUS.round_epoch || {})[String(r.round_no)];
-  return e ? "Epoch " + e : "";
-}
-
 function stPf(r){
   const a = r.bucket_pf_before, b = r.bucket_pf_after;
   if(a == null && b == null) return "";
@@ -5670,9 +5671,35 @@ function renderStatus(){
   return stOverview(home);
 }
 
-function stBar(done, total){
-  const pct = total ? Math.round(100 * done / total) : 0;
-  return `<div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div>`;
+/* ONE SEGMENT PER OPEN EPOCH (2026-09-29). Trevor: *"bull would show 8 groups
+   worth of gold, 2 groups worth of blue, and 1 group worth of green."* Each
+   segment is the groups that have run that epoch, out of the bucket's runnable
+   groups; if groups running ahead make the segments add up past the whole, the
+   bar is scaled to fit rather than cut. A snapshot from before the epoch colours
+   has no `open`, and gets the single bar it always had. */
+function stBar(b){
+  const open = Array.isArray(b.open) ? b.open.filter(e => e.groups > 0) : null;
+  if(!open){
+    const pct = b.total ? Math.round(100 * b.done / b.total) : 0;
+    return `<div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div>`;
+  }
+  const den = Math.max(b.total || 0, open.reduce((a, e) => a + e.groups, 0)) || 1;
+  return '<div class="bar stbar" style="margin-top:6px">' + open.map(e =>
+      `<i style="width:${(100 * e.groups / den).toFixed(2)}%;background:${stColor(e.color)}"></i>`)
+    .join("") + '</div>';
+}
+/* The key under a bar -- only when more than one epoch is open, since one colour
+   needs no key. */
+function stLegend(b){
+  const open = (Array.isArray(b.open) ? b.open : []).filter(e => e.groups > 0);
+  if(open.length < 2) return "";
+  return '<div class="stmeta stlegend">' + open.map(e =>
+      `<span><span style="color:${stColor(e.color)}">●</span> Epoch ${esc(e.epoch)}: ${esc(e.groups)}</span>`)
+    .join("") + '</div>';
+}
+function stEpochChip(b){
+  const c = Array.isArray(b.open) && b.open.length ? stColor(b.open[0].color) : "var(--gold)";
+  return `<span class="chip" style="color:${c};border:1px solid ${c};background:none">Epoch ${esc(b.epoch)}</span>`;
 }
 
 function stOverview(home){
@@ -5686,26 +5713,29 @@ function stOverview(home){
       + `<span class="chip">${esc(left)} of ${esc(tot)} groups left</span></div>`
       + mine.map(b => `<button type="button" class="strow" data-stb="${esc(b.key)}">`
           + `<div class="lrow"><span class="stname">Bucket ${esc(b.bucket_id)}</span>`
-          + `<span class="chip gold">Epoch ${esc(b.epoch)}</span>`
+          + stEpochChip(b)
           + `<span class="stmeta">${esc(b.done)} run · ${esc(b.left)} left</span>`
-          + `<span class="hcar">›</span></div>${stBar(b.done, b.total)}</button>`).join("")
+          + `<span class="hcar">›</span></div>${stBar(b)}${stLegend(b)}</button>`).join("")
       + '</div></div>';
   }).join("");
   const g = STATUS.globals;
   const glob = g && (g.groups || []).length
     ? '<div class="card"><div class="card-in"><div class="tname">GLOBALS</div>'
-      + '<div class="tnote">Shared by every regime. A GLOBALS group counts toward every '
-      + 'bucket\'s epoch when it runs, but never ends one.</div>'
+      + '<div class="tnote">Shared by every regime. It serves whichever epochs are open '
+      + 'when it runs, but it is none of a bucket\'s groups, so it never holds an epoch '
+      + 'open. Its runs are numbered on their own.</div>'
       + g.groups.map(gid => {
           const rs = stRounds("GLOBALS|" + g.bucket_id, gid);
           return `<button type="button" class="strow" data-stg="${esc("GLOBALS|" + g.bucket_id + "|" + gid)}">`
-            + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stRunPills(rs)}`
+            + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stEpochPills("GLOBALS|" + g.bucket_id, rs)}`
             + `<span class="hcar">›</span></div><div class="stmeta">${stRunText(rs)}</div></button>`;
         }).join("") + '</div></div>'
     : "";
   return '<div class="home">' + home + '<div class="section-label">Status</div>'
-    + '<div class="tnote" style="margin:0 2px 4px">An epoch is one turn for every group in a '
-    + 'bucket; when all have had theirs, every group starts the next epoch equal.</div>'
+    + '<div class="tnote" style="margin:0 2px 4px">Epoch N is every group\'s Nth run. A bucket '
+    + 'is on the epoch its slowest group has not finished; a group that ran ahead has already '
+    + 'done the later epochs (blue, green&hellip;) and waits for the rest. When an epoch is '
+    + 'complete, its colour is free for the next one to open.</div>'
     + cards + glob + '</div>';
 }
 
@@ -5723,19 +5753,26 @@ function stRunText(rounds){
     + (bad ? ` · <span class="stdn">${esc(bad)} failed attempt${bad === 1 ? "" : "s"}</span>` : "");
 }
 
-/* EACH LEGITIMATE RUN OF A GROUP, IN ITS OWN COLOUR (2026-09-29). Trevor: *"If
-   we've run a group twice (not due to ohlc) but legitimately. Let's say I target
-   splitting. And it runs a group twice in a row to get locked, I want the second
-   and third epochs to show up on that line. Only in different colors."*
+/* EACH RUN OF A GROUP IS AN EPOCH, IN THAT EPOCH'S COLOUR (2026-09-29). Trevor:
+   *"If we've run a group twice (not due to ohlc) but legitimately ... I want the
+   second and third epochs to show up on that line. Only in different colors."*
+   Then: *"those rounds that have run the same job more than once, should be
+   epoch 2 and 3"* -- so a group's Nth counted run IS its epoch N, and the pill
+   says so. LEGITIMATE = counted: a failed round (the OHLC-rule failures are all
+   failed) or a seed's uncounted one gets no pill. The same pill marks the run on
+   the group's and the variable's history lines, so the colours tie together.
 
-   NUMBERED BY RUN, NOT BY BUCKET EPOCH. Every repeat in the ledger today (BULL
-   Exit G1 three times, five more groups twice) happened inside the bucket's
-   Epoch 1 -- before the one-turn-per-epoch rule -- so an epoch colour would
-   paint them all alike. A run's bucket epoch is still on its history line.
-   LEGITIMATE = counted: a failed round (the OHLC-rule failures are all failed)
-   or a seed's uncounted one gets no pill. The same pill marks the run on the
-   group's and the variable's history lines, so the colours tie together. */
-const ST_RUN_COLORS = ["var(--gold)", "#7FB6DE", "var(--good)", "#B39DDB", "var(--warn)"];
+   THE COLOUR IS THE BUCKET'S, from the publisher's replay (`colors`: a colour is
+   freed when its epoch completes and taken by the next to open). Six, as
+   app_snapshot.STATUS_EPOCH_COLOURS says. GLOBALS, or a snapshot from before the
+   colours, falls back to one colour per epoch number. */
+const ST_EPOCH_COLORS = ["var(--gold)", "#7FB6DE", "var(--good)", "#B39DDB", "var(--warn)", "#E58F8F"];
+function stColor(slot){ return ST_EPOCH_COLORS[(Number(slot) || 0) % ST_EPOCH_COLORS.length]; }
+function stEpochColor(key, k){
+  const b = (STATUS.buckets || []).find(x => x.key === key);
+  const slot = b && b.colors ? b.colors[String(k)] : undefined;
+  return stColor(slot != null ? slot : k - 1);
+}
 function stRowKey(r){ return r.round_no != null ? "n" + r.round_no : "t" + r.recorded_at; }
 function stRunIndex(rounds){
   const m = {};
@@ -5744,18 +5781,15 @@ function stRunIndex(rounds){
     .forEach((r, i) => { m[stRowKey(r)] = i + 1; });
   return m;
 }
-function stOrdinal(n){
-  const v = n % 100;
-  return n + ((v > 10 && v < 14) ? "th" : ({1: "st", 2: "nd", 3: "rd"})[n % 10] || "th");
-}
-function stRunPill(n){
+/* `long` on a history line ("Epoch 2"); a group row carries several ("E1 E2"). */
+function stEpochPill(key, n, long){
   if(!n) return "";
-  const c = ST_RUN_COLORS[(n - 1) % ST_RUN_COLORS.length];
-  return `<span class="strun" style="color:${c};border-color:${c}">${esc(stOrdinal(n))}</span>`;
+  const c = stEpochColor(key, n);
+  return `<span class="strun" style="color:${c};border-color:${c}">${long ? "Epoch " : "E"}${esc(n)}</span>`;
 }
-function stRunPills(rounds){
+function stEpochPills(key, rounds){
   const idx = stRunIndex(rounds);
-  return Object.values(idx).sort((a, b) => a - b).map(stRunPill).join("");
+  return Object.values(idx).sort((a, b) => a - b).map(n => stEpochPill(key, n)).join("");
 }
 
 function stGroupRow(key, g){
@@ -5766,7 +5800,7 @@ function stGroupRow(key, g){
     : nr.state === "awaiting_pick" ? '<span class="chip warn">awaiting pick</span>'
     : g.parked ? '<span class="chip bad">parked</span>' : "";
   return `<button type="button" class="strow" data-stg="${esc(key + "|" + gid)}">`
-    + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stRunPills(rounds)}${flag}`
+    + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stEpochPills(key, rounds)}${flag}`
     + `<span class="hcar">›</span></div>`
     + `<div class="stmeta">${stRunText(rounds)}</div></button>`;
 }
@@ -5777,6 +5811,7 @@ function stBucketPage(){
   const left = b.groups.filter(g => !g.done && !g.parked);
   const done = b.groups.filter(g => g.done && !g.parked);
   const parked = b.groups.filter(g => g.parked);
+  const ahead = b.groups.filter(g => !g.parked && Number(g.runs) > Number(b.epoch)).length;
   const sec = (title, list) => list.length
     ? `<div class="section-label" style="margin-top:12px">${esc(title)} (${esc(list.length)})</div>`
       + '<div class="card"><div class="card-in">' + list.map(g => stGroupRow(b.key, g)).join("")
@@ -5785,11 +5820,13 @@ function stBucketPage(){
     + '<button type="button" class="backbtn" data-stback="overview">‹ Status</button>'
     + '<div class="card"><div class="card-in">'
     + `<div class="trow lrow"><span class="tname">${esc(b.regime)} · bucket ${esc(b.bucket_id)}</span>`
-    + `<span class="chip gold">Epoch ${esc(b.epoch)}</span></div>`
-    + `<div class="tnote">${esc(b.done)} of ${esc(b.total)} groups have run this epoch; `
+    + stEpochChip(b) + '</div>'
+    + `<div class="tnote">${esc(b.done)} of ${esc(b.total)} groups have run epoch ${esc(b.epoch)}; `
     + `${esc(b.left)} left.${b.epochs_done ? " " + esc(b.epochs_done) + " epoch"
-        + (b.epochs_done === 1 ? "" : "s") + " finished before this one." : ""}</div>`
-    + stBar(b.done, b.total) + '</div></div>'
+        + (b.epochs_done === 1 ? "" : "s") + " finished before this one." : ""}${
+        ahead ? " " + esc(ahead) + (ahead === 1 ? " group has" : " groups have")
+          + " run ahead into later epochs and wait for the rest." : ""}</div>`
+    + stBar(b) + stLegend(b) + '</div></div>'
     + sec("Left this epoch", left) + sec("Run this epoch", done) + sec("Parked", parked)
     + '</div>';
 }
@@ -5802,7 +5839,10 @@ function stGroupPage(){
   const b = (STATUS.buckets || []).find(x => x.key === key);
   const g = b ? b.groups.find(x => x.group_id === gid) : null;
   const where = regime === "GLOBALS" ? "Shared by every regime"
-    : `${regime} · bucket ${bid} · Epoch ${b ? b.epoch : "?"}: ${g && g.done ? "run this epoch"
+    : `${regime} · bucket ${bid} · Epoch ${b ? b.epoch : "?"}: ${
+        g && g.done && b && Number(g.runs) > Number(b.epoch)
+          ? "ran ahead — has run epochs up to " + g.runs + ", and waits for the rest"
+        : g && g.done ? "run this epoch"
         : g && g.parked ? "parked" : "not yet run this epoch"}`;
   let vars;
   if(nr.state === "running")
@@ -5824,8 +5864,7 @@ function stGroupPage(){
   const runIdx = stRunIndex(rounds);
   const hist = rounds.length ? rounds.map(r => '<div class="sthist">'
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
-      + stRunPill(runIdx[stRowKey(r)])
-      + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+      + stEpochPill(key, runIdx[stRowKey(r)], true)
       + (r.counted === false ? '<span class="chip">seed · not counted</span>' : "")
       + `<span class="stmeta">${esc(r.machine || "")}</span></div>`
       + `<div class="stmeta">${r.failed ? '<span class="stdn">failed — did not count</span>'
@@ -5876,8 +5915,7 @@ function stVariablePage(){
     if(!tasks.length){
       rows.push('<div class="sthist">'
         + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
-        + stRunPill(varRunIdx[stRowKey(r)])
-        + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+        + stEpochPill(regime + "|" + bid, varRunIdx[stRowKey(r)], true)
         + `<span class="stmeta">${r.failed ? '<span class="stdn">failed</span>'
             : (r.applied_pass != null || r.picked_pass != null)
               ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
@@ -5899,8 +5937,7 @@ function stVariablePage(){
     const onboard = swept.some(x => (sw(x) || {}).onboard);
     rows.push('<div class="sthist">'
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
-      + stRunPill(varRunIdx[stRowKey(r)])
-      + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+      + stEpochPill(regime + "|" + bid, varRunIdx[stRowKey(r)], true)
       + `<span class="stmeta">${r.failed ? '<span class="stdn">failed</span>'
           : (r.applied_pass != null || r.picked_pass != null)
             ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
@@ -8002,19 +8039,19 @@ const SCHED_WITHDRAWN = {selects: ["explicit", "worst_giveback"],
    full list. */
 /* Only for a page with no vocabulary at all; a machine's text wins. */
 const SCHED_ORDER_TEXT = {
-  default: "The regular schedule's order: every group gets one turn per pass, one "
-         + "already done this pass is skipped, and when all have had their turn "
-         + "every group starts the next pass equal.",
+  default: "The regular schedule's order: epoch N is every group's Nth run. A group "
+         + "that has already run this epoch waits until every other group catches up.",
   highest_pf: "The groups that raised the bucket's PF most in its last completed "
-            + "pass go first, each group's runs in that pass counted as one.",
+            + "epoch go first.",
   lowest_pf: "The groups that lowered the bucket's PF most in its last completed "
-           + "pass go first.",
+           + "epoch go first.",
   closest_split: "The groups needing the fewest more locked variables to reach 75% "
                + "locked go first. A group already at 75% is skipped; a tie is a "
-               + "random pick.",
+               + "random pick. A group may run one epoch ahead, to try for a lock "
+               + "twice in a row.",
   farthest_split: "The groups needing the most more locked variables to reach 75% "
                 + "locked go first. A group already at 75% is skipped; a tie is a "
-                + "random pick.",
+                + "random pick. A group may run one epoch ahead.",
 };
 
 /* The Group ordering part of a block's sentence. It used to be a two-way
