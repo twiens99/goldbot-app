@@ -490,6 +490,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .sthist:first-child{border-top:0;}
 .stup{color:var(--good);}
 .stdn{color:var(--bad);}
+/* A group's legitimate runs, numbered and coloured by order (stRunPill). */
+.strun{font-size:.64rem;font-weight:700;letter-spacing:.03em;padding:1px 7px;
+  border:1px solid;border-radius:999px;line-height:1.5;}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);
@@ -1637,7 +1640,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-124426";
+const APP_BUILD = "20260929-130931";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5696,7 +5699,7 @@ function stOverview(home){
       + g.groups.map(gid => {
           const rs = stRounds("GLOBALS|" + g.bucket_id, gid);
           return `<button type="button" class="strow" data-stg="${esc("GLOBALS|" + g.bucket_id + "|" + gid)}">`
-            + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>`
+            + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stRunPills(rs)}`
             + `<span class="hcar">›</span></div><div class="stmeta">${stRunText(rs)}</div></button>`;
         }).join("") + '</div></div>'
     : "";
@@ -5715,9 +5718,44 @@ function stCounted(r){ return !r.failed && r.counted !== false; }
 function stRunText(rounds){
   const ok = rounds.filter(stCounted), bad = rounds.filter(r => r.failed).length;
   const last = ok[0];
-  return (ok.length ? "run " + esc(ok.length) + "× · last " + esc(fmtWhen(last.recorded_at))
+  return (ok.length ? "last " + esc(fmtWhen(last.recorded_at))
       + (stPf(last) ? " · " + stPf(last) : "") : "never run this campaign")
     + (bad ? ` · <span class="stdn">${esc(bad)} failed attempt${bad === 1 ? "" : "s"}</span>` : "");
+}
+
+/* EACH LEGITIMATE RUN OF A GROUP, IN ITS OWN COLOUR (2026-09-29). Trevor: *"If
+   we've run a group twice (not due to ohlc) but legitimately. Let's say I target
+   splitting. And it runs a group twice in a row to get locked, I want the second
+   and third epochs to show up on that line. Only in different colors."*
+
+   NUMBERED BY RUN, NOT BY BUCKET EPOCH. Every repeat in the ledger today (BULL
+   Exit G1 three times, five more groups twice) happened inside the bucket's
+   Epoch 1 -- before the one-turn-per-epoch rule -- so an epoch colour would
+   paint them all alike. A run's bucket epoch is still on its history line.
+   LEGITIMATE = counted: a failed round (the OHLC-rule failures are all failed)
+   or a seed's uncounted one gets no pill. The same pill marks the run on the
+   group's and the variable's history lines, so the colours tie together. */
+const ST_RUN_COLORS = ["var(--gold)", "#7FB6DE", "var(--good)", "#B39DDB", "var(--warn)"];
+function stRowKey(r){ return r.round_no != null ? "n" + r.round_no : "t" + r.recorded_at; }
+function stRunIndex(rounds){
+  const m = {};
+  rounds.filter(stCounted).slice()
+    .sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)))
+    .forEach((r, i) => { m[stRowKey(r)] = i + 1; });
+  return m;
+}
+function stOrdinal(n){
+  const v = n % 100;
+  return n + ((v > 10 && v < 14) ? "th" : ({1: "st", 2: "nd", 3: "rd"})[n % 10] || "th");
+}
+function stRunPill(n){
+  if(!n) return "";
+  const c = ST_RUN_COLORS[(n - 1) % ST_RUN_COLORS.length];
+  return `<span class="strun" style="color:${c};border-color:${c}">${esc(stOrdinal(n))}</span>`;
+}
+function stRunPills(rounds){
+  const idx = stRunIndex(rounds);
+  return Object.values(idx).sort((a, b) => a - b).map(stRunPill).join("");
 }
 
 function stGroupRow(key, g){
@@ -5728,7 +5766,7 @@ function stGroupRow(key, g){
     : nr.state === "awaiting_pick" ? '<span class="chip warn">awaiting pick</span>'
     : g.parked ? '<span class="chip bad">parked</span>' : "";
   return `<button type="button" class="strow" data-stg="${esc(key + "|" + gid)}">`
-    + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${flag}`
+    + `<div class="lrow"><span class="stname">${esc(humanize(gid))}</span>${stRunPills(rounds)}${flag}`
     + `<span class="hcar">›</span></div>`
     + `<div class="stmeta">${stRunText(rounds)}</div></button>`;
 }
@@ -5783,8 +5821,10 @@ function stGroupPage(){
   } else {
     vars = '<div class="tnote">No next round published for this group.</div>';
   }
+  const runIdx = stRunIndex(rounds);
   const hist = rounds.length ? rounds.map(r => '<div class="sthist">'
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
+      + stRunPill(runIdx[stRowKey(r)])
       + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
       + (r.counted === false ? '<span class="chip">seed · not counted</span>' : "")
       + `<span class="stmeta">${esc(r.machine || "")}</span></div>`
@@ -5822,13 +5862,30 @@ function stVariablePage(){
      SWEEP in it swept the variable (and over how many values), and the state
      the round LEFT it in -- its newest task's, which is after the apply. */
   const rows = [];
+  const varRunIdx = stRunIndex(rounds);
   rounds.forEach(r => {
     const tasks = ((r.reports || {}).tasks || []).map(t => {
       const d = t.detail || {};
       return {d: d, kind: String(d.kind || t.kind || "").toUpperCase(),
               v: (taskRows(d) || []).find(x => x && x.name === name)};
     }).filter(x => x.v);
-    if(!tasks.length && !r.failed) return;
+    /* A ROUND WITH NO TASK DETAIL STILL HAS A LINE. Details ride only on rows
+       whose PASS folder the publisher matched in the shared Reports tree
+       (attach_ledger_reports); BULL Exit G1's three runs have none, and
+       skipping them left its variables with an empty history. */
+    if(!tasks.length){
+      rows.push('<div class="sthist">'
+        + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
+        + stRunPill(varRunIdx[stRowKey(r)])
+        + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
+        + `<span class="stmeta">${r.failed ? '<span class="stdn">failed</span>'
+            : (r.applied_pass != null || r.picked_pass != null)
+              ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
+                  r.applied_pass != null ? r.applied_pass_style : r.picked_pass_style)) : ""}</span></div>`
+        + '<div class="stmeta">No report folder matched for this round, so no per-variable detail.</div>'
+        + '</div>');
+      return;
+    }
     /* The COUNT rides on the task's swept list (task_detail._mark_points), the
        same place the job card's RANGE chip reads it -- not on the state rows. */
     const sw = x => ((x.d.swept) || []).find(s => s && s.name === name);
@@ -5842,6 +5899,7 @@ function stVariablePage(){
     const onboard = swept.some(x => (sw(x) || {}).onboard);
     rows.push('<div class="sthist">'
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
+      + stRunPill(varRunIdx[stRowKey(r)])
       + (stEpochOf(r) && stCounted(r) ? `<span class="chip">${esc(stEpochOf(r))}</span>` : "")
       + `<span class="stmeta">${r.failed ? '<span class="stdn">failed</span>'
           : (r.applied_pass != null || r.picked_pass != null)
