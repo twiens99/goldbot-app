@@ -1618,7 +1618,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-111603";
+const APP_BUILD = "20260929-113632";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6705,32 +6705,6 @@ let SETTINGS_STATE = {bucket_priority: {mode: "off",
 let LEASES = [];
 let BUCKET_SHARES = [];
 
-const MODE_LABEL = {
-  off: "Computed shares",
-  manual: "Manual priority",
-  auto_top: "Targeting winners",
-  auto_bottom: "Targeting losers",
-  auto_defaults: "Targeting defaults",
-  regime: "Regime percentages",
-};
-
-/* The prose lives in app_settings.MODE_TEXT and is PUBLISHED with the settings,
-   for the reason seeds.REASON_TEXT gives: a vocabulary and its explanation
-   drifting apart is the failure the text exists to prevent. These are the
-   fallback for a snapshot that predates it, not a second copy to maintain. */
-const MODE_TEXT_FALLBACK = {
-  off: "The scheduler uses each bucket's computed share of the market. Nothing here is applied.",
-  manual: "You set the percentages. A bucket you pin keeps exactly that share; the rest split what is left.",
-  auto_top: "Favours the best-performing buckets by Profit Factor, inside the regimes you have selected.",
-  auto_bottom: "Favours the worst-performing buckets by Profit Factor -- the ones with the most left to gain.",
-  auto_defaults: "Favours the buckets holding the most variables still at their compiled DEFAULT.",
-  regime: "You set the percentages per REGIME. A regime you pin keeps exactly that share and its buckets divide it between them; the rest split what is left.",
-};
-
-function modeText(mode){
-  return (SETTINGS_STATE.mode_text || {})[mode] || MODE_TEXT_FALLBACK[mode] || "";
-}
-
 function scheduleSummary(){
   const sch = schedule();
   const blocks = (sch.blocks || []).length;
@@ -6772,7 +6746,14 @@ function scheduleHomeCard(){
 function settingsSummary(){
   const bp = SETTINGS_STATE.bucket_priority || {};
   const bits = [];
-  if(bp.mode && bp.mode !== "off") bits.push(MODE_LABEL[bp.mode] || bp.mode);
+  /* 2026-09-29 -- BUCKET PRIORITY LEFT THE APP. Trevor: *"The bucket priority and
+     regimes that are under leases. We're gonna take that completely out. If I do
+     want that option, it should be integrated into the scheduler. Not in
+     settings."* The engine still honours the stored setting, which was OFF when
+     the card was removed. If it ever reads otherwise, say so here -- nothing on
+     the page can show or change it any more. */
+  if(bp.mode && bp.mode !== "off")
+    bits.push("⚠ bucket priority ON (" + bp.mode + ") — not controllable here");
   /* 2026-09-29 -- LIVE vouches only: an expired record lingers until the next
      save prunes it, and it read "1 lease extended" all morning after 09:58. */
   const nowS = Date.now() / 1000;
@@ -7502,8 +7483,10 @@ function repaintSettings(){
    per button because the whole badge is re-rendered after each change, and
    per-button listeners would be re-attached (or silently lost) each time. */
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-lease],[data-bpregime],[data-bpmode],"
-    + "[data-bppin],[data-bprpin],[data-bpreset]");
+  /* 2026-09-29 -- leases only. The bucket-priority controls (data-bpregime,
+     -bpmode, -bppin, -bprpin, -bpreset, and the -bpfocus slider) left with their
+     card; see settingsSummary. */
+  const t = e.target.closest("[data-lease]");
   if(!t) return;
   e.preventDefault();
   e.stopPropagation();
@@ -7515,7 +7498,20 @@ document.addEventListener("click", async e => {
     LEASE_MSG[key] = {kind: "busy",
                       text: hours ? "Sending +" + hours + "h to the Laptop…" : "Cancelling…"};
     repaintSettings();
-    const ok = await apiPost("/lease", {key: key, hours: hours});
+    let ok = await apiPost("/lease", {key: key, hours: hours});
+    /* ONE RETRY, AND ONLY HERE (2026-09-29). Trevor, Tailscale on: a +6h landed at
+       11:10:58, later taps "didn't answer" and wrote nothing, while the Laptop's
+       endpoint answered locally and on its tailnet name. The phone's tunnel can
+       drop the first request after it has idled while it reconnects. A lease
+       extension is SAFE TO REPEAT -- it sets "until = now + hours" -- so it gets
+       one retry; a schedule Start or a pass pick is not, and does not. */
+    if(!ok && SETTINGS_ERROR === "unreachable"){
+      LEASE_MSG[key] = {kind: "busy",
+                        text: "No answer — the phone's tunnel may be waking up. Trying once more…"};
+      repaintSettings();
+      await new Promise(r => setTimeout(r, 2500));
+      ok = await apiPost("/lease", {key: key, hours: hours});
+    }
     if(ok){
       /* apiPost re-read the live record, so this is what was SAVED, not what was
          asked for; if that re-read failed, the arithmetic says so ("about"). */
@@ -7530,47 +7526,15 @@ document.addEventListener("click", async e => {
       const why = SETTINGS_ERROR === "read-only"
           ? "this phone has no Laptop link — add it under Settings → Laptop link."
         : SETTINGS_ERROR === "unreachable"
-          ? "the Laptop didn't answer. Is Tailscale on, on this phone?"
+          ? "the Laptop didn't answer, twice. The Laptop link card's Test (above) "
+            + "checks the same path; Tailscale must be connected, not just on."
         : (SETTINGS_ERROR || "no answer from the Laptop.");
-      LEASE_MSG[key] = {kind: "err", text: "✖ Not saved: " + why};
+      LEASE_MSG[key] = {kind: "err",
+                        text: "✖ Not saved " + whenShort(Date.now() / 1000) + ": " + why};
     }
     repaintSettings();
     document.getElementById("page-home").innerHTML = renderHome();
-  } else if(d.bpregime !== undefined){
-    const cur = (SETTINGS_STATE.bucket_priority || {}).regimes || [];
-    const next = cur.indexOf(d.bpregime) >= 0
-      ? cur.filter(r => r !== d.bpregime) : cur.concat([d.bpregime]);
-    await apiPost("/priority", {regimes: next});
-  } else if(d.bpmode !== undefined){
-    await apiPost("/priority", {mode: d.bpmode});
-  } else if(d.bppin !== undefined){
-    const i = String(d.bppin).lastIndexOf(":");
-    const key = String(d.bppin).slice(0, i);
-    const pct = Number(String(d.bppin).slice(i + 1));
-    /* -1 is Unpin. `null` rather than 0 -- a bucket pinned at 0% is a real and
-       different instruction ("never schedule this"), so they must not collapse. */
-    await apiPost("/priority", {mode: "manual",
-                                pin: {key: key, percent: pct < 0 ? null : pct}});
-  } else if(d.bprpin !== undefined){
-    const i = String(d.bprpin).lastIndexOf(":");
-    const regime = String(d.bprpin).slice(0, i);
-    const pct = Number(String(d.bprpin).slice(i + 1));
-    /* Mode and pin in ONE post, the same as a bucket pin: setting a percentage
-       IS choosing the mode, and two posts would leave a window where the badge
-       shows a pin nothing is applying. -1 is Unpin; null rather than 0, because
-       a regime pinned at 0% is a real and different instruction. */
-    await apiPost("/priority", {mode: "regime",
-                                regime_pin: {regime: regime,
-                                             percent: pct < 0 ? null : pct}});
-  } else if(d.bpreset !== undefined){
-    await apiPost("/priority", {reset: true});
   }
-});
-
-document.addEventListener("change", async e => {
-  const t = e.target.closest("[data-bpfocus]");
-  if(!t) return;
-  await apiPost("/priority", {focus_pct: Number(t.value)});
 });
 
 
@@ -8321,7 +8285,6 @@ function renderSettings(){
         ? '<div class="card"><div class="card-in"><div class="tlab">Not saved</div>'
         + '<div class="tnote">' + esc(SETTINGS_ERROR) + '</div></div></div>' : "")
     + leaseBadge()
-    + bucketPriorityBadge()
     + '</div>';
 }
 
@@ -8409,187 +8372,6 @@ function leaseRow(l){
     + '</div>'
     + (m ? '<div class="lmsg ' + m.kind + '">' + esc(m.text) + '</div>' : "")
     + '</div>';
-}
-
-/* ---------- 2. BUCKET PRIORITY ---------- */
-/* Trevor, 2026-09-18: *"I want to manually give priority to certain buckets ...
-   I want to be able to assign a percentage that the schedular prioritizes each
-   bucket. I will need the Percentage of bucket done beside that."*
-
-   THE REGIME CHIPS LEAD AND THE PERCENTAGE SITS DIRECTLY UNDER THEM -- Trevor,
-   same day: *"Under the Regimes Chips. We should actually put the percentage
-   below that. Integrate it together with the top one."* They are ONE control:
-   the chips choose what is targeted, the percentage says how hard. Split across
-   the badge, the percentage read as a property of the bucket list below it
-   rather than of the targeting above it.
-
-   🔴 WHY A PERCENTAGE MEANS ANYTHING AT ALL. `scheduler.bucket_shares()`
-   already gives every bucket a share of the work -- computed from how much of
-   the market it covers -- and the round-robin serves whichever bucket is
-   furthest below its share. So this is not a new concept bolted on: it
-   OVERRIDES that one number. Which is why each row shows the computed share
-   greyed beside the override. You are replacing a value, not inventing one. */
-function bucketPriorityBadge(){
-  const bp = SETTINGS_STATE.bucket_priority || {};
-  const mode = bp.mode || "off";
-  const regimes = bp.regimes || ["BULL", "BEAR", "RANGING"];
-  /* 🔴 `regime` IS NOT AN AUTO MODE, and this predicate is why that matters:
-     it gates the focus slider, which only the ranked modes read. Leaving it as
-     "anything but off and manual" would put a live slider in front of a field
-     MODE_REGIME never looks at -- a control that moves and changes nothing. */
-  const auto = (mode === "auto_top" || mode === "auto_bottom"
-                || mode === "auto_defaults");
-  const modes = [["auto_top", "Top by PF"], ["auto_bottom", "Bottom by PF"],
-                 ["auto_defaults", "Most defaults"], ["off", "Off"]];
-  return '<div class="card"><div class="card-in">'
-    + '<div class="tlab">Bucket priority</div>'
-    + '<div class="tnote">' + esc(modeText(mode)) + '</div>'
-
-    + '<div class="section-label" style="margin-top:14px">Target these regimes</div>'
-    + '<div class="chips">'
-    + ["BULL", "BEAR", "RANGING"].map(function(r){
-        return '<button type="button" class="chip '
-          + (regimes.indexOf(r) >= 0 ? "on" : "") + '" data-bpregime="' + r + '">'
-          + r + '</button>'; }).join("")
-    + '</div>'
-
-    /* The percentage, integrated with the chips above rather than floating
-       further down -- see the note on this function. */
-    + '<div class="trow" style="margin-top:10px">'
-    + '<span class="tname">Share given to the target</span>'
-    + '<span class="chip ' + (auto ? "gold" : "") + '">' + fmtPct(bp.focus_pct) + '</span>'
-    + '</div>'
-    + '<input type="range" min="10" max="100" step="5" class="bpslider" data-bpfocus'
-    + ' value="' + (Number(bp.focus_pct) || 80) + '"' + (auto ? "" : " disabled") + '>'
-    + '<div class="tnote">The targeted buckets share this much of the work between'
-    + ' them; everything else splits the rest. '
-    + (auto ? "" : "<b>Pick an auto target below to use it.</b>") + '</div>'
-
-    + '<div class="section-label" style="margin-top:14px">Auto prioritize</div>'
-    + '<div class="chips">'
-    + modes.map(function(m){
-        return '<button type="button" class="chip ' + (mode === m[0] ? "on" : "")
-          + '" data-bpmode="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join("")
-    + '</div>'
-    + '<div class="tnote" style="margin-top:6px">Narrowed by the regime chips'
-    + ' above. With one bucket per regime today, that narrowing is what makes'
-    + ' &ldquo;top 3&rdquo; mean anything at all.</div>'
-
-    + '<div class="section-label" style="margin-top:14px">Regimes</div>'
-    + regimePriorityRows(bp)
-
-    + '<div class="section-label" style="margin-top:14px">Buckets</div>'
-    + bucketPriorityRows(bp)
-    + '<div class="chips" style="margin-top:10px">'
-    + '<button type="button" class="chip" data-bpreset>Reset to computed</button>'
-    + '</div>'
-    + '<div class="tnote" style="margin-top:10px">⚠️ Applied by each machine'
-    + ' at its next tick, not immediately. A round already running keeps the'
-    + ' bucket it claimed.</div>'
-    + '</div></div>';
-}
-
-/* ONE ROW PER REGIME. Trevor, 2026-09-19: priority percentages per regime as
-   well as per bucket.
-
-   🔴 THIS IS THE CONTROL THAT SURVIVES A SPLIT, and the note under it says so,
-   because today the two look identical. While each regime holds one bucket,
-   pinning BULL and pinning BULL|1600 do the same thing; the moment BULL becomes
-   three buckets a bucket pin silently means a third of what it used to, and
-   this one still means what it said. Somebody reading the card a month from now
-   needs to know which control to reach for BEFORE the split, not after. */
-function regimePriorityRows(bp){
-  const pins = bp.regime_pins || {};
-  /* The regime's CURRENT total, summed from the published bucket shares rather
-     than recomputed -- same reason bucketPriorityRows reads BUCKETS: a second
-     derivation of the same number is a second thing to be wrong. */
-  const rows = (BUCKETS || []).filter(b =>
-    String(b.regime || "").toUpperCase() !== "GLOBALS");
-  return ["BULL", "BEAR", "RANGING"].map(function(r){
-    const mine = rows.filter(b => String(b.regime).toUpperCase() === r);
-    const pinned = pins[r] != null;
-    /* An em dash, never 0%, for a regime with no published bucket -- see
-       fmtPct. "Nothing computed yet" and "given nothing" are different. */
-    const eff = mine.length
-      ? mine.reduce((a, b) => a + (Number(b.effective_pct) || 0), 0) : null;
-    return '<div class="tsec" style="margin-top:10px">'
-      + '<div class="trow">'
-      + '<span class="tname">' + esc(r)
-      + '<span class="dim"> / ' + mine.length
-      + (mine.length === 1 ? " bucket" : " buckets") + '</span></span>'
-      + '<span class="chip ' + (pinned ? "gold" : "") + '">'
-      + fmtPct(pinned ? pins[r] : eff) + '</span>'
-      + '</div>'
-      + '<div class="tnote">' + (pinned
-          ? "Pinned. Its buckets divide this between them; the other regimes "
-            + "split what is left, in their own proportions."
-          : "Computed share " + fmtPct(eff) + ".")
-      + '</div>'
-      + '<div class="chips" style="margin-top:6px">'
-      + [10, 25, 40, 60, 80].map(function(p){
-          return '<button type="button" class="chip '
-            + (pinned && Math.round(pins[r]) === p ? "on" : "")
-            + '" data-bprpin="' + r + ':' + p + '">' + p + '%</button>'; }).join("")
-      + (pinned ? '<button type="button" class="chip" data-bprpin="' + r
-          + ':-1">Unpin</button>' : "")
-      + '</div></div>';
-  }).join("");
-}
-
-/* ONE ROW PER BUCKET: what it would get, what you have pinned, and how far
-   through it is. The percentage DONE sits beside the priority deliberately --
-   Trevor: *"I will need the Percentage of bucket done beside that."* Together
-   they answer one question ("should this get more?"); neither answers it alone,
-   because a bucket on a big share that is nearly finished and one on the same
-   share that has barely started want opposite things. */
-function bucketPriorityRows(bp){
-  const pins = bp.pins || {};
-  /* ONE bucket list, not two. `collect_buckets` already publishes every bucket
-     with its groups done and total, so the shares were added to THAT row rather
-     than to a second list -- two lists of buckets is two things to keep in step
-     and one of them would eventually be missing a bucket. GLOBALS is filtered:
-     it is not tradeable and holds no share, so a priority row for it would be
-     a control that cannot do anything. */
-  const rows = (BUCKETS || []).filter(b =>
-    String(b.regime || "").toUpperCase() !== "GLOBALS");
-  if(!rows.length){
-    return '<div class="tnote">No bucket shares published yet. The scheduler'
-      + ' computes these each tick; until one has, there is nothing to override'
-      + ' and a number here would be invented.</div>';
-  }
-  return rows.map(function(b){
-    const key = String(b.regime).toUpperCase() + "|" + b.bucket_id;
-    const pinned = pins[key] != null;
-    const done = (b.groups_total ? (100 * b.groups_done / b.groups_total) : null);
-    return '<div class="tsec" style="margin-top:10px">'
-      + '<div class="trow">'
-      + '<span class="tname">' + esc(String(b.regime)) + '<span class="dim"> / '
-      + esc(String(b.bucket_id)) + '</span></span>'
-      + '<span class="chip ' + (pinned ? "gold" : "") + '">'
-      + fmtPct(pinned ? pins[key] : b.effective_pct) + '</span>'
-      + '<span class="chip">' + fmtPct(done) + ' done</span>'
-      + '</div>'
-      + '<div class="tnote">' + (pinned
-          ? "Pinned. The other buckets split what is left, in their own proportions."
-          : "Computed share " + fmtPct(b.natural_pct) + ".")
-      + " " + b.groups_done + " of " + b.groups_total + " groups optimized."
-      + '</div>'
-      + '<div class="chips" style="margin-top:6px">'
-      + [10, 25, 40, 60, 80].map(function(p){
-          return '<button type="button" class="chip '
-            + (pinned && Math.round(pins[key]) === p ? "on" : "")
-            + '" data-bppin="' + esc(key) + ':' + p + '">' + p + '%</button>'; }).join("")
-      + (pinned ? '<button type="button" class="chip" data-bppin="' + esc(key)
-          + ':-1">Unpin</button>' : "")
-      + '</div></div>';
-  }).join("");
-}
-
-/* An em dash, not "0%". A bucket with no reading has not been given nothing --
-   nothing has been computed for it yet, and those are different claims. */
-function fmtPct(v){
-  const n = Number(v);
-  return isFinite(n) ? n.toFixed(0) + "%" : "\u2014";
 }
 
 
