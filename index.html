@@ -466,6 +466,14 @@ article.jrow{cursor:default;}
 }
 .task[hidden]{display:none;}
 .tsec{display:flex;flex-direction:column;gap:6px;}
+/* The lease row WRAPS (2026-09-29): its name and chips are written back to back
+   with no space between, so as plain inline content the line could not break and
+   the "vouched to" chip ran off a phone screen. */
+.lrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;}
+.lmsg{font-size:.76rem;line-height:1.4;}
+.lmsg.busy{color:var(--faint);}
+.lmsg.ok{color:var(--good);}
+.lmsg.err{color:var(--bad);}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);
@@ -1610,7 +1618,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-110411";
+const APP_BUILD = "20260929-111603";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6765,7 +6773,11 @@ function settingsSummary(){
   const bp = SETTINGS_STATE.bucket_priority || {};
   const bits = [];
   if(bp.mode && bp.mode !== "off") bits.push(MODE_LABEL[bp.mode] || bp.mode);
-  const ext = Object.keys(SETTINGS_STATE.lease_extensions || {}).length;
+  /* 2026-09-29 -- LIVE vouches only: an expired record lingers until the next
+     save prunes it, and it read "1 lease extended" all morning after 09:58. */
+  const nowS = Date.now() / 1000;
+  const ext = Object.values(SETTINGS_STATE.lease_extensions || {})
+    .filter(v => (Number(v && v.until) || 0) > nowS).length;
   if(ext) bits.push(ext + " lease" + (ext === 1 ? "" : "s") + " extended");
   return bits.length ? bits.join(" \u00b7 ") : "Nothing overridden";
 }
@@ -7178,6 +7190,17 @@ async function apiPost(path, body){
   }
 }
 
+/* 2026-09-29 -- WHEN THE PAGE LAST READ THE LIVE RECORD (the Laptop's /settings,
+   right after a tap), in epoch seconds; 0 = never. A snapshot GENERATED before
+   this carries an older copy of the settings, and letting it overwrite the live
+   record made a saved lease extension flip back to "expired" at the next 20 s
+   poll -- the save looking undone for up to a publish cycle. See applySnapshot. */
+let LIVE_SETTINGS_AT = 0;
+function sameChain(a, b){
+  return JSON.stringify([a && a.id, a && a.status, a && a.cursor, a && a.block_state])
+      === JSON.stringify([b && b.id, b && b.status, b && b.cursor, b && b.block_state]);
+}
+
 async function refreshSettings(){
   const base = apiBase();
   if(!base) return;
@@ -7190,13 +7213,12 @@ async function refreshSettings(){
        block is exactly as it was -- same chain, status, cursor and frozen state --
        so a Start, Stop or advance can never inherit an old confirmation. */
     const prev = SETTINGS_STATE || {};
-    const same = (a, b) => JSON.stringify([a.id, a.status, a.cursor, a.block_state])
-                        === JSON.stringify([b.id, b.status, b.cursor, b.block_state]);
     if(out && out.settings){
       const keep = prev.schedule_progress && out.settings.schedule && prev.schedule
-                   && same(prev.schedule, out.settings.schedule)
+                   && sameChain(prev.schedule, out.settings.schedule)
                    ? prev.schedule_progress : null;
       SETTINGS_STATE = out.settings;
+      LIVE_SETTINGS_AT = Date.now() / 1000;
       if(keep && !SETTINGS_STATE.schedule_progress) SETTINGS_STATE.schedule_progress = keep;
     }
     if(out && out.mode_text) SETTINGS_STATE.mode_text = out.mode_text;
@@ -7488,8 +7510,32 @@ document.addEventListener("click", async e => {
   const d = t.dataset;
   if(d.lease !== undefined){
     const i = String(d.lease).lastIndexOf(":");
-    await apiPost("/lease", {key: String(d.lease).slice(0, i),
-                             hours: Number(String(d.lease).slice(i + 1))});
+    const key = String(d.lease).slice(0, i);
+    const hours = Number(String(d.lease).slice(i + 1));
+    LEASE_MSG[key] = {kind: "busy",
+                      text: hours ? "Sending +" + hours + "h to the Laptop…" : "Cancelling…"};
+    repaintSettings();
+    const ok = await apiPost("/lease", {key: key, hours: hours});
+    if(ok){
+      /* apiPost re-read the live record, so this is what was SAVED, not what was
+         asked for; if that re-read failed, the arithmetic says so ("about"). */
+      const until = leaseUntil({key: key});
+      const now = Date.now() / 1000;
+      LEASE_MSG[key] = {kind: "ok", text: hours
+        ? "✓ Saved " + whenShort(now) + " — vouched until "
+          + (until > now ? whenShort(until) : "about " + whenShort(now + hours * 3600))
+          + ". The fleet honours it from its next tick; the machine still has not reported in."
+        : "✓ Cancelled " + whenShort(now) + " — nobody is vouching for this lease now."};
+    } else {
+      const why = SETTINGS_ERROR === "read-only"
+          ? "this phone has no Laptop link — add it under Settings → Laptop link."
+        : SETTINGS_ERROR === "unreachable"
+          ? "the Laptop didn't answer. Is Tailscale on, on this phone?"
+        : (SETTINGS_ERROR || "no answer from the Laptop.");
+      LEASE_MSG[key] = {kind: "err", text: "✖ Not saved: " + why};
+    }
+    repaintSettings();
+    document.getElementById("page-home").innerHTML = renderHome();
   } else if(d.bpregime !== undefined){
     const cur = (SETTINGS_STATE.bucket_priority || {}).regimes || [];
     const next = cur.indexOf(d.bpregime) >= 0
@@ -8305,26 +8351,64 @@ function leaseBadge(){
     + '</div></div>';
 }
 
+/* 2026-09-29 -- A LEASE TAP SAYS WHAT HAPPENED, ON ITS OWN ROW. Trevor: *"I'm
+   trying to extend the lease for the desktop. But I get no confirmation that it
+   worked."* Three things hid it:
+   - A failure only showed as a small "Not saved" card at the TOP of Settings,
+     above the lease list; "read-only" showed nothing at all. His taps left no
+     record in app_settings.json -- they never reached the Laptop -- and the row
+     he tapped looked exactly the same.
+   - Success looked the same too: the "vouched to" chip came from the SNAPSHOT,
+     which lags the save by up to a publish cycle (~5 min).
+   - That chip read "vouched to 09:58" hours AFTER the vouch expired at 09:58: no
+     day, no expiry. So it now reads the RECORD (SETTINGS_STATE.lease_extensions:
+     the live /settings right after a tap, else the snapshot's copy), says
+     "expired" when it is, and names the day when it is not today.
+   The row also WRAPS now (.lrow): its chips had no space between them, so the
+   browser could not break the line and the last chip ran off the screen. */
+let LEASE_MSG = {};   // lease key -> {kind: busy|ok|err, text}
+function leaseUntil(l){
+  const ext = SETTINGS_STATE && SETTINGS_STATE.lease_extensions;
+  if(ext && typeof ext === "object"){
+    const r = ext[l.key];
+    return r ? (Number(r.until) || 0) : 0;
+  }
+  return Number(l.extended_until) || 0;       // a publisher older than the record
+}
+function whenShort(sec){
+  const d = new Date(sec * 1000), p = n => String(n).padStart(2, "0");
+  const hm = p(d.getHours()) + ":" + p(d.getMinutes());
+  return d.toDateString() === new Date().toDateString() ? hm
+       : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()] + " " + hm;
+}
+
 function leaseRow(l){
   const age = Number(l.age_hours) || 0;
   /* THE AGE IS THE REASON THE ROW EXISTS, so it is the loud thing -- amber from
      18h, red past 24. A row that only said "held" would leave you doing the
      arithmetic that decides whether to act. */
   const cls = age >= 24 ? "bad" : (age >= 18 ? "warn" : "");
-  const vouched = l.extended_until_text || "";
+  const until = leaseUntil(l);
+  const live = until > Date.now() / 1000;
+  const vouch = live ? '<span class="chip gold">vouched to ' + esc(whenShort(until)) + '</span>'
+              : until ? '<span class="chip">vouch expired ' + esc(whenShort(until)) + '</span>'
+              : "";
+  const m = LEASE_MSG[l.key];
   return '<div class="tsec" style="margin-top:12px">'
-    + '<div class="trow"><span class="tname">' + esc(l.machine_id || "?") + '</span>'
+    + '<div class="trow lrow"><span class="tname">' + esc(l.machine_id || "?") + '</span>'
     + '<span class="chip ' + cls + '">' + esc(dur(age * 3600)) + ' since heartbeat</span>'
-    + (vouched ? '<span class="chip gold">vouched to ' + esc(vouched) + '</span>' : "")
+    + vouch
     + '</div>'
     + '<div class="tnote">' + esc(humanize(l.group_id || l.key || "")) + '</div>'
     + '<div class="chips" style="margin-top:6px">'
     + [6, 12, 24, 48].map(function(h){
         return '<button type="button" class="chip" data-lease="'
           + esc(l.key) + ':' + h + '">+' + h + 'h</button>'; }).join("")
-    + (vouched ? '<button type="button" class="chip" data-lease="'
+    + (live ? '<button type="button" class="chip" data-lease="'
         + esc(l.key) + ':0">Cancel</button>' : "")
-    + '</div></div>';
+    + '</div>'
+    + (m ? '<div class="lmsg ' + m.kind + '">' + esc(m.text) + '</div>' : "")
+    + '</div>';
 }
 
 /* ---------- 2. BUCKET PRIORITY ---------- */
@@ -10359,7 +10443,17 @@ function applySnapshot(d, source){
      whose runtime predates them, which must read as "nothing to show"
      rather than as "nothing is set": the badge says which. */
   LEASES = Array.isArray(d.leases) ? d.leases : [];
-  if(d.settings && d.settings.bucket_priority) SETTINGS_STATE = d.settings;
+  if(d.settings && d.settings.bucket_priority){
+    /* THE NEWER RECORD WINS (2026-09-29). A snapshot generated before the page
+       last read the live /settings -- or one from a machine that cannot see the
+       shared drive -- keeps the live record, and lends it only the engine's
+       schedule confirmation, and only for the same chain state. */
+    const older = LIVE_SETTINGS_AT && (snapGenS(d) < LIVE_SETTINGS_AT || snapBlindS(d));
+    if(!older) SETTINGS_STATE = d.settings;
+    else if(d.settings.schedule_progress && SETTINGS_STATE.schedule
+            && sameChain(SETTINGS_STATE.schedule, d.settings.schedule))
+      SETTINGS_STATE.schedule_progress = d.settings.schedule_progress;
+  }
   if(d.settings && d.settings.schedule_vocab) VOCAB = d.settings.schedule_vocab;
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
