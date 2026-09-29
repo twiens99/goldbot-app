@@ -293,6 +293,14 @@ button.chip.on::before{content:"\2713\00a0";}
 /* The count that decides whether you need to open it at all. */
 .hcount{color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums;}
 .hcount.quiet{color:var(--faint);font-weight:600;}
+/* A home badge that carries its own action (2026-09-29: the schedule's Start).
+   The tile is a <button>, and a button cannot hold another, so the action row
+   sits under it inside one card that looks like one badge. */
+.hcard{background:var(--card);border-radius:14px;overflow:hidden;}
+.hcard .hbtn{border-radius:0;}
+.hacts{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;
+  padding:0 15px 14px 58px;margin-top:-4px;}
+.hnote{font-size:.74rem;color:var(--faint);line-height:1.35;flex:1;min-width:150px;}
 .hcount.warn{color:var(--warn);}
 
 /* ---------- to review ---------- */
@@ -418,6 +426,16 @@ article.jrow{cursor:default;}
   border-color:var(--gold);color:var(--gold);background:rgba(224,180,87,.15);
   box-shadow:0 0 0 4px rgba(224,180,87,.12);
 }
+/* CONFIRMED: the fleet's own snapshot reports THIS block as the active one
+   (schedule_progress, the engine's evaluate(), for this block id). Solid gold,
+   the same way a lit chip is solid gold. A block the record calls active but no
+   snapshot has confirmed keeps the outline above. */
+.fcr.live .fcb{background:var(--gold);color:#17130a;border-color:var(--gold);}
+.fcr.live .fcbody{
+  border:1px solid var(--gold);background:rgba(224,180,87,.10);
+  border-radius:10px;padding:8px 10px 9px;margin-top:-2px;
+}
+.chip.solid{background:var(--gold);color:#17130a;}
 .fcbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;padding-top:3px;}
 .fch{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;}
 .fcn{font-size:.82rem;font-weight:700;letter-spacing:.01em;}
@@ -1592,7 +1610,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-191839";
+const APP_BUILD = "20260929-101001";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3167,6 +3185,21 @@ function jobVariables(rep, openTask){
    two-hour job and a three-day job are different claims about the same delta. */
 const JOB_META_CONDENSED = ["Mode", "Took"];
 
+/* 2026-09-29 (item 71) -- a pass number WITH the pass it is a row of. A style
+   ending in 2: the round's second pass landed and its winner was applied, so the
+   number is a row of the second pass's report -- in round one's workbook the same
+   number is another configuration. Bare number otherwise.
+   MATCHED BY ITS TRAILING DIGIT, NEVER SPELLED OUT: the report-style names are on
+   publish.py's protected list and this page is public -- spelling them here made
+   the leak scan refuse the publish (09-29). The fleet sends one style or none. */
+function passLabel(n, style){
+  if(n == null) return null;
+  const k = (/(\d)$/.exec(String(style || "")) || [])[1];
+  if(k === "2") return `${n} (2nd pass)`;
+  if(k === "3") return `${n} (3rd pass)`;
+  return String(n);
+}
+
 function jobCard(r, rep, condensed, hint, cadence){
   const rc = REGIME_CLASS[r.regime] || "";
   rep = rep || {};
@@ -3174,7 +3207,7 @@ function jobCard(r, rep, condensed, hint, cadence){
     /* 2026-09-26 -- a narrow seed's round has no fleet round number: it is
        shown here and charged to nothing (collect_uncounted). */
     ["Round", r.counted === false ? "seed · not counted" : "r" + r.round_no],
-    ["Pass picked", r.picked_pass ?? null],
+    ["Pass picked", passLabel(r.picked_pass, r.picked_pass_style)],
     ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
            : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
     ["Passes", passesText(r)],
@@ -3270,7 +3303,8 @@ function renderResultsJob(r){
     ? `<div class="card"><div class="card-in">` +
         sendForm({regime: _groupRegime(r.group_id) || r.regime, bucket_id: r.bucket_id,
                   group_id: r.group_id, mode: "override", round: r.round,
-                  applied_pass: r.applied_pass}) + `</div></div>`
+                  applied_pass: r.applied_pass,
+                  applied_pass_style: r.applied_pass_style}) + `</div></div>`
     : "";
   return back + chips + jobCard(r, rep, false, null, band) + change +
     /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
@@ -6618,7 +6652,7 @@ function renderHome(){
        section in with settings."* It was a badge on the Settings page, which
        put the thing that decides WHAT RUNS NEXT behind the same tap as a
        bucket-priority toggle. It is not a setting; it is the plan. */
-    + homeButton("schedule", "☷", "Schedule", scheduleSummary(), "var(--range)")
+    + scheduleHomeCard()
     /* 2026-09-26 -- THE TRACK RECORD. Trevor: *"Should be able to see a track
        record of these things"* -- how long tasks took, how good the ETAs were,
        when each agent lends. Under Schedule: it is what the plan's times stand on. */
@@ -6701,6 +6735,30 @@ function scheduleSummary(){
   return `<span class="hcount${status === "running" ? "" : " quiet"}">${
       esc(status)}</span> \u00b7 ${blocks} block${blocks === 1 ? "" : "s"}` +
     (status === "running" && blocks ? ` \u00b7 on ${cur + 1} of ${blocks}` : "");
+}
+
+/* 2026-09-29 -- START ON THE HOME CARD. Trevor saved a two-block schedule, went
+   looking for it to take over, and found no Start: it lived one tap in, on the
+   Schedule page. SAVING NEVER STARTS A CHAIN -- the record stays "idle", and every
+   tick ignores an idle chain -- so the one control that makes a saved schedule
+   real belongs where the schedule is first seen. Same data-schedact="start" as
+   the Schedule page's chip, so it goes through the same handler (refuses an
+   unsaved draft, posts to the fleet). Shown exactly when that chip is. */
+let HOME_SCHED_MSG = "";
+function scheduleHomeCard(){
+  const tile = homeButton("schedule", "\u2637", "Schedule", scheduleSummary(), "var(--range)");
+  const sch = schedule();
+  const status = sch.status || "idle";
+  if(!(sch.blocks || []).length || status === "running") return tile;
+  const say = HOME_SCHED_MSG
+    || (status === "finished"
+        ? "Finished \u2014 Start runs it again from block 1."
+        : "Saved, not running \u2014 the fleet keeps its normal order until you start it.");
+  return '<div class="hcard">' + tile
+    + '<div class="hacts">'
+    + '<button type="button" class="chip gold" data-schedact="start">Start</button>'
+    + '<span class="hnote">' + esc(say) + '</span>'
+    + '</div></div>';
 }
 
 function settingsSummary(){
@@ -6842,9 +6900,18 @@ document.addEventListener("click", async e => {
        baseline for blocks the fleet has never seen. */
     if(schedDirty()){
       SETTINGS_ERROR = "save the chain before starting it";
+      HOME_SCHED_MSG = "The builder has unsaved changes — save the chain first.";
+      document.getElementById("page-home").innerHTML = renderHome();
       return repaintSettings();
     }
-    await apiPost("/schedule", {action: d.schedact});
+    const ok = await apiPost("/schedule", {action: d.schedact});
+    /* 2026-09-29 -- Start is on the HOME card too, and repaintSettings() does
+       not reach home, so a tap there would change nothing you can see. */
+    HOME_SCHED_MSG = ok ? ""
+      : (SETTINGS_ERROR === "read-only"
+          ? "Read-only here — add the Laptop link in Settings to start it."
+          : "Not started: " + (SETTINGS_ERROR || "the fleet did not answer"));
+    document.getElementById("page-home").innerHTML = renderHome();
     return repaintSettings();
   }
 
@@ -7117,7 +7184,21 @@ async function refreshSettings(){
   try{
     const r = await fetch(base + "/settings", {cache: "no-store"});
     const out = await r.json();
-    if(out && out.settings) SETTINGS_STATE = out.settings;
+    /* 2026-09-29 -- the live /settings is the RECORD only; `schedule_progress`
+       (the fleet's confirmation that turns the active block gold) arrives with
+       the snapshot. Carried across this refresh ONLY while the chain's active
+       block is exactly as it was -- same chain, status, cursor and frozen state --
+       so a Start, Stop or advance can never inherit an old confirmation. */
+    const prev = SETTINGS_STATE || {};
+    const same = (a, b) => JSON.stringify([a.id, a.status, a.cursor, a.block_state])
+                        === JSON.stringify([b.id, b.status, b.cursor, b.block_state]);
+    if(out && out.settings){
+      const keep = prev.schedule_progress && out.settings.schedule && prev.schedule
+                   && same(prev.schedule, out.settings.schedule)
+                   ? prev.schedule_progress : null;
+      SETTINGS_STATE = out.settings;
+      if(keep && !SETTINGS_STATE.schedule_progress) SETTINGS_STATE.schedule_progress = keep;
+    }
     if(out && out.mode_text) SETTINGS_STATE.mode_text = out.mode_text;
   }catch(e){ /* the badge keeps the snapshot's copy, which is still true */ }
 }
@@ -7197,7 +7278,7 @@ function sendLabel(o, key){
   if(!(n >= 1) || Math.floor(n) !== n) return ["Enter a pass number", true];
   const over = o.mode === "override";
   if(SEND.arm === key)
-    return [over ? `Tap again: replace pass ${o.applied_pass} with pass ${n}`
+    return [over ? `Tap again: replace pass ${passLabel(o.applied_pass, o.applied_pass_style)} with pass ${n}`
                  : `Tap again: apply pass ${n}`, false];
   return [over ? `Change to pass ${n}` : `Apply pass ${n}`, false];
 }
@@ -7215,7 +7296,14 @@ function sendForm(o){
   const typed = SEND.typed[key];
   return `<div class="sendp" data-sendscope="${esc(key)}">
       <div class="opsh">${head}</div>
-      <div class="opsnote">${over
+      <div class="opsnote">${over && o.applied_pass_style
+        /* 2026-09-29 (item 71, option C) -- the applied pass came from the second
+           pass; a pass sent here is from ROUND ONE's report and replaces both. */
+        ? `Pass <b>${esc(o.applied_pass)}</b> of the second pass is applied. A pass sent
+           here is from round one's report: it rewinds this round to where it
+           started -- the second pass included -- applies that pass and runs both
+           backtests again.`
+        : over
         ? `Pass <b>${esc(o.applied_pass)}</b> is applied. A different pass rewinds this
            round to where it started, applies that pass and runs both backtests again.`
         : `Nothing is applied until you send one.`}
@@ -7229,6 +7317,7 @@ function sendForm(o){
       <button type="button" class="applyb${SEND.arm === key ? " armed" : ""}"
         data-send="${esc(key)}" data-mode="${over ? "override" : "confirm"}"
         data-round="${esc(o.round || "")}" data-applied="${esc(o.applied_pass ?? "")}"
+        data-applied-style="${esc(o.applied_pass_style || "")}"
         ${off ? "disabled" : ""}>${esc(label)}</button>
       ${sendStatusLine(key)}
     </div>`;
@@ -7238,7 +7327,8 @@ function sendOpts(btn){
   const p = btn.dataset.send.split("|");
   return {regime: p[0], bucket_id: Number(p[1]), group_id: p.slice(2).join("|"),
           mode: btn.dataset.mode, round: btn.dataset.round || "",
-          applied_pass: btn.dataset.applied === "" ? null : Number(btn.dataset.applied)};
+          applied_pass: btn.dataset.applied === "" ? null : Number(btn.dataset.applied),
+          applied_pass_style: btn.dataset.appliedStyle || null};
 }
 
 function syncSendBtn(btn){
@@ -7307,7 +7397,8 @@ document.addEventListener("click", e => {
 const TASK_MARK = {passed: "✓", running: "▶", queued: "·", skipped: "–", failed: "✕"};
 
 function ipStage(it){
-  const p = it.applied_pass ?? it.pass_number;
+  const p = passLabel(it.applied_pass ?? it.pass_number,
+                      it.applied_pass != null ? it.applied_pass_style : it.pass_style);
   if(it.awaiting_pick) return "Finished — waiting on your pick. Nothing is applied until you pick.";
   if(it.stage === "backtests_owed"){
     const err = String(it.last_error || "");
@@ -7622,14 +7713,22 @@ function scheduleFlowchart(){
         const state = (status === "finished") ? "done"
                     : !running ? "upcoming"
                     : (i < cur) ? "done" : (i === cur) ? "active" : "upcoming";
+        /* 2026-09-29 -- GOLD ONLY WHEN THE FLEET CONFIRMS IT. Trevor: *"make the
+           block gold when it's confirmed that it is currently using that
+           schedule."* The record saying "running" is what the phone SENT; the
+           confirmation is the fleet's own snapshot evaluating THIS block
+           (schedProgressOf checks the block id), which only happens on a machine
+           that reads the chain as running with this block active. */
+        const live = state === "active" && !!schedProgressOf(b);
         const mark = state === "done" ? "\u2713"
                    : state === "active" ? "\u25cf" : String(i + 1);
-        return '<div class="fcr ' + state + '">'
+        return '<div class="fcr ' + state + (live ? " live" : "") + '">'
           + '<div class="fcb">' + mark + '</div>'
           + '<div class="fcbody">'
           + '<div class="fch">'
           + '<span class="fcn">' + esc(b.name || ("Block " + (i + 1))) + '</span>'
-          + (state === "active" ? '<span class="chip gold">running</span>' : "")
+          + (live ? '<span class="chip solid">running \u00b7 confirmed</span>'
+             : state === "active" ? '<span class="chip gold">waiting for the fleet</span>' : "")
           /* NO CAP CHIP HERE: schedSentence already ends with "(give up
              after N jobs)", and a row stating the same number twice reads as
              two different facts until you stop and check. */
