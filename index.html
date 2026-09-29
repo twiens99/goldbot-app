@@ -1610,7 +1610,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-101001";
+const APP_BUILD = "20260929-105442";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10193,6 +10193,85 @@ function paint(stamp){
 
 let LAST_SNAPSHOT = null;
 
+/* 2026-09-29 -- TWO PUBLISHERS, ONE FILE, AND ONE OF THEM CANNOT SEE.
+   Every machine's tray publishes this snapshot to the SAME gist file, and the
+   page shows whichever wrote last. With the Desktop off OneDrive (item 66) its
+   copy of the shared drive froze, and the gist history showed the two taking
+   turns every ~2.5 minutes: the Laptop's (a live fleet, the running schedule,
+   block 1 confirmed) and the Desktop's (no round running, 4 machines not
+   reporting, "No blocks yet"). Trevor: *"It was showing up to date data a few
+   min ago and now I get this. Even after a refresh."*
+
+   THE TELL IS IN THE SNAPSHOT: its freshest heartbeat. A publisher that sees the
+   shared drive carries beacons from minutes ago; the Desktop's newest was 12 h
+   older than the snapshot it came in. So a snapshot whose freshest heartbeat
+   trails its own publish time by more than BLIND_S is BLIND, and it may not
+   replace a seeing snapshot from the last HOLD_S -- in memory, or kept on this
+   device so a refresh cannot bring the blind one back. Past HOLD_S the newest is
+   shown whatever it is, flagged: a page frozen on an old picture is worse than
+   an honest stale one.
+
+   ⚠️ A LIMIT, SAID HERE SO IT IS NOT REDISCOVERED: a machine off the drive whose
+   OWN tray still beats carries a fresh beacon (its own) and does not look blind.
+   The Desktop's stopped at 09-28 22:35. The cure is the drive (item 66), or
+   `enabled: false` in that machine's app_config.json. */
+const BLIND_S = 30 * 60;
+const HOLD_S = 30 * 60;
+const SEEING_KEY = "gb.snap.seeing.v1";
+let SNAP_NOTE = "";
+
+function snapGenS(d){
+  const t = Date.parse((d && d.generated_at) || "");
+  return isNaN(t) ? 0 : t / 1000;
+}
+function snapFreshest(d){
+  let best = null;
+  (Array.isArray(d && d.fleet) ? d.fleet : []).forEach(f => {
+    if(f && (Number(f.beat_at) || 0) > (Number(best && best.beat_at) || 0)) best = f;
+  });
+  return best;
+}
+/* Seconds the publisher's view trails its own publish time; 0 when it can see,
+   and 0 when there is nothing to judge by -- never blind on no evidence. */
+function snapBlindS(d){
+  const g = snapGenS(d), b = Number((snapFreshest(d) || {}).beat_at) || 0;
+  if(!g || !b) return 0;
+  return (g - b) > BLIND_S ? (g - b) : 0;
+}
+function loadSeeing(){
+  try{ const raw = localStorage.getItem(SEEING_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function saveSeeing(d){
+  try{ localStorage.setItem(SEEING_KEY, JSON.stringify(d)); }
+  catch(e){ /* full or blocked: the in-memory hold still works */ }
+}
+/* Which snapshot to show, given the one just fetched. Sets SNAP_NOTE. */
+function chooseSnapshot(d){
+  if(!(d && d.kind === "goldbot.app.snapshot" && Array.isArray(d.fleet))) return d;
+  const blind = snapBlindS(d);
+  if(!blind){ SNAP_NOTE = ""; saveSeeing(d); return d; }
+  const now = Date.now() / 1000;
+  const newest = Number((snapFreshest(d) || {}).beat_at) || 0;
+  const seeing = [LAST_SNAPSHOT, loadSeeing()].filter(s =>
+    s && s.kind === "goldbot.app.snapshot" && !snapBlindS(s)
+    && (now - snapGenS(s)) < HOLD_S
+    && (Number((snapFreshest(s) || {}).beat_at) || 0) > newest);
+  const who = (snapFreshest(d) || {}).machine || "another machine";
+  if(seeing.length){
+    seeing.sort((a, b) => snapGenS(b) - snapGenS(a));
+    SNAP_NOTE = " · holding: " + who + "'s newer publish can't see the shared drive";
+    return seeing[0];
+  }
+  SNAP_NOTE = " · ⚠ from " + who + ", which can't see the shared drive ("
+            + dur(blind) + " behind)";
+  return d;
+}
+function liveStamp(){
+  return "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
+       + " · epoch " + EPOCH + SNAP_NOTE + " · app " + APP_BUILD;
+}
+
 function snapAge(d){
   try{
     const t = new Date(d.generated_at).getTime();
@@ -10253,7 +10332,7 @@ function applySnapshot(d, source){
      it did. Recomputed on every repaint, so the poll below keeps it honest. */
   LAST_SNAPSHOT = d;
   paint(source + " · " + fmtWhen(d.generated_at) + snapAge(d) +
-        " · epoch " + EPOCH);
+        " · epoch " + EPOCH + (source === "live" ? SNAP_NOTE : ""));
   return true;
 }
 
@@ -10313,7 +10392,16 @@ async function loadLive(first){
       if(first) showState("Snapshot unreachable — HTTP " + r.status + ".");
       return;
     }
-    const d = await r.json();
+    const fetched = await r.json();
+    const d = chooseSnapshot(fetched);
+    /* HOLDING WHAT IS ALREADY ON SCREEN: nothing new to paint, and a full
+       repaint every 20 s would reset whatever you were scrolling. The stamp
+       still says why. */
+    if(d !== fetched && d === LAST_SNAPSHOT){
+      const el = document.getElementById("stamp");
+      if(el) el.textContent = liveStamp();
+      return;
+    }
     if(!applySnapshot(d, "live") && first){
       showState("The publisher has not written a snapshot yet.<br><br>" +
                 "This page goes live on its own once it does.");
@@ -10355,9 +10443,7 @@ const POLL_MS = 20000;
        seconds later, so the one question it exists to answer -- which build is
        this phone running -- could only be answered in the instant after a
        refresh. Any writer of this element owes the whole line. */
-    if(el) el.textContent = "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) +
-                            snapAge(LAST_SNAPSHOT) + " · epoch " + EPOCH +
-                            " · app " + APP_BUILD;
+    if(el) el.textContent = liveStamp();
   }, 5000);
 })();
 
