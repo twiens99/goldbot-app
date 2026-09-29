@@ -1610,7 +1610,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-105442";
+const APP_BUILD = "20260929-110411";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10260,13 +10260,59 @@ function chooseSnapshot(d){
   const who = (snapFreshest(d) || {}).machine || "another machine";
   if(seeing.length){
     seeing.sort((a, b) => snapGenS(b) - snapGenS(a));
-    SNAP_NOTE = " · holding: " + who + "'s newer publish can't see the shared drive";
+    SNAP_NOTE = holdNote(d);
     return seeing[0];
   }
   SNAP_NOTE = " · ⚠ from " + who + ", which can't see the shared drive ("
             + dur(blind) + " behind)";
   return d;
 }
+/* 2026-09-29 -- THE FIRST LOAD HAD NOTHING TO HOLD. Trevor opened the new build
+   while the gist held the Desktop's copy: no seeing snapshot in memory yet, none
+   saved on the phone, so the page could only flag the blind one ("⚠ from
+   Desktop"). The gist keeps every revision, and the one before a blind publish
+   is the Laptop's (they alternate), so step BACK through the history to the
+   newest seeing revision within HOLD_S. Both endpoints answer cross-origin
+   (checked: Access-Control-Allow-Origin *). The history list is GitHub's API,
+   60 anonymous calls an hour per IP, so it is asked at most every HISTORY_EVERY_S
+   and only when the fetched snapshot is blind with nothing better on hand; a
+   revision's raw file is immutable and not rate-limited like the API. */
+const HISTORY_EVERY_S = 120;
+let HISTORY_TRIED_AT = 0;
+async function seeingFromHistory(blindSnap){
+  const now = Date.now() / 1000;
+  if(!GIST_ID || now - HISTORY_TRIED_AT < HISTORY_EVERY_S) return null;
+  HISTORY_TRIED_AT = now;
+  const id = encodeURIComponent(GIST_ID);
+  const newest = Number((snapFreshest(blindSnap) || {}).beat_at) || 0;
+  const blindAt = snapGenS(blindSnap);
+  try{
+    const r = await fetch("https://api.github.com/gists/" + id + "/commits?per_page=6",
+                          {cache: "no-store"});
+    if(!r.ok) return null;
+    const commits = await r.json();
+    for(const c of (Array.isArray(commits) ? commits : [])){
+      const at = Date.parse((c && c.committed_at) || "") / 1000;
+      if(!at || now - at > HOLD_S) break;          // newest first: older only from here
+      if(Math.abs(at - blindAt) < 90) continue;     // the blind one we already have
+      const rr = await fetch("https://gist.githubusercontent.com/twiens99/" + id + "/raw/"
+                             + encodeURIComponent(c.version) + "/goldbot_snapshot.json");
+      if(!rr.ok) continue;
+      const s = await rr.json();
+      if(s && s.kind === "goldbot.app.snapshot" && Array.isArray(s.fleet) && !snapBlindS(s)
+         && (Number((snapFreshest(s) || {}).beat_at) || 0) > newest){
+        saveSeeing(s);
+        return s;
+      }
+    }
+  }catch(e){ /* offline or rate-limited: the flagged blind snapshot stands */ }
+  return null;
+}
+function holdNote(blindSnap){
+  return " · holding: " + ((snapFreshest(blindSnap) || {}).machine || "another machine")
+       + "'s newer publish can't see the shared drive";
+}
+
 function liveStamp(){
   return "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
        + " · epoch " + EPOCH + SNAP_NOTE + " · app " + APP_BUILD;
@@ -10393,7 +10439,11 @@ async function loadLive(first){
       return;
     }
     const fetched = await r.json();
-    const d = chooseSnapshot(fetched);
+    let d = chooseSnapshot(fetched);
+    if(d === fetched && snapBlindS(fetched)){
+      const back = await seeingFromHistory(fetched);
+      if(back){ d = back; SNAP_NOTE = holdNote(fetched); }
+    }
     /* HOLDING WHAT IS ALREADY ON SCREEN: nothing new to paint, and a full
        repaint every 20 s would reset whatever you were scrolling. The stamp
        still says why. */
