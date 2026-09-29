@@ -1592,7 +1592,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260928-182900";
+const APP_BUILD = "20260928-191839";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5511,12 +5511,15 @@ const NR_ACTION = {
 };
 /* Why a variable sweeps the count it does -- task_detail._why's codes. */
 const NR_WHY = {
-  lower:    "Won inside its range last round, so it sweeps 2 fewer values at the same step — a narrower range around where it landed.",
+  lower:    "Won inside its range last round, so it sweeps fewer values at the same step (3 fewer from 8 or more, 2 from 5–7, 1 from 4) — a narrower range around where it landed.",
   raise:    "Won at an edge last round, so it gets 2 values back — a wider range.",
   floor:    "At 3 values, the fewest a range goes.",
   own:      "Its own count, brought down by earlier wins inside its range.",
   cap:      "Its own count is above the group's, so it sweeps the group's.",
   group:    "The group's full count, set by the pass budget for this many variables.",
+  /* 2026-09-28 (Trevor): the first regular sweep after a baseline. */
+  baseline: "Its last round was its baseline (first) sweep, so its first regular sweep takes 2 off the group's count.",
+  baseline_full: "Its last round was its baseline (first) sweep. At 5 values or fewer the group's count is already narrow, so it sweeps the full count.",
   bound:    "Fewer than its count: a hard bound or an EMA pairing trims the range.",
   recheck:  "Locked, and due its re-check: swept once to confirm it still holds.",
   sits_out: "Locked, so it is not swept this round.",
