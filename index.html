@@ -474,6 +474,11 @@ article.jrow{cursor:default;}
 .lmsg.busy{color:var(--faint);}
 .lmsg.ok{color:var(--good);}
 .lmsg.err{color:var(--bad);}
+/* Machine settings (2026-09-29): a control that cannot apply here greys out
+   rather than vanishing, and the daily-window editor's time boxes. */
+button.chip[disabled]{opacity:.4;cursor:default;}
+.mstime{background:var(--card-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font:inherit;font-size:.85rem;}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);
@@ -1618,7 +1623,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-113632";
+const APP_BUILD = "20260929-115933";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8285,6 +8290,7 @@ function renderSettings(){
         ? '<div class="card"><div class="card-in"><div class="tlab">Not saved</div>'
         + '<div class="tnote">' + esc(SETTINGS_ERROR) + '</div></div></div>' : "")
     + leaseBadge()
+    + machineSettingsBadge()
     + '</div>';
 }
 
@@ -8373,6 +8379,274 @@ function leaseRow(l){
     + (m ? '<div class="lmsg ' + m.kind + '">' + esc(m.text) + '</div>' : "")
     + '</div>';
 }
+
+/* ---------- 2. MACHINE SETTINGS ---------- */
+/* Trevor, 2026-09-29: *"I want under leases let's put a machine settings. This
+   is where I want to be able to Change any agent settings, compute settings and
+   machine settings."* All of them; and between the phone and a machine's own
+   tray, THE LATEST CHANGE WINS.
+
+   A ROUND TRIP, AND THE CARD SAYS SO. Every one of these lives in the machine's
+   own config. A tap goes to the Laptop's /machine, which leaves a request on the
+   shared drive; the machine's tray picks it up within ~30 s, applies it through
+   the same writers its menu uses, and reports its settings back
+   (machine_settings.py). So the card shows three different things and keeps them
+   apart: what the machine last REPORTED (lit), what was SENT and not yet applied,
+   and what the machine did with it -- applied, or refused and why.
+
+   A machine whose tray predates this reports nothing yet: its card shows what its
+   beacon carries (the tier) and says the rest arrives with its update. */
+let MACHINE_SETTINGS = {};
+let MS_VOCAB = null;
+let MS_MSG = {};          // machine -> {kind, text}: this phone's last tap
+let MS_SCHED = {};        // machine -> the daily-window editor's draft, while open
+const MS_FALLBACK = {
+  modes: [["full", "Full"], ["background", "Background"], ["minimum", "Minimum"]],
+  tiers: [["realtick_20000", "Heavy"], ["realtick_8000", "Regular"],
+          ["agent_only", "Agent only"]],
+  days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+};
+function msVocab(){ return MS_VOCAB || MS_FALLBACK; }
+function msShort(label){ return String(label || "").split(" - ")[0]; }
+const MS_DAY = {mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri",
+                sat: "Sat", sun: "Sun"};
+const MS_FIELD = {compute_mode: "compute", tier: "role", optimizations_enabled:
+  "run optimizations", lend_cores: "lend cores", agent_for: "serves",
+  agent_limit: "cores to lend", schedule: "daily minimum", fence_enabled:
+  "home rule", resume_on_ac: "plug-in rule"};
+
+function machineSettingsBadge(){
+  const rows = (FLEET || []).filter(f => f && f.machine);
+  return '<div class="card"><div class="card-in">'
+    + '<div class="tlab">Machine settings</div>'
+    + '<div class="tnote">Sent through the Laptop; each machine picks up its own '
+    + 'within about 30 seconds and reports back here. Its own tray still works too '
+    + '&mdash; the latest change wins.</div>'
+    + (rows.length ? rows.map(machineSettingsRow).join("")
+       : '<div class="tnote" style="margin-top:10px">No machines reporting.</div>')
+    + '</div></div>';
+}
+
+/* One chip that sends one change. The value travels as JSON in the attribute,
+   so a boolean stays a boolean -- URL-ENCODED, because esc() leaves double
+   quotes alone and a JSON string's quotes closed the attribute early: every
+   string-valued chip (compute, role, serves) did nothing when tapped. Caught
+   in the browser check before it shipped. */
+function msChip(machine, field, value, label, on, disabled){
+  return '<button type="button" class="chip' + (on ? " on" : "") + '"'
+    + (disabled ? " disabled" : "")
+    + ' data-mset="' + esc(machine + "|" + field + "|"
+                           + encodeURIComponent(JSON.stringify(value))) + '">'
+    + esc(label) + '</button>';
+}
+
+function msScheduleText(s){
+  if(!s || !s.enabled || !s.min_from || !s.min_until) return "off";
+  const days = (s.days || []).map(d => MS_DAY[d] || d);
+  const span = days.length === 7 ? "every day"
+    : days.join(" ") === "Mon Tue Wed Thu Fri" ? "Mon–Fri" : days.join(", ");
+  return s.min_from + "–" + s.min_until + " · " + span;
+}
+
+function machineSettingsRow(f){
+  const m = f.machine;
+  const st = MACHINE_SETTINGS[m] || {};
+  const s = st.settings || null;              // what the machine REPORTED
+  const v = msVocab();
+  const tier = s ? s.tier : f.tier;
+  const isAgent = s ? !!s.is_agent : tier === "agent_only";
+  const nowS = Date.now() / 1000;
+  const age = Number(f.age_seconds) || 0;
+  const bits = [];
+
+  // -- where this machine stands ---------------------------------------
+  let head = "";
+  if(age > 1800){
+    head = '<span class="chip bad">no heartbeat for ' + esc(dur(age)) + '</span>';
+  } else if(s && st.reported_at){
+    head = '<span class="chip">reported ' + esc(whenShort(Number(st.reported_at))) + '</span>';
+  } else {
+    head = '<span class="chip warn">not reporting settings yet</span>';
+  }
+
+  // -- compute ----------------------------------------------------------
+  bits.push('<div class="section-label" style="margin-top:10px">Compute</div>'
+    + '<div class="chips">' + v.modes.map(md =>
+        msChip(m, "compute_mode", md[0], msShort(md[1]), s && s.compute_mode === md[0])).join("")
+    + '</div>'
+    + (s && s.compute_by === "app" && s.compute_set_at
+        ? '<div class="tnote">Set from the app ' + esc(String(s.compute_set_at).slice(11, 16)) + '.</div>'
+        : ""));
+
+  // -- role ---------------------------------------------------------------
+  bits.push('<div class="section-label" style="margin-top:10px">Role</div>'
+    + '<div class="chips">' + v.tiers.map(t =>
+        msChip(m, "tier", t[0], msShort(t[1]), tier === t[0])).join("")
+    + (s ? msChip(m, "optimizations_enabled", !s.optimizations_enabled,
+                  "Run optimizations", !!s.optimizations_enabled, isAgent) : "")
+    + '</div>'
+    + '<div class="tnote">Takes effect on its next job; a running round keeps the rule it was picked under.</div>');
+
+  if(s){
+    // -- agent ------------------------------------------------------------
+    if(isAgent){
+      const n = Number(s.agents_installed) || 0;
+      const lim = Number(s.agent_limit) || n;
+      bits.push('<div class="section-label" style="margin-top:10px">Agent</div>'
+        + '<div class="chips">'
+        + msChip(m, "lend_cores", !s.lend_cores, "Lend cores", !!s.lend_cores)
+        + '</div>'
+        + ((s.peers || []).length
+            ? '<div class="tnote" style="margin-top:6px">Serves</div><div class="chips">'
+              + s.peers.map(p => msChip(m, "agent_for", p, p, s.agent_for === p)).join("")
+              + '</div>' : "")
+        + (n ? '<div class="tnote" style="margin-top:6px">Cores to lend (of ' + n + ')</div>'
+              + '<div class="chips">' + Array.from({length: n}, (_, i) => i + 1).map(k =>
+                  msChip(m, "agent_limit", k, String(k), lim === k)).join("") + '</div>'
+             : '<div class="tnote">No agent services installed.</div>'));
+    }
+
+    // -- automatic ----------------------------------------------------------
+    const ed = MS_SCHED[m];
+    const sc = s.schedule || {};
+    bits.push('<div class="section-label" style="margin-top:10px">Automatic</div>'
+      + '<div class="tnote">Daily minimum: <b>' + esc(msScheduleText(sc)) + '</b></div>'
+      + (ed
+          ? '<div class="chips" style="margin-top:6px">'
+            + '<input type="time" class="mstime" id="msfrom-' + esc(m) + '" value="' + esc(ed.min_from || "08:00") + '">'
+            + '<input type="time" class="mstime" id="msuntil-' + esc(m) + '" value="' + esc(ed.min_until || "15:00") + '">'
+            + '</div><div class="chips" style="margin-top:6px">'
+            + v.days.map(d => '<button type="button" class="chip' + (ed.days.indexOf(d) >= 0 ? " on" : "")
+                + '" data-msday="' + esc(m + "|" + d) + '">' + esc(MS_DAY[d] || d) + '</button>').join("")
+            + '</div><div class="chips" style="margin-top:6px">'
+            + '<button type="button" class="chip gold" data-mssave="' + esc(m) + '">Save window</button>'
+            + (sc.enabled ? '<button type="button" class="chip" data-msoff="' + esc(m) + '">Turn off</button>' : "")
+            + '<button type="button" class="chip" data-mscancel="' + esc(m) + '">Cancel</button>'
+            + '</div>'
+          : '<div class="chips" style="margin-top:6px">'
+            + '<button type="button" class="chip" data-msedit="' + esc(m) + '">'
+            + (sc.enabled ? "Change window" : "Set a window") + '</button></div>')
+      + '<div class="chips" style="margin-top:8px">'
+      + msChip(m, "fence_enabled", !s.fence_enabled, "Full power at home, minimum elsewhere",
+               !!s.fence_enabled, !s.fence_homes && !s.fence_enabled)
+      + msChip(m, "resume_on_ac", !s.resume_on_ac, "Plugging in lifts a manual minimum",
+               !!s.resume_on_ac)
+      + '</div>'
+      + (!s.fence_homes ? '<div class="tnote">The home rule needs a home network, saved at the machine (Compute › Location).</div>' : ""));
+  } else {
+    bits.push('<div class="tnote" style="margin-top:8px">Compute, agent and automatic settings appear once '
+      + esc(m) + ' runs the update that adds this &mdash; its tray reports them. A change sent now waits for it.</div>');
+  }
+
+  // -- what became of the last request ------------------------------------
+  let status = "";
+  const req = st.request, ap = st.applied;
+  if(st.pending && req){
+    status = '<div class="lmsg busy">Sent ' + esc(whenShort(Number(req.at))) + ': '
+      + esc(Object.keys(req.changes || {}).map(k => MS_FIELD[k] || k).join(", "))
+      + ' — waiting for ' + esc(m) + '.</div>';
+  } else if(ap && ap.results){
+    const refused = Object.entries(ap.results).filter(([, r]) => String(r).indexOf("refused") === 0);
+    status = refused.length
+      ? '<div class="lmsg err">' + refused.map(([k, r]) => "✖ " + (MS_FIELD[k] || k) + ": "
+          + String(r).replace(/^refused: /, "")).map(esc).join("<br>") + '</div>'
+      : (nowS - Number(ap.at) < 6 * 3600
+          ? '<div class="lmsg ok">✓ Applied ' + esc(whenShort(Number(ap.at))) + '.</div>' : "");
+  }
+  /* This phone's own message wins while it is news: an error or a send in
+     flight always, a "Sent" only until the machine has answered (the snapshot
+     then says applied or refused) -- or for 90 s, in case a snapshot older than
+     the tap arrives first and briefly forgets the request. */
+  const mm = MS_MSG[m];
+  const showMine = mm && (mm.kind !== "ok" || st.pending || nowS - (mm.at || 0) < 90);
+  return '<div class="tsec" style="margin-top:14px">'
+    + '<div class="trow lrow"><span class="tname">' + esc(m) + '</span>' + head + '</div>'
+    + bits.join("")
+    + (showMine ? '<div class="lmsg ' + mm.kind + '">' + esc(mm.text) + '</div>' : status)
+    + '</div>';
+}
+
+/* One change to one machine. A request is SAFE TO REPEAT (a pending one is
+   merged into), so a dropped request gets one retry, as a lease does. */
+async function msSend(machine, changes){
+  MS_MSG[machine] = {kind: "busy", text: "Sending to the Laptop…"};
+  repaintSettings();
+  let ok = await apiPost("/machine", {machine: machine, changes: changes});
+  if(!ok && SETTINGS_ERROR === "unreachable"){
+    MS_MSG[machine] = {kind: "busy", text: "No answer — the phone's tunnel may be waking up. Trying once more…"};
+    repaintSettings();
+    await new Promise(r => setTimeout(r, 2500));
+    ok = await apiPost("/machine", {machine: machine, changes: changes});
+  }
+  const now = whenShort(Date.now() / 1000);
+  if(ok){
+    /* Shown as pending at once; the snapshot takes over when the machine has
+       answered (applied, or refused with its reason). */
+    const st = MACHINE_SETTINGS[machine] = MACHINE_SETTINGS[machine] || {};
+    const prev = (st.pending && st.request) ? st.request.changes || {} : {};
+    st.request = {at: Date.now() / 1000, changes: Object.assign({}, prev, changes)};
+    st.pending = true;
+    MS_MSG[machine] = {kind: "ok", at: Date.now() / 1000, text: "✓ Sent " + now + " — "
+      + machine + " applies it within about 30 seconds and reports back."};
+  } else {
+    const e = SETTINGS_ERROR;
+    const why = e === "read-only" ? "this phone has no Laptop link — add it under Settings → Laptop link."
+      : e === "unreachable" ? "the Laptop didn't answer, twice. The Laptop link card's Test checks the same path."
+      : e === "not found" ? "the Laptop hasn't taken the update that adds this yet — it lands after its current round."
+      : (e || "no answer from the Laptop.");
+    MS_MSG[machine] = {kind: "err", text: "✖ Not sent " + now + ": " + why};
+  }
+  repaintSettings();
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-mset],[data-msedit],[data-msday],[data-mssave],"
+    + "[data-msoff],[data-mscancel]");
+  if(!t || t.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = t.dataset;
+  if(d.mset !== undefined){
+    const [machine, field, raw] = [d.mset.slice(0, d.mset.indexOf("|")),
+      d.mset.split("|")[1], d.mset.split("|").slice(2).join("|")];
+    let value;
+    try{ value = JSON.parse(decodeURIComponent(raw)); }catch(err){ return; }
+    await msSend(machine, {[field]: value});
+  } else if(d.msedit !== undefined){
+    const sc = (((MACHINE_SETTINGS[d.msedit] || {}).settings || {}).schedule) || {};
+    MS_SCHED[d.msedit] = {min_from: sc.min_from || "08:00", min_until: sc.min_until || "15:00",
+                          days: (sc.days && sc.days.length ? sc.days : ["mon", "tue", "wed", "thu", "fri"]).slice()};
+    repaintSettings();
+  } else if(d.msday !== undefined){
+    const [machine, day] = d.msday.split("|");
+    const ed = MS_SCHED[machine];
+    if(!ed) return;
+    /* The typed times survive the repaint a day tap causes. */
+    const f = document.getElementById("msfrom-" + machine), u = document.getElementById("msuntil-" + machine);
+    if(f) ed.min_from = f.value;
+    if(u) ed.min_until = u.value;
+    ed.days = ed.days.indexOf(day) >= 0 ? ed.days.filter(x => x !== day) : ed.days.concat([day]);
+    repaintSettings();
+  } else if(d.mssave !== undefined){
+    const machine = d.mssave, ed = MS_SCHED[machine];
+    if(!ed) return;
+    const f = document.getElementById("msfrom-" + machine), u = document.getElementById("msuntil-" + machine);
+    const sched = {enabled: true, min_from: f ? f.value : ed.min_from,
+                   min_until: u ? u.value : ed.min_until, days: ed.days};
+    if(!sched.days.length){
+      MS_MSG[machine] = {kind: "err", text: "✖ Pick at least one day."};
+      return repaintSettings();
+    }
+    delete MS_SCHED[machine];
+    await msSend(machine, {schedule: sched});
+  } else if(d.msoff !== undefined){
+    delete MS_SCHED[d.msoff];
+    await msSend(d.msoff, {schedule: {enabled: false}});
+  } else if(d.mscancel !== undefined){
+    delete MS_SCHED[d.mscancel];
+    repaintSettings();
+  }
+});
 
 
 /* ==========================================================================
@@ -10225,6 +10499,12 @@ function applySnapshot(d, source){
      whose runtime predates them, which must read as "nothing to show"
      rather than as "nothing is set": the badge says which. */
   LEASES = Array.isArray(d.leases) ? d.leases : [];
+  /* 2026-09-29 -- the Machine settings card. Absent on a snapshot from an older
+     publisher; the card then shows only what each beacon carries. */
+  MACHINE_SETTINGS = (d.machine_settings && typeof d.machine_settings === "object")
+    ? d.machine_settings : {};
+  MS_VOCAB = (d.machine_settings_vocab && typeof d.machine_settings_vocab === "object")
+    ? d.machine_settings_vocab : null;
   if(d.settings && d.settings.bucket_priority){
     /* THE NEWER RECORD WINS (2026-09-29). A snapshot generated before the page
        last read the live /settings -- or one from a machine that cannot see the
