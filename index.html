@@ -494,7 +494,7 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .strun{font-size:.64rem;font-weight:700;letter-spacing:.03em;padding:1px 7px;
   border:1px solid;border-radius:999px;line-height:1.5;}
 /* A bucket's bar, one layer per open epoch, every one starting at the left (stBar). */
-.stbar{position:relative;}
+.stbar{position:relative;height:10px;border-radius:5px;}
 .stbar i{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:0;}
 .stlegend{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:4px;}
 .tlab{
@@ -1644,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-212552";
+const APP_BUILD = "20260929-212942";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5778,8 +5778,16 @@ function stRunText(rounds){
    THE COLOUR IS THE BUCKET'S, from the publisher's replay (`colors`: a colour is
    freed when its epoch completes and taken by the next to open). Six, as
    app_snapshot.STATUS_EPOCH_COLOURS says. GLOBALS, or a snapshot from before the
-   colours, falls back to one colour per epoch number. */
-const ST_EPOCH_COLORS = ["var(--gold)", "#7FB6DE", "var(--good)", "#B39DDB", "var(--warn)", "#E58F8F"];
+   colours, falls back to one colour per epoch number.
+
+   THE THIRD COLOUR IS A DARKER GREEN (2026-09-29). Trevor: *"the Green for
+   Epoch is too close to the blue. Lets pick a different contrasting color. red
+   or a darker Green."* It was var(--good) #5FBE95, which scored delta E 12.3
+   against the blue under normal vision -- under the floor of 15. #3E9B4F scores
+   21.7 against the blue and 22.5 against the gold (19.3 / 12.5 colour-blind),
+   and still reads as pill text on the card (4.8:1). Not red: red on this page
+   already means a failed attempt or a PF drop (--bad), and slot 5 is pink. */
+const ST_EPOCH_COLORS = ["var(--gold)", "#7FB6DE", "#3E9B4F", "#B39DDB", "var(--warn)", "#E58F8F"];
 function stColor(slot){ return ST_EPOCH_COLORS[(Number(slot) || 0) % ST_EPOCH_COLORS.length]; }
 function stEpochColor(key, k){
   const b = (STATUS.buckets || []).find(x => x.key === key);
