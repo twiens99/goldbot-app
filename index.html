@@ -493,9 +493,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 /* A group's counted runs, one pill per EPOCH, in that epoch's colour (stEpochPill). */
 .strun{font-size:.64rem;font-weight:700;letter-spacing:.03em;padding:1px 7px;
   border:1px solid;border-radius:999px;line-height:1.5;}
-/* A bucket's bar, one segment per open epoch (stBar). */
-.stbar{display:flex;}
-.stbar i{border-radius:0;flex:none;}
+/* A bucket's bar, one layer per open epoch, every one starting at the left (stBar). */
+.stbar{position:relative;}
+.stbar i{position:absolute;left:0;top:0;bottom:0;height:auto;border-radius:0;}
 .stlegend{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:4px;}
 .tlab{
   font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
@@ -1644,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-143506";
+const APP_BUILD = "20260929-212042";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5671,19 +5671,28 @@ function renderStatus(){
   return stOverview(home);
 }
 
-/* ONE SEGMENT PER OPEN EPOCH (2026-09-29). Trevor: *"bull would show 8 groups
+/* ONE LAYER PER OPEN EPOCH (2026-09-29). Trevor: *"bull would show 8 groups
    worth of gold, 2 groups worth of blue, and 1 group worth of green."* Each
-   segment is the groups that have run that epoch, out of the bucket's runnable
-   groups; if groups running ahead make the segments add up past the whole, the
-   bar is scaled to fit rather than cut. A snapshot from before the epoch colours
-   has no `open`, and gets the single bar it always had. */
+   layer is the groups that have run that epoch, out of the bucket's runnable
+   groups.
+
+   EVERY EPOCH STARTS AT THE LEFT (same day). Trevor: *"All epochs start on the
+   left and work their way to the right ... I want them overlapping."* They
+   were laid end to end, so a later epoch sat past the earlier one's end. Now
+   each layer is anchored at the left edge, and a later epoch is drawn on top
+   of the one before. An epoch's groups have all run the one before it (`open`
+   counts runs >= k), so each layer is no longer than the one under it, and all
+   of them show: 8 gold / 3 blue / 1 green reads green 1, blue 2, gold 5. A
+   snapshot from before the epoch colours has no `open`, and gets the single
+   bar it always had. */
 function stBar(b){
-  const open = Array.isArray(b.open) ? b.open.filter(e => e.groups > 0) : null;
+  const open = Array.isArray(b.open)
+    ? b.open.filter(e => e.groups > 0).sort((x, y) => Number(x.epoch) - Number(y.epoch)) : null;
   if(!open){
     const pct = b.total ? Math.round(100 * b.done / b.total) : 0;
     return `<div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div>`;
   }
-  const den = Math.max(b.total || 0, open.reduce((a, e) => a + e.groups, 0)) || 1;
+  const den = Math.max(b.total || 0, ...open.map(e => e.groups)) || 1;
   return '<div class="bar stbar" style="margin-top:6px">' + open.map(e =>
       `<i style="width:${(100 * e.groups / den).toFixed(2)}%;background:${stColor(e.color)}"></i>`)
     .join("") + '</div>';
