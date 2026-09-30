@@ -1644,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-212942";
+const APP_BUILD = "20260930-064643";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3936,11 +3936,35 @@ function queueChips(q){
   if(q.source === "seed") out.push("SEEDED");
   if(q.source === "block") out.push("BLOCK");
   if(q.source === "backtest") out.push("OWED");
+  if(q.rider) out.push("RIDER");
   return out;
+}
+/* THE RIDER ON A QUEUED ROUND (2026-09-30). Trevor: *"if we are including a
+   rider along. Then the queued passes that are upcoming need to reflect that."*
+   queue_preview publishes `rider` -- {variable, points, grid, passes, held_by}
+   -- from the tick's own gate and sizing. It is listed after the group (a
+   RIDER row, like a running round's), counted beside the group rather than in
+   it ("9 of 9 + rider"), and its multiplier is in the size: the group's grid
+   times the rider's points is what the round really runs. */
+function queueRiderText(q){
+  const r = q.rider;
+  if(!r) return "";
+  const name = spaceOut(stripRegime(r.variable));
+  const size = r.passes && r.grid && r.points
+    ? ` That makes the round ${Number(r.grid).toLocaleString()} × ${r.points} = `
+      + `${Number(r.passes).toLocaleString()} passes.` : "";
+  const pts = r.points ? ` at ${r.points} points` : "";
+  const held = r.held_by
+    ? ` Right now ${r.held_by} holds the rider; if it still does when this starts, `
+      + "this round runs without it." : "";
+  return `Carries the Round 1 cadence rider: ${name}, swept${pts} alongside the `
+    + `group.${size} It rides every ${q.regime || ""} entry and exit round until each `
+    + `${q.regime || ""} group has run once since the cadence fix.${held}`;
 }
 function queueLine(q){
   const sw = queueSwept(q), all = (q.variables || []).length;
-  return [sw ? "sweeps " + sw.length + " of " + all : "",
+  return [sw ? "sweeps " + sw.length + " of " + all + (q.rider ? " + rider" : "") : "",
+          q.rider && q.rider.passes ? Number(q.rider.passes).toLocaleString() + " passes" : "",
           QUEUE_SOURCE_WORD[q.source] || "",
           q.held ? "waits for the build" : "",
           q.only_machine ? q.only_machine + " only" : ""].filter(Boolean).join(" · ");
@@ -3971,7 +3995,8 @@ function queueCard(q){
         + "is held where it is."
       : "Seeded work — it cuts ahead of the schedule.";
   const rows = sw
-    ? sweepVars(q.variables, sw.map(v => ({name: v.name, resolution: v.resolution})))
+    ? sweepVars(q.variables, sw.map(v => ({name: v.name, resolution: v.resolution}))
+        .concat(q.rider ? [{name: q.rider.variable, rider: true, points: q.rider.points}] : []))
     : taskVars(q.variables || []);
   return `<article class="card">
       <div class="stripe ${rc}"></div>
@@ -3988,6 +4013,7 @@ function queueCard(q){
           <div class="sub">${esc(queueLine(q))}</div>
         </div>
         <div class="vhcap">${esc(note)}${sw ? " ✓ marks what it will sweep." : ""}</div>
+        ${q.rider ? `<div class="vhcap">${esc(queueRiderText(q))}</div>` : ""}
         <div class="tsec">${rows}</div>
       </div>
     </article>`;
