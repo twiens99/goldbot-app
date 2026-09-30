@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-174304";
+const APP_BUILD = "20260930-175142";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4386,8 +4386,9 @@ function scoreSentinel(k, v){
    the EA's own edges: under below band low, over above band high. */
 function tradeBandText(v, b){
   const n = Math.round(Number(v));
-  return `Target ${b.target} · band ${b.lo}–${b.hi} · ` +
-    (n < b.lo ? `${b.lo - n} under` : n > b.hi ? `${n - b.hi} over` : "in band");
+  return `Target ${b.target} · −999 below ${b.lo} or above ${b.hi} · ` +
+    (n < b.lo ? `${b.lo - n} under the floor` : n > b.hi ? `${n - b.hi} over the ceiling`
+      : `in band (${n - b.lo} above the floor, ${b.hi - n} below the ceiling)`);
 }
 
 function taskMetrics(d){
@@ -6590,8 +6591,12 @@ function metricGraph(d, big){
        differs, these lines are this test's and the table row says so. */
     const tbd = rounds.band;
     const refs = se.key === "trades" && tbd
-      ? [{v: tbd.lo, label: "band low " + tbd.lo}, {v: tbd.target, label: "target " + tbd.target},
-         {v: tbd.hi, label: "band high " + tbd.hi}]
+      /* Named for what they ARE to the score (Trevor, 2026-09-30: "the lowest and
+         highest number of trades before the score goes to -999"): the EA
+         disqualifies strictly outside these, and its ramp discounts INSIDE. */
+      ? [{v: tbd.lo, label: "floor " + tbd.lo + " · −999 below"},
+         {v: tbd.target, label: "target " + tbd.target},
+         {v: tbd.hi, label: "ceiling " + tbd.hi + " · −999 above"}]
       : METRIC_REFS[se.key] || [];
     const dp = Math.min(def[3], 2);
     const sp = sgSpan(se.vals.filter(v => v != null).concat(refs.map(r => r.v)));
@@ -6682,9 +6687,13 @@ function metricGraph(d, big){
         'Heights are comparable between lines here.'
       : axis
         ? '<b>Real scale</b>: the axis is ' + esc((defs[series[0].key] || [,,series[0].key])[2]) +
-          ' itself' + ((axis.refs || []).length
-            ? ', with ' + esc(axis.refs.map(r => r.label).join(", ")) +
-              ' always on it' + (series[0].key === "trades" ? " (this test’s band)" : "")
+          ' itself' + (series[0].key === "trades" && rounds.band
+            ? '. The dashed lines are this bucket’s trade band: under the floor (' +
+              rounds.band.lo + ') or over the ceiling (' + rounds.band.hi + ') the EA scores a ' +
+              'pass −999; between them it scores normally, discounted a little near ' +
+              'either edge. Target ' + rounds.band.target + ' is the middle'
+            : (axis.refs || []).length
+            ? ', with ' + esc(axis.refs.map(r => r.label).join(", ")) + ' always on it'
             : "") +
           '. % change shows the same line as per cent moved from its first run.'
         : '<b>Each line is scaled to its own range</b> \u2014 a PF and a dollar ' +
