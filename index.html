@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-164635";
+const APP_BUILD = "20260930-171433";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4583,6 +4583,19 @@ function seriesGraph(labels, series, box, axis){
         '" fill="#C8B78A" font-size="6" text-anchor="end">' + esc(r.label) + '</text>';
     }).join("");
   }
+  /* `axis.divider` (optional): {i, label} -- a dashed vertical line between
+     point i-1 and point i. The metrics graph uses it for the 09-08 switch. */
+  if(axis && axis.divider && n > 1 && axis.divider.i > 0 && axis.divider.i < n){
+    const di = axis.divider.i;
+    const xd = (sgX(di - 1, n, W, padL) + sgX(di, n, W, padL)) / 2;
+    const right = xd > W * 0.62;
+    grid += '<line x1="' + xd.toFixed(1) + '" x2="' + xd.toFixed(1) + '" y1="' + SG_PAD.t +
+      '" y2="' + (H - SG_PAD.b) + '" stroke="rgba(140,160,172,.6)" stroke-width="0.8" ' +
+      'stroke-dasharray="2 2"></line>' +
+      '<text x="' + (xd + (right ? -2 : 2)).toFixed(1) + '" y="' + (SG_PAD.t + 5) +
+      '" fill="#8CA0AC" font-size="6" text-anchor="' + (right ? "end" : "start") + '">' +
+      esc(axis.divider.label) + '</text>';
+  }
   const bands = [], lines = [], marks = [];
   series.forEach(se => {
     const sp = se.span;
@@ -5013,7 +5026,8 @@ function equityBadge(t, rep){
         <span class="eqnm">This test</span><span>${esc(eqNums(cur))}</span></div>` +
     (prev
       ? `<div class="eqrow"><span class="eqsw" style="background:${EQ_HIST}"></span>
-           <span class="eqnm">${esc(eqWhen(prev))} · ${esc(eqWho(prev))}</span>
+           <span class="eqnm">${esc(eqWhen(prev))}${
+             preSwitch(prev.stamp) ? " · pre-09-08" : ""} · ${esc(eqWho(prev))}</span>
            <span class="eqsp"></span>
            <span class="eqstep">
              <button type="button" data-eqstep="${esc(cur.id)}" data-eqd="1" ${
@@ -5033,7 +5047,8 @@ function equityBadge(t, rep){
       `data-eqlist="${esc(cur.id)}">${EQLIST[cur.id] ? "Hide" : "All"} ${hist.length} earlier</button></div>` +
     (!EQLIST[cur.id] ? "" : `<div class="eqlist">` + hist.map((c, i) =>
       `<button type="button" class="${i === at ? "on" : ""}" data-eqpick="${esc(cur.id)}" ` +
-      `data-eqi="${i}"><span class="d">${esc(eqWhen(c))}</span>` +
+      `data-eqi="${i}"><span class="d">${esc(eqWhen(c))}${
+        preSwitch(c.stamp) ? " · pre-09-08" : ""}</span>` +
       `<span class="g">${esc(eqWho(c))}</span><span>${esc(eqNums(c))}</span></button>`)
       .join("") + `</div>`);
   return `<div class="card"><div class="card-in">
@@ -6340,12 +6355,27 @@ function backtestRuns(d){
   if(!cur) return null;
   const hist = curveHistory(cur).filter(c => c.m && Object.keys(c.m).length);
   if(!hist.length) return null;
-  const runs = hist.map(c => ({label: eqWhen(c).slice(5), metrics: c.m}))
+  const runs = hist.map(c => ({label: eqWhen(c).slice(5), metrics: c.m, stamp: c.stamp}))
     /* The task's own numbers win; a key only the curve has (the same
        extractor, possibly newer) fills in beside them. */
-    .concat([{label: "this test", metrics: Object.assign({}, cur.m || {}, d.metrics || {})}]);
+    .concat([{label: "this test", metrics: Object.assign({}, cur.m || {}, d.metrics || {}),
+              stamp: cur.stamp}]);
   runs.scope = cur.scope;
   return runs;
+}
+/* 2026-09-30 -- THE DAY THE SWEEPS SWITCHED TO REAL TICKS. Trevor asked whether
+   any of these runs predate it and first wanted them deleted; he chose to MARK
+   it instead. Every backtest here is real ticks either side of the line (its
+   report says so); what changed is how the settings it tested were picked. A
+   run stamped on the day itself sits after the line -- each machine took the
+   change at its next job boundary, so the day is the honest resolution. */
+const SWEEPS_REALTICK_FROM = "20260908";
+function preSwitch(stamp){ return !!stamp && String(stamp) < SWEEPS_REALTICK_FROM; }
+/* The index of the first run on or after the switch, when there are runs on
+   both sides of it; else -1 (nothing to divide). */
+function switchIndex(rounds){
+  const i = rounds.findIndex(r => r.stamp && !preSwitch(r.stamp));
+  return i > 0 && rounds.slice(0, i).every(r => preSwitch(r.stamp)) ? i : -1;
 }
 /* What a hollow dot is, in the caption: an earlier round of this group, or an
    earlier run of this kind when the history came from CURVES. */
@@ -6483,6 +6513,11 @@ function metricGraph(d, big){
   series.forEach(se => {
     se.span = axis ? axis.span : sgSpan(se.vals.filter(v => v != null));
   });
+  /* THE 09-08 LINE rides with the axis, or alone when several lines have none. */
+  const sw = switchIndex(rounds);
+  const deco = (axis || sw > 0)
+    ? Object.assign({}, axis || {}, sw > 0 ? {divider: {i: sw, label: "09-08 · real-tick sweeps →"}} : {})
+    : null;
 
   const absent = noSeries.map(k => {
     const def = defs[k] || [null, k, k, 2, 0];
@@ -6534,7 +6569,7 @@ function metricGraph(d, big){
     (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
     " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds");
   return head(title, modeBtn + clear) +
-    (drawn.length ? seriesGraph(labels, series, big, axis) : "") +
+    (drawn.length ? seriesGraph(labels, series, big, deco) : "") +
     '<div class="mglg">' + legend + absent + '</div>' +
     /* THE BIG VIEW IS FOR THE SHAPE. The legend stays -- it names the lines and
        three words of it fit anywhere -- but the paragraph explaining the scaling
@@ -6556,6 +6591,9 @@ function metricGraph(d, big){
           'figure cannot share an axis \u2014 so read the numbers in the legend. ' +
           'Switch to % change to put them on one scale.') +
     ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
+    (sw > 0 ? ' Dashed line: 09-08, when the sweeps switched to real ticks — ' +
+              'runs left of it tested settings partly picked before that. Every test ' +
+              'here ran on real ticks.' : "") +
     (held.length
       ? ' ' + esc(held.map(k => (defs[k] || [,,k])[2]).join(", ")) +
         ' starts at zero and has no percentage to show, so it is held out of ' +
