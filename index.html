@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-155932";
+const APP_BUILD = "20260930-162936";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6270,7 +6270,40 @@ function metricColour(k){
 /* THE ROUNDS THIS TASK HAS NUMBERS FOR, oldest first, this test last. */
 function metricRounds(d){
   const h = (d.metrics_history || {}).rounds;
-  return Array.isArray(h) && h.length ? h : null;
+  return Array.isArray(h) && h.length ? h : backtestRuns(d);
+}
+
+/* 2026-09-30 -- A BACKTEST'S HISTORY IS ITS EARLIER BACKTESTS. Trevor, on a
+   bucket test that said "No round history yet": *"I want the history of all the
+   previous buckettests (or full tests) ... the pf history of that bucket. Or the
+   give back history. I'd like to see what's going up, and what's going down."*
+
+   `metrics_history` above was never written by ANY publisher -- only the
+   artifact's invented data had it -- so every card on the phone said there was
+   no history. The earlier runs were already here: CURVES holds every one, and
+   since 2026-09-30 each carries its own numbers (`m`, from the same extractor as
+   its card). Scoped by curveHistory, so the metrics graph walks exactly the runs
+   the balance graph above it compares against: this bucket's earlier bucket
+   tests from any group, or every earlier full test from any regime.
+
+   A run that took no trades writes no ledger, has no curve and so is not here --
+   the one gap, and a run with no trades has no PF to plot anyway. */
+function backtestRuns(d){
+  const cur = curveFor({files: d.files}, {rel_dir: d.rel_dir});
+  if(!cur) return null;
+  const hist = curveHistory(cur).filter(c => c.m && Object.keys(c.m).length);
+  if(!hist.length) return null;
+  const runs = hist.map(c => ({label: eqWhen(c).slice(5), metrics: c.m}))
+    .concat([{label: "this test", metrics: d.metrics || cur.m || {}}]);
+  runs.scope = cur.scope;
+  return runs;
+}
+/* What a hollow dot is, in the caption: an earlier round of this group, or an
+   earlier run of this kind when the history came from CURVES. */
+function metricEarlier(rounds){
+  return rounds.scope === "all" ? "an earlier full test (any regime)"
+    : rounds.scope === "bucket" ? "an earlier bucket test in this bucket (any group)"
+    : "an earlier round";
 }
 
 function metricGraph(d, big){
@@ -6305,13 +6338,28 @@ function metricGraph(d, big){
     /* NO HISTORY IS NOT AN EMPTY GRAPH. A task whose earlier rounds were never
        measured has nothing to draw, and an axis with one column on it would
        imply otherwise. */
+    /* A BACKTEST says WHICH of two very different things is true. Earlier
+       runs that exist but carry no numbers mean the snapshot came from a
+       publisher older than 2026-09-30 -- PENDING, not absent. Found in the
+       browser: the page's own refresh swapped in such a snapshot and the card
+       claimed "first of its kind" over 17 earlier runs. */
+    const cur = curveFor({files: d.files}, {rel_dir: d.rel_dir});
+    if(cur && curveHistory(cur).length)
+      return head(curveHistory(cur).length + " earlier runs, numbers pending", "") +
+        '<div class="vhempty">The earlier runs are listed, but this snapshot came ' +
+        'from a publisher that doesn’t send their numbers yet. They arrive ' +
+        'with the next snapshot from an updated machine.</div>';
+    if(cur)
+      return head("First of its kind here", "") +
+        '<div class="vhempty">No earlier run to plot against yet. Once another ' +
+        'test like this one finishes, its numbers line up here beside this one.</div>';
     return head("No round history yet", "") +
       '<div class="vhempty">This task carries its own numbers and the previous ' +
       'generation, but not the series behind them, so there is nothing to plot ' +
       'across rounds.</div>';
   }
   if(!picked.length){
-    return head(rounds.length + " rounds on file", "") +
+    return head(rounds.length + (rounds.scope ? " runs" : " rounds") + " on file", "") +
       /* NOT "tap the dot" any more -- the dot stopped being a target when the
          row took over both jobs, and an empty graph telling you to press
          something that does nothing is the worst place to be wrong. */
@@ -6322,7 +6370,7 @@ function metricGraph(d, big){
   const mode = MSTATE.mode === "index" ? "index" : "value";
   const labels = rounds.map((r, i) =>
     i === rounds.length - 1 ? "this test"
-      : "r" + r.round + (r.at ? " " + fmtWhen(r.at).split(" ")[0] : ""));
+      : r.label || ("r" + r.round + (r.at ? " " + fmtWhen(r.at).split(" ")[0] : "")));
 
   /* INDEX MODE puts every series on ONE axis by asking the only question that is
      comparable across metrics: how far has it moved from where it started. The
@@ -6398,7 +6446,7 @@ function metricGraph(d, big){
      the same lie one level up. */
   const title = drawn.length + " metric" + (drawn.length === 1 ? "" : "s") +
     (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
-    " \u00b7 " + rounds.length + " rounds";
+    " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds");
   return head(title, modeBtn + clear) +
     (drawn.length ? seriesGraph(labels, series, big) : "") +
     '<div class="mglg">' + legend + absent + '</div>' +
@@ -6416,7 +6464,7 @@ function metricGraph(d, big){
       : '<b>Each series is scaled to its own range</b>, so the shape is honest ' +
         'but the axis names no real number and heights are not comparable ' +
         'between lines. Switch to % change to compare them.') +
-    ' Solid dot = this test, hollow = an earlier round.' +
+    ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
     (held.length
       ? ' ' + esc(held.map(k => (defs[k] || [,,k])[2]).join(", ")) +
         ' starts at zero and has no percentage to show, so it is held out of ' +
