@@ -1582,6 +1582,82 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-form .row{display:flex;flex-direction:row;gap:8px;flex-wrap:wrap;}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+
+/* ---------- finance (2026-09-30) -- GOLDbot's own books ---------- */
+.fin-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.fin-asof{font-size:.72rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
+.fin-btn{
+  border:1px solid var(--line);background:var(--card-2);color:var(--text);
+  font:inherit;font-size:.8rem;font-weight:600;border-radius:9px;padding:7px 12px;cursor:pointer;
+}
+.fin-btn.gold{background:var(--gold);border-color:var(--gold);color:#17130a;}
+.fin-btn.bad{color:var(--bad);border-color:rgba(224,104,90,.35);}
+.fin-btn[disabled]{opacity:.5;cursor:default;}
+.fin-btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.fin-sub{font-size:.7rem;color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;}
+.fin-kvr{
+  display:grid;grid-template-columns:1fr auto;gap:1px 10px;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid var(--line);font-size:.82rem;
+}
+.fin-kvr:last-child{border-bottom:0;padding-bottom:0;}
+.fin-kvr:first-child{padding-top:0;}
+.fin-kvr .fin-k{color:var(--dim);min-width:0;overflow-wrap:anywhere;}
+.fin-kvr .fin-v{font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
+.fin-kvr .fin-s{grid-column:1 / -1;font-size:.7rem;color:var(--faint);}
+.fin-kvr.sum .fin-k,.fin-kvr.sum .fin-v{color:var(--text);font-weight:700;}
+.fin-note{font-size:.74rem;color:var(--faint);line-height:1.5;}
+.fin-note b{color:var(--dim);font-weight:600;}
+.fin-warn{font-size:.78rem;color:var(--warn);line-height:1.45;}
+.fin-rows{display:flex;flex-direction:column;}
+.fin-row{
+  display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:start;
+  width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;
+  color:var(--text);font:inherit;padding:10px 13px;cursor:pointer;
+}
+.fin-row:last-child{border-bottom:0;}
+.fin-row[disabled]{cursor:default;}
+.fin-row:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+.fin-rt{font-size:.85rem;font-weight:600;min-width:0;overflow-wrap:anywhere;}
+.fin-rs{font-size:.72rem;color:var(--dim);min-width:0;overflow-wrap:anywhere;line-height:1.4;}
+.fin-ra{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.84rem;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.fin-rc{font-family:"Roboto Mono",ui-monospace,monospace;font-size:.7rem;color:var(--faint);text-align:right;white-space:nowrap;}
+.fin-tag{
+  display:inline-block;font-size:.58rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:1px 5px;border-radius:5px;background:var(--tonal);color:var(--dim);margin-left:5px;vertical-align:1px;
+}
+.fin-form{display:flex;flex-direction:column;gap:10px;padding:13px;background:var(--card-2);border-bottom:1px solid var(--line);}
+.fin-form label{
+  display:flex;flex-direction:column;gap:4px;font-size:.66rem;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+}
+.fin-form input,.fin-form select{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;
+  padding:9px 10px;font-family:inherit;font-size:1rem;letter-spacing:0;text-transform:none;font-weight:400;
+}
+.fin-form input:focus-visible,.fin-form select:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.fin-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.fin-form .fin-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.fin-form .fin-hint{font-size:.72rem;color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400;}
+.fin-seg{display:flex;gap:6px;}
+.fin-seg button{
+  flex:1;border:1px solid var(--line);background:var(--bg);color:var(--dim);font:inherit;
+  font-size:.85rem;font-weight:700;border-radius:9px;padding:8px 0;cursor:pointer;
+}
+.fin-seg button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#17130a;}
+.fin-err{font-size:.8rem;color:var(--bad);line-height:1.4;}
+.fin-tbl{width:100%;border-collapse:collapse;font-size:.8rem;}
+.fin-tbl th{
+  font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  text-align:right;font-weight:700;padding:0 0 6px 8px;
+}
+.fin-tbl th:first-child{text-align:left;padding-left:0;}
+.fin-tbl td{
+  padding:7px 0 7px 8px;border-top:1px solid var(--line);text-align:right;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.fin-tbl td:first-child{text-align:left;font-family:inherit;padding-left:0;white-space:normal;}
+.fin-tbl td .fin-sub{display:block;}
+.fin-more{border:0;background:transparent;color:var(--gold);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:10px 13px;text-align:left;}
 </style>
 
 <div class="app">
@@ -1616,6 +1692,9 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
          chart inside is built once and would be destroyed by a repaint. -->
     <section class="page" id="page-live" hidden></section>
     <section class="page" id="page-track" hidden></section>
+    <!-- FINANCE (2026-09-30), no tab: the home badge under Live. Its data comes
+         from the Laptop over the tailnet, never from the gist -- see renderFinance. -->
+    <section class="page" id="page-finance" hidden></section>
   </main>
 
   <nav role="tablist">
@@ -1644,7 +1723,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-074353";
+const APP_BUILD = "20260930-105439";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1658,6 +1737,10 @@ let PICKS = [];
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
 let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
+/* 2026-09-30 -- GOLDbot's books, from the Laptop (fleet_api /finance). MEMORY
+   ONLY: never localStorage, never the snapshot. See renderFinance. */
+let FIN = {data: null, at: 0, loading: false, err: "", busy: false, form: null,
+           formErr: "", confirm: "", all: false, rec: null};
 /* Who fed each controller, keyed by controller machine name. */
 let AGENTCONTRIB = {};
 /* The four words for where a variable is up to, explained -- published once at
@@ -7104,6 +7187,11 @@ function renderHome(){
     + (h => `<div id="lvalert" class="lv-alerts"${h ? "" : " hidden"}>${h}</div>`)(lvAlertHtml())
     + homeButton("live", `<span class="lv-dot${liveUrl() ? "" : " off"}"></span>`, "Live",
                  `<span id="lvsub">${lvBadgeText()}</span>`, "var(--gold)")
+    /* FINANCE, under Live. Trevor, 2026-09-30: *"let's build a finance section
+       in GOLDbot."* The other badge about money, so it sits beside the first.
+       Its subline comes from the Laptop (finLoad), never from the snapshot. */
+    + homeButton("finance", "$", "Finance",
+                 `<span id="finsub">${finBadgeText()}</span>`, "var(--gold)")
     + homeButton("active", "▶", "Active", activeSummary())
     + homeButton("results", "✓", "Results",
         `<span class="hcount">${LEDGER.filter(completed).length}</span> ` +
@@ -11115,10 +11203,669 @@ const POLL_MS = 20000;
   }, 5000);
 })();
 
+/* ==========================================================================
+   FINANCE -- GOLDbot's own books (2026-09-30)
+   ==========================================================================
+   Trevor (Finances.txt): *"We're going to treat GOLDbot like it's own entity
+   ... I want to be able to Edit transactions, I want to be able add
+   transactions. Deposit. Withdrawel ... All Dollars that I want to see for
+   totals will be in CAD."*
+
+   🔴 NOTHING ABOUT THE BOOKS IS IN THIS FILE OR IN THE SNAPSHOT. This page is
+   public and the gist is readable by anyone holding its URL. The numbers --
+   and every NAME: the accounts, the RESPs, the lenders -- come from the
+   Laptop over the tailnet (fleet_api /finance), live in memory only, and are
+   NEVER written to localStorage. No Laptop link, no books.
+
+   THE ARITHMETIC IS finance.py's, with tests. This page renders what it is sent
+   and never re-derives a total, so the phone and `python finance.py show`
+   cannot disagree. */
+
+const FIN_KINDS = {
+  deposit:     {label: "Deposit", fields: ["currency", "account", "source"]},
+  withdrawal:  {label: "Withdrawal", fields: ["currency", "account", "to"]},
+  transfer:    {label: "Transfer between accounts", fields: ["account", "to_account"]},
+  profit:      {label: "Trading profit / loss", fields: ["currency", "account"]},
+  copy_share:  {label: "Copy-trader share", fields: ["currency", "account"]},
+  expense:     {label: "Expense", fields: ["paid_by", "currency", "category"]},
+  resp:        {label: "RESP contribution", fields: ["earmark"]},
+  resp_payout: {label: "RESP payout", fields: ["earmark", "currency", "account"]},
+  loan:        {label: "Loan (no cash moved)", fields: ["loan"]},
+  balance:     {label: "Balance check", fields: ["currency", "account"]},
+};
+const FIN_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function finAttr(s){ return esc(s == null ? "" : s).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+function finToday(){
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0");
+}
+function finNum(x, cents){
+  return Math.abs(Number(x)).toLocaleString("en-CA", {
+    minimumFractionDigits: cents === false ? 0 : 2, maximumFractionDigits: cents === false ? 0 : 2});
+}
+function finMoney(x, cents){
+  if(x === null || x === undefined || x === "" || isNaN(Number(x))) return "—";
+  return (Number(x) < 0 ? "−$" : "$") + finNum(x, cents);
+}
+function finTone(x){ return Number(x) > 0.004 ? "lv-good" : Number(x) < -0.004 ? "lv-bad" : ""; }
+function finDate(iso, year){
+  if(!iso) return "—";
+  const p = String(iso).slice(0, 10).split("-").map(Number);
+  const show = year || p[0] !== new Date().getFullYear();
+  return FIN_MON[p[1] - 1] + " " + p[2] + (show ? ", " + p[0] : "");
+}
+function finMonth(iso){
+  if(!iso) return "—";
+  const p = String(iso).split("-").map(Number);
+  return FIN_MON[p[1] - 1] + " " + p[0];
+}
+function finOpts(){ return ((FIN.data || {}).options) || {accounts: [], earmarks: [], loans: [], defaults: {}}; }
+function finAcct(id){ return finOpts().accounts.find(a => a.id === id); }
+function finIsLoan(id){ return finOpts().loans.some(l => l.id === id); }
+function finName(pool, id){
+  const hit = (finOpts()[pool] || []).find(x => x.id === id);
+  return hit ? hit.name : String(id || "");
+}
+
+/* ---------- loading ---------- */
+function finBadgeText(){
+  if(!apiBase()) return "Add the Laptop link to see the books";
+  if(FIN.data){
+    const d = FIN.data;
+    return `<span class="hcount">${esc(finMoney(d.value, false))}</span> in the accounts · ` +
+      `GOLDbot owns <span class="hcount${d.equity < 0 ? " warn" : ""}">${esc(finMoney(d.equity, false))}</span>`;
+  }
+  if(FIN.err) return "Can't read the books right now";
+  return "Loading the books…";
+}
+function finPaintBadge(){
+  const el = document.getElementById("finsub");
+  if(el) el.innerHTML = finBadgeText();
+}
+function finRender(){
+  const el = document.getElementById("page-finance");
+  if(el) el.innerHTML = renderFinance();
+}
+function finShow(){
+  finRender();
+  finLoad(false);
+}
+
+async function finLoad(force){
+  const base = apiBase();
+  if(!base || FIN.loading) return;
+  if(!force && FIN.data && Date.now() - FIN.at < 60000) return;
+  FIN.loading = true;
+  FIN.err = "";
+  finRender();
+  try{
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 20000) : null;
+    const r = await fetch(base + "/finance", {cache: "no-store", signal: ctl ? ctl.signal : undefined});
+    if(timer) clearTimeout(timer);
+    const out = await r.json().catch(() => ({}));
+    if(r.ok && out && out.schema){
+      FIN.data = out;
+      FIN.at = Date.now();
+    }else if(r.status === 404){
+      /* TWO DIFFERENT 404s, and they need different answers: a wrong link, or a
+         Laptop whose tray has not loaded the Finance route yet. /health tells
+         them apart -- it has existed since the first fleet_api. */
+      let healthy = false;
+      try{ healthy = (await fetch(base + "/health", {cache: "no-store"})).ok; }catch(e){}
+      FIN.err = healthy
+        ? "The Laptop hasn't loaded the Finance update yet. Its tray picks it up when the " +
+          "current job finishes — nothing to do but wait."
+        : "The Laptop answered, but not to this link. Check Settings → Laptop link.";
+    }else{
+      FIN.err = out.error || ("The Laptop answered with HTTP " + r.status + ".");
+    }
+  }catch(e){
+    FIN.err = "No answer from the Laptop. Check that Tailscale is switched on, then tap Refresh.";
+  }
+  FIN.loading = false;
+  finRender();
+  finPaintBadge();
+}
+
+async function finPost(body){
+  const base = apiBase();
+  if(!base) return {ok: false, error: "There's no Laptop link on this phone."};
+  try{
+    const r = await fetch(base + "/finance", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const out = await r.json().catch(() => ({}));
+    /* 200 MEANS SAVED. Unlike every other write in this app, a finance record
+       is applied on the spot -- it is bookkeeping, not an instruction. */
+    if(r.status === 200 && out.ok) return {ok: true, out: out};
+    if(r.status === 404)
+      return {ok: false, error: "The Laptop hasn't loaded the Finance update yet — not saved."};
+    return {ok: false, error: out.error || ("Not saved: HTTP " + r.status)};
+  }catch(e){
+    return {ok: false, error: "No answer from the Laptop — not saved. Check Tailscale, then try again."};
+  }
+}
+
+async function finSend(body, after){
+  if(FIN.busy) return;
+  FIN.busy = true;
+  FIN.formErr = "";
+  finRender();
+  const r = await finPost(body);
+  FIN.busy = false;
+  FIN.confirm = "";
+  if(r.ok){
+    after();
+    if(r.out.report){
+      FIN.data = r.out.report;
+      FIN.at = Date.now();
+    }else{
+      FIN.formErr = r.out.error || "";
+      finLoad(true);
+    }
+  }else{
+    FIN.formErr = r.error;
+  }
+  finRender();
+  finPaintBadge();
+}
+
+/* ---------- the form ---------- */
+function finFix(f){
+  /* Keep the form coherent after a change: an account that matches the
+     currency, a second account for a transfer, a RESP/loan picked. */
+  const o = finOpts();
+  const want = (FIN_KINDS[f.kind] || {fields: []}).fields;
+  if(want.includes("account")){
+    let pool = o.accounts;
+    if(want.includes("currency")) pool = pool.filter(a => a.currency === f.currency);
+    if(!pool.some(a => a.id === f.account)) f.account = (pool[0] || o.accounts[0] || {}).id || "";
+  }
+  if(want.includes("to_account") && (!f.to_account || f.to_account === f.account))
+    f.to_account = (o.accounts.find(a => a.id !== f.account) || {}).id || "";
+  if(want.includes("earmark") && !o.earmarks.some(e => e.id === f.earmark))
+    f.earmark = (o.earmarks[0] || {}).id || "";
+  if(want.includes("loan") && !o.loans.some(l => l.id === f.loan))
+    f.loan = (o.loans[0] || {}).id || "";
+  if(want.includes("source") && !f.source)
+    f.source = (o.defaults || {}).source || "other";
+  if(want.includes("to") && !f.to)
+    f.to = (o.defaults || {}).source || "draw";
+  if(want.includes("paid_by") && !f.paid_by)
+    f.paid_by = (o.defaults || {}).paid_by || ((o.loans[0] || o.accounts[0] || {}).id || "");
+  if(f.kind === "expense"){
+    const a = finAcct(f.paid_by);
+    if(a) f.currency = a.currency;
+  }
+  if(f.kind === "resp" || f.kind === "loan") f.currency = "CAD";
+  return f;
+}
+function finCurrency(f){
+  if(f.kind === "resp" || f.kind === "loan") return "CAD";
+  const a = finAcct(f.kind === "expense" ? f.paid_by : f.account);
+  return a ? a.currency : (f.currency || "CAD");
+}
+function finNewForm(){
+  return finFix({mode: "add", id: "", kind: "deposit", date: finToday(), amount: "",
+                 currency: "CAD", memo: "", fx: "", category: "", amount_to: ""});
+}
+function finFormFrom(t){
+  const f = {mode: "edit", id: t.id, kind: t.kind, date: t.date, amount: String(t.amount),
+             currency: t.currency || "CAD", memo: t.memo || "", fx: t.fx ? String(t.fx) : "",
+             account: t.account || "", to_account: t.to_account || "",
+             amount_to: t.amount_to != null ? String(t.amount_to) : "",
+             source: t.source || "", to: t.to || "", paid_by: t.paid_by || "",
+             category: t.category || "", earmark: t.earmark || "", loan: t.loan || "",
+             recurring: t.recurring || ""};
+  return finFix(f);
+}
+function finFormData(f){
+  const want = (FIN_KINDS[f.kind] || {fields: []}).fields;
+  const d = {kind: f.kind, date: f.date, amount: String(f.amount).replace(/[,$\s]/g, "")};
+  ["account", "to_account", "source", "to", "paid_by", "earmark", "loan", "category"].forEach(k => {
+    if(want.includes(k) && f[k]) d[k] = f[k];
+  });
+  if(want.includes("currency")) d.currency = finCurrency(f);
+  if(f.kind === "transfer"){
+    const a = finAcct(f.account), b = finAcct(f.to_account);
+    if(a && b && a.currency !== b.currency) d.amount_to = String(f.amount_to).replace(/[,$\s]/g, "");
+  }
+  if(finCurrency(f) === "USD" && String(f.fx).trim()) d.fx = String(f.fx).trim();
+  if(String(f.memo).trim()) d.memo = String(f.memo).trim();
+  return d;
+}
+
+function finSelect(field, value, items){
+  return `<select data-finf="${field}">` + items.map(([v, label]) =>
+    `<option value="${finAttr(v)}"${v === value ? " selected" : ""}>${esc(label)}</option>`).join("") +
+    "</select>";
+}
+function finFormHtml(){
+  const f = FIN.form;
+  const o = finOpts();
+  const want = (FIN_KINDS[f.kind] || {fields: []}).fields;
+  const cur = finCurrency(f);
+  let h = '<div class="fin-form">';
+  if(f.mode === "add")
+    h += "<label>Type" + finSelect("kind", f.kind,
+      Object.keys(FIN_KINDS).map(k => [k, FIN_KINDS[k].label])) + "</label>";
+  else
+    h += `<div class="fin-rt">${esc(FIN_KINDS[f.kind] ? FIN_KINDS[f.kind].label : f.kind)}` +
+         (f.recurring ? '<span class="fin-tag">this one only</span>' : "") + "</div>";
+  const showSeg = want.includes("currency") &&
+    !(f.kind === "expense" && finAcct(f.paid_by));
+  if(f.kind === "expense"){
+    h += "<label>Paid by" + finSelect("paid_by", f.paid_by,
+      o.loans.map(l => [l.id, l.name + " — owed back"]).concat(
+      o.accounts.map(a => [a.id, a.name + " (" + a.currency + ")"]))) + "</label>";
+  }
+  if(showSeg){
+    h += '<div class="fin-seg" role="group" aria-label="Currency">' + ["CAD", "USD"].map(c =>
+      `<button type="button" data-fin="cur" data-cur="${c}" aria-pressed="${f.currency === c}">${c}</button>`
+    ).join("") + "</div>";
+  }
+  if(want.includes("account")){
+    let pool = o.accounts;
+    if(want.includes("currency")) pool = pool.filter(a => a.currency === f.currency);
+    const label = f.kind === "transfer" ? "From" : "Account";
+    h += `<label>${label}` + (pool.length
+      ? finSelect("account", f.account, pool.map(a => [a.id, a.name]))
+      : `<span class="fin-hint">No ${esc(f.currency)} account</span>`) + "</label>";
+  }
+  if(want.includes("to_account"))
+    h += "<label>To" + finSelect("to_account", f.to_account,
+      o.accounts.filter(a => a.id !== f.account).map(a => [a.id, a.name + " (" + a.currency + ")"])) + "</label>";
+  if(want.includes("source"))
+    h += "<label>Where it came from" + finSelect("source", f.source,
+      o.loans.map(l => [l.id, l.name + " — a loan to GOLDbot"]).concat(
+      [["opening", "Opening balance"], ["other", "Other — a gift, not owed back"]])) + "</label>";
+  if(want.includes("to"))
+    h += "<label>What it is" + finSelect("to", f.to,
+      o.loans.map(l => [l.id, "Paying back " + l.name]).concat(
+      [["draw", "A draw — living expenses, not a repayment"]])) + "</label>";
+  if(want.includes("earmark"))
+    h += "<label>RESP" + finSelect("earmark", f.earmark, o.earmarks.map(e => [e.id, e.name])) + "</label>";
+  if(want.includes("loan"))
+    h += "<label>Loan" + finSelect("loan", f.loan, o.loans.map(l => [l.id, l.name])) + "</label>";
+  const amtLabel = f.kind === "balance" ? "Actual balance"
+    : f.kind === "profit" ? "Amount (a minus sign for a loss)" : "Amount";
+  const neg = f.kind === "profit";
+  h += '<div class="fin-two">' +
+    `<label>${amtLabel} · ${esc(cur)}<input type="text" ${neg ? "" : 'inputmode="decimal"'} ` +
+    `data-finf="amount" value="${finAttr(f.amount)}" placeholder="0.00" autocomplete="off"></label>` +
+    `<label>Date<input type="date" data-finf="date" value="${finAttr(f.date)}" max="${finToday()}"></label>` +
+    "</div>";
+  if(f.kind === "transfer"){
+    const a = finAcct(f.account), b = finAcct(f.to_account);
+    if(a && b && a.currency !== b.currency)
+      h += `<label>Amount received · ${esc(b.currency)}<input type="text" inputmode="decimal" ` +
+           `data-finf="amount_to" value="${finAttr(f.amount_to)}" placeholder="0.00"></label>`;
+  }
+  if(want.includes("category"))
+    h += `<label>What for<input type="text" data-finf="category" value="${finAttr(f.category)}" ` +
+         'placeholder="vps, claude, …" list="fin-cats"></label>' +
+         '<datalist id="fin-cats"><option value="vps"><option value="claude"><option value="broker">' +
+         '<option value="other"></datalist>';
+  if(cur === "USD")
+    h += `<label>USD → CAD rate <span class="fin-hint">blank = Bank of Canada's rate that day</span>` +
+         `<input type="text" inputmode="decimal" data-finf="fx" value="${finAttr(f.fx)}" ` +
+         `placeholder="${finAttr((FIN.data.fx || {}).usdcad || "")}"></label>`;
+  h += `<label>Note<input type="text" data-finf="memo" value="${finAttr(f.memo)}" maxlength="200"></label>`;
+  if(FIN.formErr) h += `<div class="fin-err">${esc(FIN.formErr)}</div>`;
+  h += '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-fin="save"${FIN.busy ? " disabled" : ""}>` +
+    `${FIN.busy ? "Saving…" : f.mode === "add" ? "Add it" : "Save"}</button>` +
+    '<button type="button" class="fin-btn" data-fin="cancel">Cancel</button>';
+  if(f.mode === "edit")
+    h += `<button type="button" class="fin-btn bad" data-fin="void"${FIN.busy ? " disabled" : ""}>` +
+         `${FIN.confirm === "void" ? "Tap again to remove" : "Remove"}</button>`;
+  h += "</div>";
+  if(f.mode === "edit")
+    h += '<div class="fin-note">An edit or a removal is kept: the books save every version, ' +
+         "so nothing here is ever lost.</div>";
+  return h + "</div>";
+}
+
+/* ---------- rows ---------- */
+function finRowTitle(t){
+  switch(t.kind){
+    case "deposit":
+      return "Deposit" + (t.source === "opening" ? " · opening balance"
+        : t.source === "other" ? " · gift" : " · from " + finName("loans", t.source));
+    case "withdrawal":
+      return "Withdrawal" + (t.to === "draw" ? " · draw" : " · repays " + finName("loans", t.to));
+    case "transfer": return "Transfer";
+    case "profit": return Number(t.amount) < 0 ? "Trading loss" : "Trading profit";
+    case "copy_share": return "Copy-trader share";
+    case "expense": return "Expense · " + (t.category || "other");
+    case "resp": return "RESP · " + finName("earmarks", t.earmark);
+    case "resp_payout": return "RESP payout · " + finName("earmarks", t.earmark);
+    case "loan": return "Loan · " + finName("loans", t.loan);
+    case "balance": return "Balance check";
+  }
+  return String(t.kind);
+}
+function finRowSub(t){
+  const bits = [finDate(t.date)];
+  if(t.kind === "transfer")
+    bits.push(finName("accounts", t.account) + " → " + finName("accounts", t.to_account));
+  else if(t.kind === "expense")
+    bits.push(finIsLoan(t.paid_by) ? "paid by " + finName("loans", t.paid_by) + ", owed back"
+                                   : "from " + finName("accounts", t.paid_by));
+  else if(t.account) bits.push(finName("accounts", t.account));
+  if(t.memo) bits.push(t.memo);
+  return bits.join(" · ");
+}
+function finRowAmount(t){
+  const amt = Number(t.amount);
+  let sign = 0;
+  if(t.kind === "deposit" || t.kind === "copy_share") sign = 1;
+  else if(t.kind === "withdrawal" || t.kind === "resp_payout" || t.kind === "expense") sign = -1;
+  else if(t.kind === "profit") sign = amt >= 0 ? 1 : -1;
+  let main = (sign > 0 ? "+" : sign < 0 ? "−" : "") + finNum(amt) + " " + (t.currency || "");
+  let tone = t.kind === "profit" || t.kind === "copy_share" ? finTone(sign * Math.abs(amt)) : "";
+  let under = "";
+  if(t.kind === "balance"){
+    main = finNum(amt) + " " + (t.currency || "");
+    under = t.adjust ? "off by " + (t.adjust > 0 ? "+" : "−") + finNum(t.adjust) : "matched";
+    tone = "";
+  }else if(t.kind === "transfer" && t.amount_to != null){
+    under = "→ " + finNum(t.amount_to) + " " + (finAcct(t.to_account) || {}).currency;
+  }else if(t.kind === "resp" || t.kind === "loan"){
+    under = t.kind === "resp" ? "set aside" : "owed";
+  }else if(t.currency === "USD" && t.cad != null){
+    under = finMoney(Math.abs(t.cad)) + " CAD";
+  }
+  return `<div class="fin-ra ${tone}">${esc(main)}</div>` +
+         (under ? `<div class="fin-rc">${esc(under)}</div>` : "");
+}
+function finRow(t){
+  if(FIN.form && FIN.form.mode === "edit" && FIN.form.id === t.id) return finFormHtml();
+  const tags = (t.live ? '<span class="fin-tag">live</span>' : "") +
+    (t.recurring ? '<span class="fin-tag">repeats</span>' : "") +
+    (t.versions > 1 ? '<span class="fin-tag">edited</span>' : "");
+  return `<button type="button" class="fin-row" data-fin="edit" data-id="${finAttr(t.id)}"` +
+    `${t.live ? " disabled" : ""}>` +
+    `<div><div class="fin-rt">${esc(finRowTitle(t))}${tags}</div>` +
+    `<div class="fin-rs">${esc(finRowSub(t))}</div></div>` +
+    `<div>${finRowAmount(t)}</div></button>`;
+}
+
+/* ---------- the page ---------- */
+function finStats(tiles){
+  return '<div class="lv-stats">' + tiles.map(([k, v, tone, sub]) =>
+    `<div class="lv-stat"><span class="lv-k">${esc(k)}</span>` +
+    `<span class="lv-v ${tone || ""}">${esc(v)}</span>` +
+    (sub ? `<span class="fin-sub">${esc(sub)}</span>` : "") + "</div>").join("") + "</div>";
+}
+function finKv(rows){
+  return rows.map(([k, v, cls, sub, tone]) =>
+    `<div class="fin-kvr ${cls || ""}"><span class="fin-k">${esc(k)}</span>` +
+    `<span class="fin-v ${tone || ""}">${esc(v)}</span>` +
+    (sub ? `<span class="fin-s">${esc(sub)}</span>` : "") + "</div>").join("");
+}
+function finCard(inner){ return '<div class="card"><div class="card-in">' + inner + "</div></div>"; }
+function finHorizon(m){
+  return m < 12 ? m + (m === 1 ? " month" : " months") : (m / 12) + ((m / 12) === 1 ? " year" : " years");
+}
+function finWhen(v, reached){
+  if(reached) return "Reached";
+  return v ? finMonth(v) : "Not at this rate";
+}
+
+function renderFinance(){
+  const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  if(!apiBase())
+    return '<div class="home">' + back + finCard(
+      '<div class="fin-note">The books live on the Laptop and come to this phone over Tailscale ' +
+      "only. They are never put in the public app or the snapshot. Add the Laptop link in " +
+      "<b>Settings → Laptop link</b>, then come back.</div>" +
+      '<div class="fin-acts"><button type="button" class="fin-btn gold" data-go="settings">Open Settings</button></div>') +
+      "</div>";
+  const d = FIN.data;
+  const head = '<div class="fin-head">' + back +
+    `<button type="button" class="fin-btn" data-fin="refresh"${FIN.loading ? " disabled" : ""}>` +
+    `${FIN.loading ? "Loading…" : "Refresh"}</button></div>`;
+  if(!d){
+    return '<div class="home">' + head + finCard(FIN.err
+      ? `<div class="fin-warn">${esc(FIN.err)}</div>`
+      : '<div class="fin-note">Loading the books from the Laptop…</div>') + "</div>";
+  }
+  const b = d.breakdown || {};
+  const fx = d.fx || {};
+  let out = '<div class="home">' + head;
+  out += `<div class="fin-asof">As of ${esc(finDate(d.as_of, true))} · USD/CAD ${esc(fx.usdcad ?? "—")}` +
+         `${fx.date ? " (" + esc(finDate(fx.date)) + ")" : ""} · all totals in CAD</div>`;
+  if(FIN.err) out += `<div class="fin-warn">${esc(FIN.err)}</div>`;
+  (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
+
+  /* STATUS -- Trevor's list, top of Finances.txt. */
+  out += finStats([
+    ["Current value", finMoney(d.value), "", "in the accounts"],
+    ["GOLDbot owns", finMoney(d.equity), finTone(d.equity), "after what it owes"],
+    ["Net deposits", finMoney(d.net_deposits), "", "in minus out"],
+    ["Total P&L", finMoney(d.total_pnl), finTone(d.total_pnl), "value − net deposits"],
+    ["Copy-trader share", finMoney(b.copy_share), finTone(b.copy_share), ""],
+    ["Net profit", finMoney(d.net_profit), finTone(d.net_profit), "after costs + interest"],
+  ]);
+  out += '<div class="section-label">Where the profit comes from</div>' + finCard(finKv([
+    ["Trading", finMoney(b.trading), "", "", finTone(b.trading)],
+    ["Copy-trader share", finMoney(b.copy_share), "", "", finTone(b.copy_share)],
+    ["Exchange rate (USD held)", finMoney(b.fx), "", "", finTone(b.fx)],
+    ["Balance checks", finMoney(b.adjustments), "", "", finTone(b.adjustments)],
+    ["Expenses paid from the accounts", finMoney(b.expenses_from_accounts)],
+    ["Total P&L", finMoney(d.total_pnl), "sum"],
+    ["Expenses you paid (owed back)", finMoney(b.expenses_paid_by_loan)],
+    ["Interest on the loans", finMoney(b.interest)],
+    ["Net profit", finMoney(d.net_profit), "sum", "", finTone(d.net_profit)],
+  ]) + `<div class="fin-note">Counting from ${esc(finDate(d.books_open, true))}, the day the books ` +
+       "opened. GOLDbot owns = net profit − money set aside or drawn since then " +
+       `(${esc(finMoney(d.distributions))}).</div>`);
+
+  /* PERFORMANCE */
+  const p = d.perf;
+  const r = d.rates || {};
+  out += '<div class="section-label">Performance</div>';
+  if(!p){
+    out += finCard('<div class="fin-note">Starts on the first live trading day — there is no ' +
+      "trading history yet. Until then GOLDbot's running costs are " +
+      `<b>${esc(finMoney(r.cost_per_month))}/month</b> in bills and ` +
+      `<b>${esc(finMoney(r.interest_per_month))}/month</b> in interest, and ` +
+      `<b>${esc(finMoney(r.resp_per_month))}/month</b> is set aside for the RESPs.</div>`);
+  }else{
+    const bm = p.best_month, b4 = p.best_4w;
+    out += finStats([
+      ["Average / day", finMoney(p.per_day), finTone(p.per_day), p.days + " days"],
+      ["Best month / day", bm ? finMoney(bm.per_day) : "—", bm ? finTone(bm.per_day) : "",
+       bm ? finMonth(bm.month) : "needs 7 days"],
+      ["Last 4 weeks", finMoney(p.last_4w.total), finTone(p.last_4w.total),
+       finMoney(p.last_4w.per_day) + " / day"],
+      ["Best 4 weeks", b4 ? finMoney(b4.total) : "—", b4 ? finTone(b4.total) : "",
+       b4 ? finDate(b4.start) + " – " + finDate(b4.end) : "needs 28 days"],
+      ["Best day", finMoney(p.best_day.profit), finTone(p.best_day.profit), finDate(p.best_day.date)],
+      ["Trading since", finDate(p.trading_start, true), "", ""],
+    ]);
+  }
+
+  /* GOALS + LOOKAHEAD */
+  const pr = d.projection || {};
+  if(pr.ready){
+    out += '<div class="section-label">Goals — when</div>' + finCard(
+      '<table class="fin-tbl"><tr><th></th><th>At today’s rate</th><th>If lots grow</th></tr>' +
+      (pr.goals || []).map(g => `<tr><td>${esc(g.label)}</td>` +
+        `<td>${esc(finWhen(g.flat, g.reached))}</td><td>${esc(finWhen(g.growing, g.reached))}</td></tr>`
+      ).join("") + "</table>" +
+      `<div class="fin-note">Retiring at ${esc(finMoney((pr.retire || {}).at_monthly, false))} a month ` +
+      `means ${esc(finMoney((pr.retire || {}).draw_monthly, false))} a month comes out from then on — ` +
+      "the lookahead below takes it out.</div>");
+    const fl = pr.flat || [], gr = pr.growing || [];
+    out += '<div class="section-label">Lookahead — value in the accounts</div>' + finCard(
+      '<table class="fin-tbl"><tr><th></th><th>At today’s rate</th><th>If lots grow</th></tr>' +
+      fl.map((pt, i) => `<tr><td>${esc(finHorizon(pt.months))}<span class="fin-sub">` +
+        `${esc(finDate(pt.date, true))}</span></td><td>${esc(finMoney(pt.value, false))}</td>` +
+        `<td>${esc(gr[i] ? finMoney(gr[i].value, false) : "—")}</td></tr>`).join("") + "</table>" +
+      `<div class="fin-note"><b>Today's rate:</b> ${esc(finMoney(pr.monthly_now, false))} a month ` +
+      `after costs — ${esc(finMoney(pr.income_per_day))}/day earned, ` +
+      `${esc(finMoney(pr.cost_per_day))}/day in bills and interest. The EA trades a fixed lot, ` +
+      "so this is what it does if nothing changes. <b>If lots grow</b> keeps the same return on " +
+      `the trading account (${esc(pr.return_per_day_pct ?? "—")}% a day) and lets only that ` +
+      "account compound, which happens only if the lot size is raised with it. Bills and " +
+      "interest come off the profit, not the accounts: you pay them and GOLDbot owes you. " +
+      "Arithmetic on the history, not a forecast.</div>");
+  }else{
+    out += '<div class="section-label">Goals &amp; lookahead</div>' +
+      finCard(`<div class="fin-note">${esc(pr.why || "Waiting for trading history.")}</div>`);
+  }
+
+  /* ACCOUNTS + OWED */
+  out += '<div class="section-label">Accounts</div>' + finCard(finKv(
+    (d.accounts || []).map(a => [a.name,
+      a.currency === "CAD" ? finMoney(a.balance) : finNum(a.balance) + " " + a.currency, "",
+      a.currency === "CAD" ? "" : "= " + finMoney(a.cad) + " CAD"]).concat(
+    [["Current value", finMoney(d.value), "sum"]])));
+  out += '<div class="section-label">Owed</div>' + finCard(finKv(
+    (d.earmarks || []).map(e => [e.name, finMoney(e.balance), "", "set aside inside the account"]).concat(
+    (d.loans || []).map(l => [l.name + " · " + l.rate_pct + "%", finMoney(l.total), "",
+      finMoney(l.principal) + " + " + finMoney(l.interest) + " interest"])).concat(
+    [["Owed in total", finMoney(d.owed), "sum"]])));
+
+  /* COMING UP */
+  const recs = d.recurring || [];
+  if(recs.length){
+    out += '<div class="section-label">Coming up</div><div class="card"><div class="fin-rows">' +
+      recs.map(finRecRow).join("") + "</div></div>";
+  }
+
+  /* TRANSACTIONS */
+  const txns = d.txns || [];
+  const shown = FIN.all ? txns : txns.slice(0, 25);
+  out += '<div class="fin-head"><div class="section-label">Transactions</div>' +
+    (FIN.form && FIN.form.mode === "add" ? "" :
+     '<button type="button" class="fin-btn gold" data-fin="add">+ Add</button>') + "</div>";
+  out += '<div class="card"><div class="fin-rows">' +
+    (FIN.form && FIN.form.mode === "add" ? finFormHtml() : "") +
+    (shown.length ? shown.map(finRow).join("") : '<div class="fin-note" style="padding:13px">Nothing yet.</div>') +
+    (txns.length > 25 ? `<button type="button" class="fin-more" data-fin="all">` +
+      `${FIN.all ? "Show the latest 25" : "Show all " + txns.length}</button>` : "") +
+    "</div></div>";
+  return out + "</div>";
+}
+
+function finRecRow(r){
+  const t = r.txn || {};
+  const every = r.every === "month" ? "monthly on the " + finOrd(r.day) : "every 2 weeks";
+  const what = t.kind === "resp" ? "set aside" : t.kind === "expense"
+    ? (finIsLoan(t.paid_by) ? "paid by " + finName("loans", t.paid_by) : "from " + finName("accounts", t.paid_by))
+    : "";
+  if(FIN.rec && FIN.rec.id === r.id){
+    return '<div class="fin-form">' +
+      `<div class="fin-rt">${esc(r.name)}</div>` +
+      '<div class="fin-two">' +
+      `<label>New amount · ${esc(t.currency || "CAD")}<input type="text" inputmode="decimal" ` +
+      `data-finr="amount" value="${finAttr(FIN.rec.amount)}"></label>` +
+      `<label>Starting<input type="date" data-finr="from" value="${finAttr(FIN.rec.from)}"></label></div>` +
+      '<div class="fin-note">Bills already paid keep their old amount — the change starts on ' +
+      "the date you pick. To fix just one bill, tap it in Transactions instead.</div>" +
+      (FIN.formErr ? `<div class="fin-err">${esc(FIN.formErr)}</div>` : "") +
+      '<div class="fin-acts">' +
+      `<button type="button" class="fin-btn gold" data-fin="recsave"${FIN.busy ? " disabled" : ""}>` +
+      `${FIN.busy ? "Saving…" : "Change amount"}</button>` +
+      '<button type="button" class="fin-btn" data-fin="reccancel">Cancel</button>' +
+      `<button type="button" class="fin-btn bad" data-fin="recstop"${FIN.busy ? " disabled" : ""}>` +
+      `${FIN.confirm === "stop" ? "Tap again to stop it" : "Stop it"}</button></div></div>`;
+  }
+  return `<button type="button" class="fin-row" data-fin="rec" data-id="${finAttr(r.id)}">` +
+    `<div><div class="fin-rt">${esc(r.name)}</div>` +
+    `<div class="fin-rs">${esc(every + (what ? " · " + what : ""))}</div></div>` +
+    `<div><div class="fin-ra">${esc(finNum(t.amount) + " " + (t.currency || "CAD"))}</div>` +
+    `<div class="fin-rc">next ${esc(finDate(r.next))}</div></div></button>`;
+}
+function finOrd(n){
+  n = Number(n) || 1;
+  const s = (n % 100 >= 11 && n % 100 <= 13) ? "th" : ({1: "st", 2: "nd", 3: "rd"}[n % 10] || "th");
+  return n + s;
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const el = e.target.closest && e.target.closest("[data-fin]");
+  if(!el) return;
+  const act = el.dataset.fin;
+  const d = FIN.data || {};
+  if(act === "refresh"){ finLoad(true); return; }
+  if(act === "add"){
+    FIN.form = finNewForm(); FIN.formErr = ""; FIN.confirm = ""; FIN.rec = null;
+  }else if(act === "edit"){
+    const t = (d.txns || []).find(x => x.id === el.dataset.id);
+    if(!t || t.live) return;
+    FIN.form = finFormFrom(t); FIN.formErr = ""; FIN.confirm = ""; FIN.rec = null;
+  }else if(act === "cancel"){
+    FIN.form = null; FIN.formErr = ""; FIN.confirm = "";
+  }else if(act === "cur" && FIN.form){
+    FIN.form.currency = el.dataset.cur;
+    FIN.form.account = "";
+    finFix(FIN.form);
+  }else if(act === "save" && FIN.form){
+    const f = FIN.form;
+    const body = {op: "put", obj: "txn", data: finFormData(f)};
+    if(f.mode === "edit") body.id = f.id;
+    finSend(body, () => { FIN.form = null; });
+    return;
+  }else if(act === "void" && FIN.form){
+    if(FIN.confirm !== "void"){ FIN.confirm = "void"; }
+    else{ const id = FIN.form.id; finSend({op: "void", obj: "txn", id: id}, () => { FIN.form = null; }); return; }
+  }else if(act === "all"){
+    FIN.all = !FIN.all;
+  }else if(act === "rec"){
+    const r = (d.recurring || []).find(x => x.id === el.dataset.id);
+    if(!r) return;
+    FIN.rec = {id: r.id, amount: String((r.txn || {}).amount ?? ""), from: r.next || finToday()};
+    FIN.form = null; FIN.formErr = ""; FIN.confirm = "";
+  }else if(act === "reccancel"){
+    FIN.rec = null; FIN.formErr = ""; FIN.confirm = "";
+  }else if(act === "recsave" && FIN.rec){
+    const rc = FIN.rec;
+    finSend({op: "reprice", obj: "recurring", id: rc.id,
+             data: {amount: String(rc.amount).replace(/[,$\s]/g, ""), from: rc.from}},
+            () => { FIN.rec = null; });
+    return;
+  }else if(act === "recstop" && FIN.rec){
+    if(FIN.confirm !== "stop"){ FIN.confirm = "stop"; }
+    else{ finSend({op: "stop", obj: "recurring", id: FIN.rec.id, data: {end: finToday()}},
+                  () => { FIN.rec = null; }); return; }
+  }
+  finRender();
+});
+/* Typing only updates the state -- a re-render per keystroke would throw the
+   cursor out of the field. A change that alters WHICH fields exist re-renders. */
+document.addEventListener("input", e => {
+  const f = e.target.closest && e.target.closest("[data-finf]");
+  if(f && FIN.form) FIN.form[f.dataset.finf] = f.value;
+  const r = e.target.closest && e.target.closest("[data-finr]");
+  if(r && FIN.rec) FIN.rec[r.dataset.finr] = r.value;
+});
+document.addEventListener("change", e => {
+  const f = e.target.closest && e.target.closest("[data-finf]");
+  if(!f || !FIN.form) return;
+  FIN.form[f.dataset.finf] = f.value;
+  if(["kind", "account", "to_account", "paid_by"].includes(f.dataset.finf)){
+    if(f.dataset.finf === "kind"){ FIN.form.source = ""; FIN.form.to = ""; FIN.form.paid_by = ""; }
+    finFix(FIN.form);
+    finRender();
+  }
+});
+
+/* The home badge wants a number without a tap: one read at start-up when a
+   link exists, and none at all when it does not. */
+setTimeout(() => { if(apiBase()) finLoad(false); }, 1200);
+
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
-const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track"];
+const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track",
+               "finance"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
@@ -11149,6 +11896,7 @@ function go(page){
   /* Live builds its chart the first time it is SHOWN: a chart created inside a
      hidden section measures zero wide. */
   if(page === "live") lvShow();
+  if(page === "finance") finShow();
 }
 
 /* RESULTS NAVIGATION. Its own handler and its own attribute: [data-job] drives
