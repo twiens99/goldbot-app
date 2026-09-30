@@ -1644,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-212210";
+const APP_BUILD = "20260929-212552";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5697,11 +5697,15 @@ function stBar(b){
       `<i style="width:${(100 * e.groups / den).toFixed(2)}%;background:${stColor(e.color)}"></i>`)
     .join("") + '</div>';
 }
-/* The key under a bar -- only when more than one epoch is open, since one colour
-   needs no key. */
+/* The key under a bar -- EVERY bucket, one open epoch or several (2026-09-29).
+   It was shown only for two or more, as one colour needing no key; with the
+   Epoch chip gone, Trevor: *"Epoch1: 8 is on bull but there is no count for
+   ranging. Put that in."* A bucket just into a new epoch that nobody has run
+   yet keeps its key too ("Epoch 2: 0") -- only the current epoch can be at 0,
+   since a later one opens when a group runs it. */
 function stLegend(b){
-  const open = (Array.isArray(b.open) ? b.open : []).filter(e => e.groups > 0);
-  if(open.length < 2) return "";
+  const open = Array.isArray(b.open) ? b.open : [];
+  if(!open.length) return "";
   return '<div class="stmeta stlegend">' + open.map(e =>
       `<span><span style="color:${stColor(e.color)}">●</span> Epoch ${esc(e.epoch)}: ${esc(e.groups)}</span>`)
     .join("") + '</div>';
