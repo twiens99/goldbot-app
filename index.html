@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-153926";
+const APP_BUILD = "20260930-154236";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3397,8 +3397,12 @@ function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
   const rc = REGIME_CLASS[r.regime] || "";
   const rep = r.reports || {};
-  const back = '<button type="button" class="backbtn" data-rjob="">' +
-               '\u2039 All jobs</button>';
+  /* Opened from a Status group's History: Back returns there, named for it. */
+  const back = RESULTS_FROM
+    ? `<button type="button" class="backbtn" data-rback="status">\u2039 ${
+        esc(humanize(r.group_id) || "Group")} history</button>`
+    : '<button type="button" class="backbtn" data-rjob="">' +
+      '\u2039 All jobs</button>';
   /* THE TASKS, AT THE VERY TOP. One chip per task this job ran, in the order it
      ran them, each opening that task's card below. This replaces the rounds
      list that used to sit at the BOTTOM: the same information, reachable in one
@@ -3693,6 +3697,13 @@ let ACTIVE_JOB = null;
    ACTIVE_JOB because the two tabs navigate independently -- opening a finished
    job must not close the running one you were watching. */
 let RESULTS_JOB = null;
+/* WHERE THE OPEN JOB WAS OPENED FROM, when it was not this tab's own list
+   (2026-09-30). Trevor: *"When we click on the job [in a Status group's History],
+   I want it to shortcut to the results page of that job. If we got to the job
+   page through the history badge. Back, brings me back to the history badge."*
+   {nav: the Status page's ST_NAV at the tap}; null = opened from the list, and
+   Back is "All jobs" as always. Any ordinary job open clears it. */
+let RESULTS_FROM = null;
 /* HOW THE RESULTS LIST IS ORDERED AND NARROWED. Trevor, 2026-09-16: the chips
    on a row *"are going to sort the order of the list ... Regime cycles between
    the three and the bucket id will also cycle between all the bucket numbers
@@ -6004,18 +6015,24 @@ function stGroupPage(){
     vars = '<div class="tnote">No next round published for this group.</div>';
   }
   const runIdx = stRunIndex(rounds);
-  const hist = rounds.length ? rounds.map(r => '<div class="sthist">'
+  /* EACH RUN OPENS ITS JOB on the Results tab (2026-09-30) -- see RESULTS_FROM.
+     Every row here IS a ledger row, so its round number is the job's id there. */
+  const hist = rounds.length ? rounds.map(r => (r.round_no != null
+        ? `<button type="button" class="strow sthist" data-sthjob="${esc(r.round_no)}">`
+        : '<div class="sthist">')
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
       + stEpochPill(key, runIdx[stRowKey(r)], true)
       + (r.counted === false ? '<span class="chip">seed · not counted</span>' : "")
-      + `<span class="stmeta">${esc(r.machine || "")}</span></div>`
+      + `<span class="stmeta">${esc(r.machine || "")}</span>`
+      + (r.round_no != null ? '<span class="hcar">›</span>' : "") + '</div>'
       + `<div class="stmeta">${r.failed ? '<span class="stdn">failed — did not count</span>'
           + (r.fail_reason ? " — " + esc(r.fail_reason) : "")
           : (r.applied_pass != null || r.picked_pass != null
               ? "pass " + esc(passLabel(r.applied_pass ?? r.picked_pass,
                   r.applied_pass != null ? r.applied_pass_style : r.picked_pass_style))
               : "no pass applied")
-            + (stPf(r) ? " · " + stPf(r) : "")}</div></div>`).join("")
+            + (stPf(r) ? " · " + stPf(r) : "")}</div>`
+      + (r.round_no != null ? '</button>' : '</div>')).join("")
     : '<div class="tnote">Not run this campaign.</div>';
   return '<div class="home">'
     + `<button type="button" class="backbtn" data-stback="${regime === "GLOBALS" ? "overview" : "bucket"}">‹ ${
@@ -6024,7 +6041,7 @@ function stGroupPage(){
     + `<div class="tname">${esc(humanize(gid))}</div><div class="tnote">${esc(where)}</div></div></div>`
     + '<div class="section-label" style="margin-top:12px">Variables · next round</div>'
     + '<div class="card"><div class="card-in">' + vars + '</div></div>'
-    + `<div class="section-label" style="margin-top:12px">History (${esc(rounds.length)})</div>`
+    + `<div class="section-label" id="sthistory" style="margin-top:12px">History (${esc(rounds.length)})</div>`
     + '<div class="card"><div class="card-in">' + hist + '</div></div>'
     + '</div>';
 }
@@ -6124,6 +6141,33 @@ document.addEventListener("click", e => {
   else if(d.stback === "group") ST_NAV = Object.assign({}, ST_NAV, {variable: null});
   repaintStatus();
   window.scrollTo(0, 0);
+});
+
+/* A HISTORY RUN -> ITS JOB, AND BACK (2026-09-30). The job opens on the Results
+   tab as if tapped from its list, remembering the Status page it came from, and
+   its Back returns there -- scrolled to the History it was tapped in. */
+document.addEventListener("click", e => {
+  const h = e.target.closest("[data-sthjob]");
+  if(!h) return;
+  RESULTS_FROM = {nav: Object.assign({}, ST_NAV)};
+  RESULTS_TASK_OPEN = 0;
+  RESULTS_JOB = h.dataset.sthjob;
+  go("results");
+  document.getElementById("page-results").innerHTML = renderResults();
+  window.scrollTo(0, 0);
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-rback]");
+  if(!b) return;
+  const from = RESULTS_FROM;
+  RESULTS_FROM = null;
+  RESULTS_JOB = null;              // the Results tab rests on its list again
+  document.getElementById("page-results").innerHTML = renderResults();
+  if(from && from.nav) ST_NAV = Object.assign({}, from.nav);
+  go("status");
+  repaintStatus();
+  const hist = document.getElementById("sthistory");
+  if(hist) hist.scrollIntoView(); else window.scrollTo(0, 0);
 });
 
 /* ONE VARIABLE OF A NEXT ROUND: what it will do, its state, how many values it is
@@ -12336,6 +12380,7 @@ document.addEventListener("click", e => {
   const j = e.target.closest("[data-rjob]");
   if(!j) return;
   RESULTS_TASK_OPEN = 0;           // a newly opened job starts at its first task
+  RESULTS_FROM = null;             // opened the ordinary way: Back is "All jobs"
   RESULTS_JOB = j.dataset.rjob || null;
   document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
