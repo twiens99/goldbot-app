@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-172846";
+const APP_BUILD = "20260930-174304";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6377,14 +6377,63 @@ function backtestRuns(d){
   if(!cur) return null;
   const hist = curveHistory(cur).filter(c => c.m && Object.keys(c.m).length);
   if(!hist.length) return null;
-  const runs = hist.map(c => ({label: eqWhen(c).slice(5), metrics: c.m, stamp: c.stamp}))
+  /* 2026-09-30 -- NARROWED BY THE SLICE IN FORCE. Trevor: *"click that bullet,
+     then go up and click a metric ... narrow down just to get the metrics just
+     for that bucket slope range. Same narrowing idea with the sessions."* Each
+     run's slices ride its curve (`sl`, equity_curves): sessions by name, bands
+     cut at THIS bucket's current edges so one band is one slope range in every
+     run. A run with no slices (before 2026-09-07) is simply not measured. */
+  const slicing = !!(SLICE.session || SLICE.slope);
+  const own = slicing ? curveSlice(cur) : null;
+  const runs = hist.map(c => ({label: eqWhen(c).slice(5), stamp: c.stamp,
+                               metrics: slicing ? (curveSlice(c) || {}) : c.m}))
     /* The task's own numbers win; a key only the curve has (the same
-       extractor, possibly newer) fills in beside them. */
-    .concat([{label: "this test", metrics: Object.assign({}, cur.m || {}, d.metrics || {}),
-              stamp: cur.stamp}]);
+       extractor, possibly newer) fills in beside them. Sliced: the curve's own
+       cut first (the same edges as the history), else the card's. */
+    .concat([{label: "this test", stamp: cur.stamp,
+              metrics: slicing ? (own || ((anySlice(d) || {}).metrics) || {})
+                               : Object.assign({}, cur.m || {}, d.metrics || {})}]);
   runs.scope = cur.scope;
-  runs.band = cur.band || null;      // this test's trade band, for Total Trades
+  /* this test's trade band, for Total Trades -- a WHOLE-bucket target, so not
+     drawn against a slice of it */
+  runs.band = slicing ? null : (cur.band || null);
+  if(slicing) runs.narrow = sliceName(cur, d);
   return runs;
+}
+/* The slice in force, short, for a heading: LONDON in bucket 2800. */
+function narrowShort(){
+  return [SLICE.session, SLICE.slope && "bucket " + SLICE.slope].filter(Boolean).join(" in ");
+}
+/* One run's metrics for the slice in force, off its curve's `sl`, or null. */
+function curveSlice(c){
+  const sl = (c || {}).sl || {};
+  const band = SLICE.slope
+    ? (sl.bands || []).find(b => String(b.bucket_id) === SLICE.slope) || null : null;
+  if(SLICE.slope && !band) return null;
+  let m = null;
+  if(band && SLICE.session){
+    /* A run that HAS this band but no cell for the session traded none there. */
+    m = (band.by_session || {})[SLICE.session] || (band.metrics ? {trades: 0} : null);
+  } else if(band) m = band.metrics || null;
+  else if(SLICE.session) m = (sl.ses || {})[SLICE.session] || null;
+  /* NO TRADES IS A MEASUREMENT: $0 net, not a gap. Found on BEAR, where the
+     09-14 session-weights round switched LONDON off and every run since has 0
+     London trades -- the line should fall to zero there, not stop. */
+  return m && m.trades === 0 ? Object.assign({net: 0}, m) : m;
+}
+/* What the graph is narrowed to, in words -- the band's edges are the card's
+   own when it shows that band (the same cut), else the history's. */
+function sliceName(cur, d){
+  let band = "";
+  if(SLICE.slope){
+    const mine = slopeRecord(d);
+    const hb = (((cur || {}).sl || {}).bands || []).find(b => String(b.bucket_id) === SLICE.slope);
+    const e = mine || hb;
+    band = "bucket " + SLICE.slope + (e ? " (" + e.lo + " → " + e.hi + ")" : "") +
+      (hb ? "" : " — not one of this bucket’s current bands, so no run has it");
+  }
+  const ses = SLICE.session || "";      // as the By session card names it
+  return ses && band ? ses + " inside " + band : ses || band;
 }
 /* 2026-09-30 -- THE DAY THE SWEEPS SWITCHED TO REAL TICKS. Trevor asked whether
    any of these runs predate it and first wanted them deleted; he chose to MARK
@@ -6464,7 +6513,8 @@ function metricGraph(d, big){
       'across rounds.</div>';
   }
   if(!picked.length){
-    return head(rounds.length + (rounds.scope ? " runs" : " rounds") + " on file", "") +
+    return head(rounds.length + (rounds.scope ? " runs" : " rounds") + " on file" +
+                (rounds.narrow ? " · " + esc(narrowShort()) : ""), "") +
       /* NOT "tap the dot" any more -- the dot stopped being a target when the
          row took over both jobs, and an empty graph telling you to press
          something that does nothing is the worst place to be wrong. */
@@ -6560,7 +6610,8 @@ function metricGraph(d, big){
     const def = defs[k] || [null, k, k, 2, 0];
     return '<div class="mglgr none"><span class="mgdash" ' +
       'style="background:var(--line)"></span><span class="nm">' + esc(def[2]) +
-      '</span><span>not measured in these rounds</span></div>';
+      '</span><span>' + (rounds.narrow && !sesSliceable(k) ? "whole run only — not sliced"
+                         : "not measured in these rounds") + '</span></div>';
   }).join("");
 
   const legend = series.map(se => {
@@ -6581,8 +6632,10 @@ function metricGraph(d, big){
       /* When THIS test has no plotted value (a marker, or not measured), the
          arrow's end is an earlier run -- say what this test was instead. */
       (se.raw[se.raw.length - 1] == null
-        ? " · this test " + ((scoreSentinel(se.key,
-            (rounds[rounds.length - 1].metrics || {})[se.key]) || [0, "not measured"])[1])
+        ? " · this test " + (((rounds[rounds.length - 1].metrics || {}).trades === 0)
+            ? "had no trades here"
+            : (scoreSentinel(se.key, (rounds[rounds.length - 1].metrics || {})[se.key])
+               || [0, "not measured"])[1])
         : "") +
       (se.omitted ? " · " + se.omitted + " omitted" : "");
     /* THE LEGEND IS THE OFF SWITCH. Trevor, 2026-09-17: *"If i click the metric
@@ -6611,7 +6664,8 @@ function metricGraph(d, big){
      the same lie one level up. */
   const title = drawn.length + " metric" + (drawn.length === 1 ? "" : "s") +
     (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
-    " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds");
+    " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds") +
+    (rounds.narrow ? " \u00b7 " + esc(narrowShort()) : "");
   return head(title, modeBtn + clear) +
     (drawn.length ? seriesGraph(labels, series, big, deco) : "") +
     '<div class="mglg">' + legend + absent + '</div>' +
@@ -6637,6 +6691,11 @@ function metricGraph(d, big){
           'figure cannot share an axis \u2014 so read the numbers in the legend. ' +
           'Switch to % change to put them on one scale.') +
     ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
+    (rounds.narrow ? ' <b>Narrowed to ' + esc(rounds.narrow) + '</b>' +
+      (SLICE.slope ? ': every run cut at this bucket’s current band edges, so each ' +
+                     'point is the same slope range' : ' in every run') +
+      '. Runs before 09-07 have no per-trade record to cut, so they sit out. ' +
+      'Tap the band or session again to go back to the whole run.' : "") +
     (series.some(se => se.omitted)
       ? ' Final score leaves out runs that returned −999 (disqualified) or ' +
         '−998 (early-aborted): those are the EA’s markers, not scores.' : "") +
