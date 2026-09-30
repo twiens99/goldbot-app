@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-162936";
+const APP_BUILD = "20260930-164635";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4519,16 +4519,42 @@ function sgSpan(nums){
   return [lo, hi];
 }
 
-function sgX(i, n, W){
-  const w = (W || SG_W) - SG_PAD.l - SG_PAD.r;
-  return n <= 1 ? SG_PAD.l + w / 2 : SG_PAD.l + w * (i / (n - 1));
+function sgX(i, n, W, padL){
+  const l = padL == null ? SG_PAD.l : padL;
+  const w = (W || SG_W) - l - SG_PAD.r;
+  return n <= 1 ? l + w / 2 : l + w * (i / (n - 1));
+}
+
+/* 2026-09-30 -- THE METRICS GRAPH'S REAL SCALE (see metricGraph). The left edge
+   widens only when an axis is drawn, so the variables graph keeps its edges. */
+const SG_AXIS_L = 30;
+/* Lines worth always having on a metric's own scale. PF's two are the numbers
+   the whole campaign is judged against. */
+const METRIC_REFS = {
+  pf: [{v: 1.0, label: "1.00 break-even"}, {v: 1.5, label: "1.50 live gate"}],
+};
+function sgPadSpan(sp){
+  if(!sp) return sp;
+  const pad = (sp[1] - sp[0]) * 0.07;
+  return [sp[0] - pad, sp[1] + pad];
+}
+/* Three or four round-numbered ticks across [lo, hi]. */
+function sgTicks(lo, hi){
+  const span = hi - lo;
+  if(!(span > 0)) return [lo];
+  const raw = span / 3, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+  const out = [];
+  for(let t = Math.ceil(lo / step) * step; t <= hi + step * 1e-6; t += step)
+    out.push(Number(t.toFixed(10)));
+  return out;
 }
 
 /* series: [{colour, span, points:[{i, value, lo, hi, dot, square}]}]
    labels: the x axis, SHARED by every series -- a round one variable was not
    swept in is still a column, so two variables tuned in different rounds stay
    aligned instead of one sliding along to fill the other's gaps. */
-function seriesGraph(labels, series, box){
+function seriesGraph(labels, series, box, axis){
   /* THE BOX IS A PARAMETER so the full-screen view is the SAME GRAPH at another
      size, not a second drawing routine. Only the viewBox changes; every
      coordinate below is computed from it. */
@@ -4536,6 +4562,27 @@ function seriesGraph(labels, series, box){
   const n = labels.length;
   const h = H - SG_PAD.t - SG_PAD.b;
   const y = (sp, v) => SG_PAD.t + h * (1 - (v - sp[0]) / (sp[1] - sp[0]));
+  /* `axis` (optional): {span, fmt, refs} -- every series already carries this
+     span; this only draws the numbers, gridlines and reference lines for it. */
+  const padL = axis && axis.span ? SG_AXIS_L : SG_PAD.l;
+  let grid = "";
+  if(axis && axis.span){
+    const sp = axis.span, x1 = padL, x2 = W - SG_PAD.r;
+    grid = sgTicks(sp[0], sp[1]).map(t => {
+      const yy = y(sp, t).toFixed(1);
+      return '<line x1="' + x1 + '" x2="' + x2 + '" y1="' + yy + '" y2="' + yy +
+        '" stroke="rgba(140,160,172,.16)" stroke-width="0.6"></line>' +
+        '<text x="' + (x1 - 3) + '" y="' + (Number(yy) + 2.3).toFixed(1) +
+        '" fill="#5F727E" font-size="6.5" text-anchor="end">' + esc(axis.fmt(t)) + '</text>';
+    }).join("") + (axis.refs || []).map(r => {
+      if(r.v < sp[0] || r.v > sp[1]) return "";
+      const yy = y(sp, r.v).toFixed(1);
+      return '<line x1="' + x1 + '" x2="' + x2 + '" y1="' + yy + '" y2="' + yy +
+        '" stroke="rgba(224,180,87,.55)" stroke-width="0.8" stroke-dasharray="3 2"></line>' +
+        '<text x="' + x2 + '" y="' + (Number(yy) - 2).toFixed(1) +
+        '" fill="#C8B78A" font-size="6" text-anchor="end">' + esc(r.label) + '</text>';
+    }).join("");
+  }
   const bands = [], lines = [], marks = [];
   series.forEach(se => {
     const sp = se.span;
@@ -4544,7 +4591,7 @@ function seriesGraph(labels, series, box){
     se.points.forEach(p => {
       if(typeof p.lo !== "number" || typeof p.hi !== "number") return;
       const top = y(sp, p.hi), bot = y(sp, p.lo);
-      bands.push('<rect x="' + (sgX(p.i, n, W) - 4).toFixed(1) + '" y="' +
+      bands.push('<rect x="' + (sgX(p.i, n, W, padL) - 4).toFixed(1) + '" y="' +
         top.toFixed(1) + '" width="8" height="' +
         Math.max(1, bot - top).toFixed(1) + '" rx="2" fill="' + se.colour +
         '" opacity="0.13"></rect>');
@@ -4552,12 +4599,12 @@ function seriesGraph(labels, series, box){
     if(pts.length > 1){
       lines.push('<polyline fill="none" stroke="' + se.colour +
         '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" ' +
-        'points="' + pts.map(p => sgX(p.i, n, W).toFixed(1) + "," +
+        'points="' + pts.map(p => sgX(p.i, n, W, padL).toFixed(1) + "," +
                                   y(sp, p.value).toFixed(1)).join(" ") +
         '"></polyline>');
     }
     pts.forEach(p => {
-      const cx = sgX(p.i, n, W), cy = y(sp, p.value);
+      const cx = sgX(p.i, n, W, padL), cy = y(sp, p.value);
       /* THE SQUARE IS THE COMPILED DEFAULT -- a different SHAPE, not a different
          colour, because colour on this graph is already spoken for twice over:
          the line says which variable, the fill says which state. */
@@ -4579,13 +4626,13 @@ function seriesGraph(labels, series, box){
   /* ONLY THE ENDS ARE LABELLED. Four round labels at 375px overlap into a grey
      smear, and the table below names every one of them anyway. */
   const ends = n > 1
-    ? '<text x="' + SG_PAD.l + '" y="' + (H - 4) + '" fill="#5F727E" ' +
+    ? '<text x="' + padL + '" y="' + (H - 4) + '" fill="#5F727E" ' +
       'font-size="7">' + esc(labels[0]) + '</text>' +
       '<text x="' + (W - SG_PAD.r) + '" y="' + (H - 4) + '" fill="#5F727E" ' +
       'font-size="7" text-anchor="end">' + esc(labels[n - 1]) + '</text>'
     : "";
   return '<svg data-gopen class="vhsvg" viewBox="0 0 ' + W + ' ' + H + '" ' +
-    'preserveAspectRatio="none" role="img">' + bands.join("") + lines.join("") +
+    'preserveAspectRatio="none" role="img">' + grid + bands.join("") + lines.join("") +
     marks.join("") + ends + '</svg>';
 }
 
@@ -6294,7 +6341,9 @@ function backtestRuns(d){
   const hist = curveHistory(cur).filter(c => c.m && Object.keys(c.m).length);
   if(!hist.length) return null;
   const runs = hist.map(c => ({label: eqWhen(c).slice(5), metrics: c.m}))
-    .concat([{label: "this test", metrics: d.metrics || cur.m || {}}]);
+    /* The task's own numbers win; a key only the curve has (the same
+       extractor, possibly newer) fills in beside them. */
+    .concat([{label: "this test", metrics: Object.assign({}, cur.m || {}, d.metrics || {})}]);
   runs.scope = cur.scope;
   return runs;
 }
@@ -6401,12 +6450,38 @@ function metricGraph(d, big){
      which IS the difference between the two, stated in the caption below. */
   let shared = null;
   if(mode === "index"){
-    const all = [];
+    const all = [0];          // 0% = the first run, always on the scale
     series.forEach(se => se.vals.forEach(v => { if(v != null) all.push(v); }));
     shared = sgSpan(all);
   }
+  /* 2026-09-30 -- A REAL SCALE WHEREVER ONE EXISTS. Trevor, on a PF line that
+     "started off great... dropped": each line filled the whole height with no
+     numbers on it, so 1.25 -> 1.02 read as a crash -- and with ONE line the two
+     modes drew the identical picture, because % change is the same line
+     re-measured, and his next message was that the toggle did nothing.
+
+     So: one line in Value mode gets an axis in its own units, and PF always
+     carries break-even and the live gate so a move reads at its true size. %
+     change gets per-cent ticks around 0% = the first run. SEVERAL lines in Value
+     mode still cannot share an axis (a PF and a dollar figure), so they keep
+     their own ranges and the legend carries the numbers. */
+  let axis = null;
+  if(mode === "index" && shared){
+    const dp = shared[1] - shared[0] < 20 ? 1 : 0;
+    axis = {span: sgPadSpan(shared),
+            fmt: v => (v > 1e-9 ? "+" : v < -1e-9 ? "−" : "") +
+                      Math.abs(v).toFixed(dp) + "%",
+            refs: [{v: 0, label: "first run"}]};
+  }else if(series.length === 1){
+    const se = series[0], def = defs[se.key] || [null, se.key, se.key, 2, 0];
+    const refs = METRIC_REFS[se.key] || [];
+    const dp = Math.min(def[3], 2);
+    axis = {span: sgPadSpan(sgSpan(se.vals.filter(v => v != null)
+                                     .concat(refs.map(r => r.v)))),
+            fmt: v => mFmt(v, dp), refs: refs};
+  }
   series.forEach(se => {
-    se.span = shared || sgSpan(se.vals.filter(v => v != null));
+    se.span = axis ? axis.span : sgSpan(se.vals.filter(v => v != null));
   });
 
   const absent = noSeries.map(k => {
@@ -6419,7 +6494,18 @@ function metricGraph(d, big){
   const legend = series.map(se => {
     const def = defs[se.key] || [null, se.key, se.key, 2, 0];
     const got = se.raw.filter(v => v != null);
-    const lo = Math.min.apply(null, got), hi = Math.max.apply(null, got);
+    /* FIRST -> LAST, NOT LOW - HIGH (2026-09-30). The range said how far it
+       swung; the question asked of this graph is which way it went. The arrow
+       is the direction; its colour is whether that direction is GOOD for this
+       metric (M_DEFS' last column: 1 higher is better, -1 lower is better). */
+    const a = got[0], b = got[got.length - 1];
+    const dir = b > a ? 1 : b < a ? -1 : 0;
+    const tone = dir * (def[4] || 0) > 0 ? "lv-good" : dir * (def[4] || 0) < 0 ? "lv-bad" : "";
+    const pct = Math.abs(a) > 1e-9 ? (b - a) / Math.abs(a) * 100 : null;
+    const move = (mode === "index" && pct != null
+      ? (pct > 0.05 ? "+" : pct < -0.05 ? "−" : "") + Math.abs(pct).toFixed(1) + "%"
+      : mFmt(a, def[3]) + " → " + mFmt(b, def[3])) +
+      (dir > 0 ? " ▲" : dir < 0 ? " ▼" : "");
     /* THE LEGEND IS THE OFF SWITCH. Trevor, 2026-09-17: *"If i click the metric
        in the graph list, i want to clear that metric from the graph."* Which is
        the right place for it -- once the card is pinned the dots are somewhere
@@ -6433,8 +6519,8 @@ function metricGraph(d, big){
        step with the first, and this file has been bitten by exactly that before. */
     return '<button type="button" class="mglgr" data-mp="' + esc(se.key) +
       '"><span class="mgdash" style="background:' + se.colour +
-      '"></span><span class="nm">' + esc(def[2]) + '</span><span>' +
-      esc(mFmt(lo, def[3]) + " \u2013 " + mFmt(hi, def[3])) + '</span></button>';
+      '"></span><span class="nm">' + esc(def[2]) + '</span><span class="' + tone + '">' +
+      esc(move) + '</span></button>';
   }).join("");
 
   const modeBtn = '<button type="button" class="mgbtn' +
@@ -6448,22 +6534,27 @@ function metricGraph(d, big){
     (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
     " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds");
   return head(title, modeBtn + clear) +
-    (drawn.length ? seriesGraph(labels, series, big) : "") +
+    (drawn.length ? seriesGraph(labels, series, big, axis) : "") +
     '<div class="mglg">' + legend + absent + '</div>' +
     /* THE BIG VIEW IS FOR THE SHAPE. The legend stays -- it names the lines and
        three words of it fit anywhere -- but the paragraph explaining the scaling
        belongs on the card you opened this from. */
     (big ? "" : '<div class="vhcap">' +
     (noSeries.length && !drawn.length
-      ? 'Nothing to draw: the metrics you picked were measured on THIS test but ' +
-        'not on the earlier rounds, so there is no line to run through them. '
+      ? 'Nothing to draw: no ' + (rounds.scope ? "run" : "round") + ' here has a ' +
+        'value for what you picked yet, so there is no line to run through. '
       : "") +
     (mode === "index"
-      ? 'Every series on ONE axis, as per cent moved from ' + esc(labels[0]) +
-        '. Heights are comparable here \u2014 that is what this mode is for.'
-      : '<b>Each series is scaled to its own range</b>, so the shape is honest ' +
-        'but the axis names no real number and heights are not comparable ' +
-        'between lines. Switch to % change to compare them.') +
+      ? 'Every line on one axis, as per cent moved from its first run (0%). ' +
+        'Heights are comparable between lines here.'
+      : axis
+        ? '<b>Real scale</b>: the axis is ' + esc((defs[series[0].key] || [,,series[0].key])[2]) +
+          ' itself' + (series[0].key === "pf"
+            ? ', with 1.00 = break-even and 1.50 = the live gate always on it' : "") +
+          '. % change shows the same line as per cent moved from its first run.'
+        : '<b>Each line is scaled to its own range</b> \u2014 a PF and a dollar ' +
+          'figure cannot share an axis \u2014 so read the numbers in the legend. ' +
+          'Switch to % change to put them on one scale.') +
     ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
     (held.length
       ? ' ' + esc(held.map(k => (defs[k] || [,,k])[2]).join(", ")) +
