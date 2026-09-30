@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-171433";
+const APP_BUILD = "20260930-172846";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4375,8 +4375,25 @@ function mFmt(v, dp){
   const n = Number(v);
   return dp === 0 ? Math.round(n).toLocaleString() : n.toFixed(dp);
 }
+/* 2026-09-30 -- Final score's two MESSAGES. A run whose score is -999
+   (disqualified) or -998 (early-aborted) did not produce a score at all -- the
+   EA's markers, the same OPT_SENTINELS the pass table sets apart. Trevor: *"We
+   need to omit the ones that produced [them] for the whole run."* */
+function scoreSentinel(k, v){
+  return k === "score" && v != null ? OPT_SENTINELS.find(x => Number(v) === x[0]) || null : null;
+}
+/* A bucket test's trade band line: target, edges, and where this run landed --
+   the EA's own edges: under below band low, over above band high. */
+function tradeBandText(v, b){
+  const n = Math.round(Number(v));
+  return `Target ${b.target} · band ${b.lo}–${b.hi} · ` +
+    (n < b.lo ? `${b.lo - n} under` : n > b.hi ? `${n - b.hi} over` : "in band");
+}
+
 function taskMetrics(d){
   const m = d.metrics; if(!m) return "";
+  /* This bucket test's own trade band, off its curve (equity_curves, 09-30). */
+  const tb = (curveFor({files: d.files}, {rel_dir: d.rel_dir}) || {}).band || null;
   const prev = d.metrics_prev || null;
   const have = M_DEFS.filter(x => m[x[1]] != null);
   if(!have.length) return "";
@@ -4421,6 +4438,8 @@ function taskMetrics(d){
            run's, and a confident colour would blur the two. */
         : sesOwnCurve(k) ? `<span class="mv fl">${esc(ses.name)}</span>`
                          : `<span class="mv up">${esc(ses.name)}</span>`;
+    } else if(prev && prev[k] != null && (scoreSentinel(k, v) || scoreSentinel(k, prev[k]))){
+      chip = `<span class="mv fl">–</span>`;      // a marker has no difference to show
     } else if(prev && prev[k] != null){
       const dlt = v - Number(prev[k]);
       const moved = Math.abs(dlt) >= Math.pow(10, -dp) / 2;
@@ -4447,8 +4466,11 @@ function taskMetrics(d){
            `<span class="nm"><span class="mdot"${
               on ? ` style="background:${metricColour(k)};border-color:${
                 metricColour(k)}"` : ""}></span>${esc(label)}</span>` +
-           `<span class="vv">${v == null ? "—" : mFmt(v, dp)}</span>${
+           `<span class="vv">${v == null ? "—" : scoreSentinel(k, v)
+              ? esc(scoreSentinel(k, v)[1]) : mFmt(v, dp)}</span>${
              word}${chip}</button>` +
+           (k === "trades" && tb && !ses && v != null
+             ? `<div class="mdf">${esc(tradeBandText(v, tb))}</div>` : "") +
            (isOpen ? `<div class="mdf">${esc(M_WHAT[k] || "")}</div>` : "");
   }).join("");
   return `<div class="tsec"><div class="tlab">Test results${
@@ -6361,6 +6383,7 @@ function backtestRuns(d){
     .concat([{label: "this test", metrics: Object.assign({}, cur.m || {}, d.metrics || {}),
               stamp: cur.stamp}]);
   runs.scope = cur.scope;
+  runs.band = cur.band || null;      // this test's trade band, for Total Trades
   return runs;
 }
 /* 2026-09-30 -- THE DAY THE SWEEPS SWITCHED TO REAL TICKS. Trevor asked whether
@@ -6402,7 +6425,10 @@ function metricGraph(d, big){
      is a missing key, never a zero". So the graph has to be able to say
      "measured now, not measured then" for the rest of the campaign. */
   const picked = (MSTATE.plot || []);
-  const hasSeries = k => rounds && rounds.some(r => (r.metrics || {})[k] != null);
+  const hasSeries = k => rounds && rounds.some(r => {
+    const v = (r.metrics || {})[k];
+    return v != null && !scoreSentinel(k, v);
+  });
   const drawn = picked.filter(hasSeries);
   const noSeries = picked.filter(k => !hasSeries(k));
   const defs = {};
@@ -6458,9 +6484,12 @@ function metricGraph(d, big){
      out rather than divided by nothing. */
   const held = [];
   const series = drawn.map(k => {
+    let omitted = 0;
     const raw = rounds.map(r => {
       const v = (r.metrics || {})[k];
-      return typeof v === "number" ? v : null;
+      if(typeof v !== "number") return null;
+      if(scoreSentinel(k, v)){ omitted++; return null; }     // a marker, not a score
+      return v;
     });
     const first = raw.filter(v => v != null)[0];
     let vals = raw;
@@ -6473,7 +6502,8 @@ function metricGraph(d, big){
       if(v == null) return;
       points.push({i: i, value: v, hollow: i !== rounds.length - 1});
     });
-    return {key: k, colour: metricColour(k), vals: vals, raw: raw, points: points};
+    return {key: k, colour: metricColour(k), vals: vals, raw: raw, points: points,
+            omitted: omitted};
   }).filter(Boolean);
 
   /* ONE SPAN FOR EVERYONE in index mode, each series its own in value mode --
@@ -6504,11 +6534,18 @@ function metricGraph(d, big){
             refs: [{v: 0, label: "first run"}]};
   }else if(series.length === 1){
     const se = series[0], def = defs[se.key] || [null, se.key, se.key, 2, 0];
-    const refs = METRIC_REFS[se.key] || [];
+    /* TOTAL TRADES carries THIS bucket test's own band (2026-09-30, Trevor:
+       "needs the target trade count for that bucket, and the edges of the trade
+       band"). Every run in a regime has shared one band so far; if a later run's
+       differs, these lines are this test's and the table row says so. */
+    const tbd = rounds.band;
+    const refs = se.key === "trades" && tbd
+      ? [{v: tbd.lo, label: "band low " + tbd.lo}, {v: tbd.target, label: "target " + tbd.target},
+         {v: tbd.hi, label: "band high " + tbd.hi}]
+      : METRIC_REFS[se.key] || [];
     const dp = Math.min(def[3], 2);
-    axis = {span: sgPadSpan(sgSpan(se.vals.filter(v => v != null)
-                                     .concat(refs.map(r => r.v)))),
-            fmt: v => mFmt(v, dp), refs: refs};
+    const sp = sgSpan(se.vals.filter(v => v != null).concat(refs.map(r => r.v)));
+    if(sp) axis = {span: sgPadSpan(sp), fmt: v => mFmt(v, dp), refs: refs};
   }
   series.forEach(se => {
     se.span = axis ? axis.span : sgSpan(se.vals.filter(v => v != null));
@@ -6540,7 +6577,14 @@ function metricGraph(d, big){
     const move = (mode === "index" && pct != null
       ? (pct > 0.05 ? "+" : pct < -0.05 ? "−" : "") + Math.abs(pct).toFixed(1) + "%"
       : mFmt(a, def[3]) + " → " + mFmt(b, def[3])) +
-      (dir > 0 ? " ▲" : dir < 0 ? " ▼" : "");
+      (dir > 0 ? " ▲" : dir < 0 ? " ▼" : "") +
+      /* When THIS test has no plotted value (a marker, or not measured), the
+         arrow's end is an earlier run -- say what this test was instead. */
+      (se.raw[se.raw.length - 1] == null
+        ? " · this test " + ((scoreSentinel(se.key,
+            (rounds[rounds.length - 1].metrics || {})[se.key]) || [0, "not measured"])[1])
+        : "") +
+      (se.omitted ? " · " + se.omitted + " omitted" : "");
     /* THE LEGEND IS THE OFF SWITCH. Trevor, 2026-09-17: *"If i click the metric
        in the graph list, i want to clear that metric from the graph."* Which is
        the right place for it -- once the card is pinned the dots are somewhere
@@ -6584,13 +6628,18 @@ function metricGraph(d, big){
         'Heights are comparable between lines here.'
       : axis
         ? '<b>Real scale</b>: the axis is ' + esc((defs[series[0].key] || [,,series[0].key])[2]) +
-          ' itself' + (series[0].key === "pf"
-            ? ', with 1.00 = break-even and 1.50 = the live gate always on it' : "") +
+          ' itself' + ((axis.refs || []).length
+            ? ', with ' + esc(axis.refs.map(r => r.label).join(", ")) +
+              ' always on it' + (series[0].key === "trades" ? " (this test’s band)" : "")
+            : "") +
           '. % change shows the same line as per cent moved from its first run.'
         : '<b>Each line is scaled to its own range</b> \u2014 a PF and a dollar ' +
           'figure cannot share an axis \u2014 so read the numbers in the legend. ' +
           'Switch to % change to put them on one scale.') +
     ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
+    (series.some(se => se.omitted)
+      ? ' Final score leaves out runs that returned −999 (disqualified) or ' +
+        '−998 (early-aborted): those are the EA’s markers, not scores.' : "") +
     (sw > 0 ? ' Dashed line: 09-08, when the sweeps switched to real ticks — ' +
               'runs left of it tested settings partly picked before that. Every test ' +
               'here ran on real ticks.' : "") +
