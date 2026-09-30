@@ -1644,7 +1644,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260929-212042";
+const APP_BUILD = "20260929-212210";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5706,10 +5706,11 @@ function stLegend(b){
       `<span><span style="color:${stColor(e.color)}">●</span> Epoch ${esc(e.epoch)}: ${esc(e.groups)}</span>`)
     .join("") + '</div>';
 }
-function stEpochChip(b){
-  const c = Array.isArray(b.open) && b.open.length ? stColor(b.open[0].color) : "var(--gold)";
-  return `<span class="chip" style="color:${c};border:1px solid ${c};background:none">Epoch ${esc(b.epoch)}</span>`;
-}
+/* NO EPOCH CHIP ON A BUCKET (2026-09-29). Trevor: *"I don't need the EPOCH 1
+   chip next to it. It's kinda misleading."* One "Epoch 1" beside a bar showing
+   epochs 1, 2 and 3 reads as if only one were running. The bar and its key say
+   which epochs are open; the bucket page says which one the bucket is on in
+   words. */
 
 function stOverview(home){
   const bs = STATUS.buckets || [];
@@ -5722,7 +5723,6 @@ function stOverview(home){
       + `<span class="chip">${esc(left)} of ${esc(tot)} groups left</span></div>`
       + mine.map(b => `<button type="button" class="strow" data-stb="${esc(b.key)}">`
           + `<div class="lrow"><span class="stname">Bucket ${esc(b.bucket_id)}</span>`
-          + stEpochChip(b)
           + `<span class="stmeta">${esc(b.done)} run · ${esc(b.left)} left</span>`
           + `<span class="hcar">›</span></div>${stBar(b)}${stLegend(b)}</button>`).join("")
       + '</div></div>';
@@ -5828,8 +5828,7 @@ function stBucketPage(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-stback="overview">‹ Status</button>'
     + '<div class="card"><div class="card-in">'
-    + `<div class="trow lrow"><span class="tname">${esc(b.regime)} · bucket ${esc(b.bucket_id)}</span>`
-    + stEpochChip(b) + '</div>'
+    + `<div class="trow lrow"><span class="tname">${esc(b.regime)} · bucket ${esc(b.bucket_id)}</span></div>`
     + `<div class="tnote">${esc(b.done)} of ${esc(b.total)} groups have run epoch ${esc(b.epoch)}; `
     + `${esc(b.left)} left.${b.epochs_done ? " " + esc(b.epochs_done) + " epoch"
         + (b.epochs_done === 1 ? "" : "s") + " finished before this one." : ""}${
