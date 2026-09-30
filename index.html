@@ -1608,6 +1608,11 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .fin-note{font-size:.74rem;color:var(--faint);line-height:1.5;}
 .fin-note b{color:var(--dim);font-weight:600;}
 .fin-warn{font-size:.78rem;color:var(--warn);line-height:1.45;}
+.fin-sim{
+  font-size:.78rem;line-height:1.5;color:var(--text);border-radius:11px;padding:10px 12px;
+  background:rgba(111,168,212,.10);border:1px solid rgba(111,168,212,.35);
+}
+.fin-sim b{color:var(--range);text-transform:uppercase;letter-spacing:.08em;font-size:.72rem;}
 .fin-rows{display:flex;flex-direction:column;}
 .fin-row{
   display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:start;
@@ -1723,7 +1728,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-105439";
+const APP_BUILD = "20260930-112636";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11274,7 +11279,8 @@ function finBadgeText(){
   if(!apiBase()) return "Add the Laptop link to see the books";
   if(FIN.data){
     const d = FIN.data;
-    return `<span class="hcount">${esc(finMoney(d.value, false))}</span> in the accounts · ` +
+    return (d.sim && d.sim.on ? '<span class="hcount quiet">SIM</span> · ' : "") +
+      `<span class="hcount">${esc(finMoney(d.value, false))}</span> in the accounts · ` +
       `GOLDbot owns <span class="hcount${d.equity < 0 ? " warn" : ""}">${esc(finMoney(d.equity, false))}</span>`;
   }
   if(FIN.err) return "Can't read the books right now";
@@ -11530,6 +11536,8 @@ function finFormHtml(){
 
 /* ---------- rows ---------- */
 function finRowTitle(t){
+  if(t.sim && (t.kind === "deposit" || t.kind === "withdrawal"))
+    return t.kind === "deposit" ? "Demo capital" : "Demo capital out";
   switch(t.kind){
     case "deposit":
       return "Deposit" + (t.source === "opening" ? " · opening balance"
@@ -11584,10 +11592,11 @@ function finRowAmount(t){
 function finRow(t){
   if(FIN.form && FIN.form.mode === "edit" && FIN.form.id === t.id) return finFormHtml();
   const tags = (t.live ? '<span class="fin-tag">live</span>' : "") +
+    (t.sim ? '<span class="fin-tag">demo</span>' : "") +
     (t.recurring ? '<span class="fin-tag">repeats</span>' : "") +
     (t.versions > 1 ? '<span class="fin-tag">edited</span>' : "");
   return `<button type="button" class="fin-row" data-fin="edit" data-id="${finAttr(t.id)}"` +
-    `${t.live ? " disabled" : ""}>` +
+    `${t.live || t.sim ? " disabled" : ""}>` +
     `<div><div class="fin-rt">${esc(finRowTitle(t))}${tags}</div>` +
     `<div class="fin-rs">${esc(finRowSub(t))}</div></div>` +
     `<div>${finRowAmount(t)}</div></button>`;
@@ -11638,6 +11647,19 @@ function renderFinance(){
   let out = '<div class="home">' + head;
   out += `<div class="fin-asof">As of ${esc(finDate(d.as_of, true))} · USD/CAD ${esc(fx.usdcad ?? "—")}` +
          `${fx.date ? " (" + esc(finDate(fx.date)) + ")" : ""} · all totals in CAD</div>`;
+  /* THE SIMULATION SAYS SO FIRST. Trevor, 2026-09-30: the demo account stands in
+     for real money until go-live. Every figure below moves with it, so the page
+     must never be read as the real books without this in view. */
+  if(d.sim && d.sim.on){
+    const sm = d.sim;
+    out += '<div class="fin-sim"><b>Simulation</b> — trading comes from the ' +
+      `${esc(sm.label || "demo account")}: ${esc(finNum(sm.capital_usd))} USD on ` +
+      `${esc(finDate(sm.since))}, ${esc(finNum(sm.balance_usd))} USD now, ` +
+      `${esc(String(sm.trades))} trade${sm.trades === 1 ? "" : "s"} since. None of it is real ` +
+      "money, and it all comes off the books when real trading starts." +
+      (sm.updated ? ` <span class="fin-sub">demo data as of ${esc(sm.updated)} broker time</span>` : "") +
+      "</div>";
+  }
   if(FIN.err) out += `<div class="fin-warn">${esc(FIN.err)}</div>`;
   (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
 
@@ -11799,7 +11821,7 @@ document.addEventListener("click", e => {
     FIN.form = finNewForm(); FIN.formErr = ""; FIN.confirm = ""; FIN.rec = null;
   }else if(act === "edit"){
     const t = (d.txns || []).find(x => x.id === el.dataset.id);
-    if(!t || t.live) return;
+    if(!t || t.live || t.sim) return;
     FIN.form = finFormFrom(t); FIN.formErr = ""; FIN.confirm = ""; FIN.rec = null;
   }else if(act === "cancel"){
     FIN.form = null; FIN.formErr = ""; FIN.confirm = "";
