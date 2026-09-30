@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20260930-133521";
+const APP_BUILD = "20260930-153926";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4748,7 +4748,12 @@ function slopeMetric(d){
   M_DEFS.forEach(x => { defs[x[1]] = x; });
   const bands = (d || {}).slope_bands || [];
   const has = k => bands.some(b => ((b.metrics || {})[k]) != null);
-  const wanted = [MSTATE.open].concat(MSTATE.plot || []).concat(["net"]);
+  /* NOT EQUITY BY DEFAULT (2026-09-30, first real data). The graph opens on
+     Equity, so it is always among the plotted lines -- and a band's equity is
+     only the opening balance plus its net, the same answer less readably. It
+     still wins when it is the row you opened. */
+  const wanted = [MSTATE.open].concat((MSTATE.plot || []).filter(k => k !== "equity"))
+    .concat(["net"]);
   for(const k of wanted){
     if(k && sesSliceable(k) && has(k) && defs[k]) return defs[k];
   }
@@ -5962,7 +5967,9 @@ function stBucketPage(){
         ahead ? " " + esc(ahead) + (ahead === 1 ? " group has" : " groups have")
           + " run ahead into later epochs and wait for the rest." : ""}</div>`
     + stBar(b) + stLegend(b) + '</div></div>'
-    + sec("Left this epoch", left) + sec("Run this epoch", done) + sec("Parked", parked)
+    /* WHAT HAS RUN COMES FIRST (2026-09-30). Trevor: *"Can we swap the runs that
+       are run? I want those on top of runs left in the epoch."* */
+    + sec("Run this epoch", done) + sec("Left this epoch", left) + sec("Parked", parked)
     + '</div>';
 }
 
