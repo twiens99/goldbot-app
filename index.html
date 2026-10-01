@@ -1732,7 +1732,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-112717";
+const APP_BUILD = "20261001-115359";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8309,7 +8309,7 @@ function sendRecord(key){
   return loc ? Object.assign({src: "local"}, loc) : null;
 }
 
-function sendStatusLine(key){
+function sendStatusLine(key, o){
   const s = sendRecord(key);
   if(!s) return "";
   if(s.src === "local"){
@@ -8322,6 +8322,22 @@ function sendStatusLine(key){
       snapshot.</div>`;
   }
   const n = esc(s.pass_number);
+  /* 2026-10-01 -- APPLIED IS APPLIED, even while the record still says sent.
+     Trevor: "Yes apply that" -- the record only flips to applied once BOTH
+     backtests finish, so for the hour they ran this card said "Pass 81 sent ...
+     waiting for the job running now to finish" over a pass already in and
+     being measured. The round's own applied pass (the card shows it: "pass 81
+     applied") is the tell; its stage names what is running. */
+  if(s.status === "requested" && o && o.applied_pass != null &&
+     String(o.applied_pass) === String(s.pass_number)){
+    const st = String(o.stage || "");
+    const how = st === "backtests_owed" ? "owed and run next"
+      : st && st !== "running" && st !== "awaiting_pick"
+        ? "under way — " + esc(phaseText(st)) + " running now"
+        : "under way";
+    return `<div class="pickdone">✓ Pass ${n} applied — its backtests are ${how}.
+      This clears when both are in.</div>`;
+  }
   if(s.status === "requested")
     return `<div class="pickdone">✓ Pass ${n} sent ${esc(fmtWhen(s.requested_at))} —
       waiting for the job running now to finish.</div>`;
@@ -8352,7 +8368,7 @@ function sendForm(o){
     return `<div class="sendp"><div class="opsh">${head}</div>
       <div class="opsnote">This phone has no link to the Laptop yet, so the app can't
         send. Paste it in <b>Settings → Laptop link</b>; the phone keeps it after
-        that.</div>${sendStatusLine(key)}</div>`;
+        that.</div>${sendStatusLine(key, o)}</div>`;
   const [label, off] = sendLabel(o, key);
   const typed = SEND.typed[key];
   return `<div class="sendp" data-sendscope="${esc(key)}">
@@ -8380,7 +8396,7 @@ function sendForm(o){
         data-round="${esc(o.round || "")}" data-applied="${esc(o.applied_pass ?? "")}"
         data-applied-style="${esc(o.applied_pass_style || "")}"
         ${off ? "disabled" : ""}>${esc(label)}</button>
-      ${sendStatusLine(key)}
+      ${sendStatusLine(key, o)}
     </div>`;
 }
 
