@@ -1288,6 +1288,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 /* ON means the list is narrowed -- the one state you must not have to hunt for
    when rows are missing. */
 .cchip.on{background:rgba(224,180,87,.15);color:var(--gold);border-color:rgba(224,180,87,.35);}
+/* 2026-10-01 -- a running job's task that has not finished: shown, not opened. */
+.cchip.wait{opacity:.5;cursor:default;}
+.cchip.wait:active{transform:none;}
 .cchip .car{opacity:.55;font-weight:400;}
 /* NOTHING INSIDE A RESULTS ROW IS A CONTROL. Trevor, 2026-09-16: *"I had
    initially thought that the chip themselves would work as the switch, but I
@@ -1729,7 +1732,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-111356";
+const APP_BUILD = "20261001-112717";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3533,6 +3536,33 @@ function jobCard(r, rep, condensed, hint, cadence){
     </article>`;
 }
 
+/* THE CARDS UNDER ONE TASK'S CHIP -- a finished job's (renderResultsJob) and,
+   since 2026-10-01, a running job's finished tasks (renderInProgressJob). One
+   function, so the two pages cannot drift. */
+function taskBadges(tasks, open, rep){
+  if(!tasks.length) return "";
+  const t = tasks[open];
+  /* THE PER-CHIP BADGES. The panel above carries what belongs to the TASK
+     and nothing else -- its header, what it picked, its trade band -- and
+     these three carry the rest. A sweep gets its own badge instead, because
+     none of the three says anything true about a grid. */
+  return (isBacktest(t)
+      ? equityBadge(t, rep) +
+        graphBadge(t, rep) + jobVariables(rep, t) +
+        metricsBadge(t) + slopeBadge(t) +
+        sessionBadge(t)
+      /* THE GRAPH BADGE RIDES A SWEEP TOO. It was backtest-only, so a response
+         curve had nowhere to draw -- the chip toggled and the page did
+         nothing. On a sweep it renders ONLY when a curve is on: there are no
+         metrics behind it to fall back to, so it is absent the rest of the
+         time rather than empty. */
+      : graphBadge(t, rep) +
+        /* How many non-backtest tasks the job has reached, this one included. */
+        optimizeBadge(t, tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length) +
+        nextRoundBadge(t)) +
+    graphFull(t, rep);
+}
+
 function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
   const rc = REGIME_CLASS[r.regime] || "";
@@ -3598,28 +3628,7 @@ function renderResultsJob(r){
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
     whyBadge(tasks.length ? tasks[0] : null, r) +
-    /* THE PER-CHIP BADGES. The panel above carries what belongs to the TASK
-       and nothing else -- its header, what it picked, its trade band -- and
-       these three carry the rest. A sweep gets its own badge instead, because
-       none of the three says anything true about a grid. */
-    (tasks.length && isBacktest(tasks[open])
-      ? equityBadge(tasks[open], rep) +
-        graphBadge(tasks[open], rep) + jobVariables(rep, tasks[open]) +
-        metricsBadge(tasks[open]) + slopeBadge(tasks[open]) +
-        sessionBadge(tasks[open])
-      : tasks.length
-        /* THE GRAPH BADGE RIDES A SWEEP TOO. It was backtest-only, so a response
-           curve had nowhere to draw -- the chip toggled and the page did
-           nothing. On a sweep it renders ONLY when a curve is on: there are no
-           metrics behind it to fall back to, so it is absent the rest of the
-           time rather than empty. */
-        ? graphBadge(tasks[open], rep) +
-          /* How many non-backtest tasks the job has reached, this one included. */
-          optimizeBadge(tasks[open],
-            tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length) +
-          nextRoundBadge(tasks[open])
-        : "") +
-    (tasks.length ? graphFull(tasks[open], rep) : "") +
+    taskBadges(tasks, open, rep) +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
        showing as a card that simply stops. The round happened -- its PF moved and
        the ledger recorded it -- but nothing tied its report folder to it, so
@@ -3769,6 +3778,9 @@ function renderResultsList(){
 /* The tab itself: the list, or the one job that is open. */
 function renderResults(){
   if(RESULTS_JOB == null) return renderResultsList();
+  /* 2026-10-01 -- a running job, opened from a finished task's chip. */
+  if(String(RESULTS_JOB).indexOf("ip:") === 0)
+    return renderInProgressJob(String(RESULTS_JOB).slice(3));
   const r = LEDGER.find(x => String(x.round_no) === String(RESULTS_JOB));
   return renderResultsJob(r);
 }
@@ -8459,10 +8471,56 @@ function ipStage(it){
   return run + (it.machine ? " on " + it.machine : "") + (p != null ? ` · pass ${p} applied` : "");
 }
 
-function ipCard(it){
+/* 2026-10-01 -- A RUNNING JOB'S FINISHED TASKS OPEN. Trevor: *"If one task is
+   done. Id like to see its task card. Same as this results card ... So once the
+   bucket test is complete I'd like to look at its graph while the full test is
+   completing."* The job's own timeline (the Active tab's source) carries each
+   task's detail; a finished task's chip opens it in the same cards a finished
+   job shows (taskBadges). Only FINISHED tasks open -- a running or queued one
+   has nothing to show yet. Its reports reach the shared folder as each task
+   finishes (run_next_round publishes between the backtests since 10-01), which
+   is what gives a finished bucket test its metrics and graph mid-job. */
+const ipKey = it => [it.regime, it.bucket_id, it.group_id].join("|");
+const ipDone = t => !!t && t.status === "passed";
+
+function ipTimeline(it){
+  return TIMELINES.find(t => String(t.regime || "").toUpperCase() === String(it.regime || "").toUpperCase()
+    && String(t.bucket_id) === String(it.bucket_id) && t.group_id === it.group_id) || null;
+}
+
+function renderInProgressJob(key){
+  const it = IN_PROGRESS.find(x => ipKey(x) === key);
+  const tl = it ? ipTimeline(it) : null;
+  /* Finished meanwhile (it is a Results row now) or gone: back to the list. */
+  if(!it || !tl){ RESULTS_JOB = null; return renderResultsList(); }
+  const tasks = tl.rounds || [];
+  const rep = {tasks: tasks, rel_dir: tl.rel_dir};
+  let open = Math.min(RESULTS_TASK_OPEN, tasks.length - 1);
+  if(!ipDone(tasks[open])){
+    open = -1;
+    tasks.forEach((t, i) => { if(ipDone(t)) open = i; });
+  }
+  const back = '<button type="button" class="backbtn" data-rjob="">‹ All jobs</button>';
+  const chips = tasks.length ? `<div class="rctl">` + tasks.map((t, i) => ipDone(t)
+      ? `<button type="button" class="cchip${i === open ? " on" : ""}" data-rtask="${i}">${
+          esc(TASK_MARK.passed)} ${esc(phaseText(t.kind))}</button>`
+      : `<span class="cchip wait">${esc(TASK_MARK[t.status] || "·")} ${
+          esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
+  return back + chips + ipCard(it, true) +
+    (open >= 0
+      ? whyBadge(tasks[0], it) + taskBadges(tasks, open, rep)
+      : `<div class="card"><div class="card-in"><div class="soon">No task of this job
+          has finished yet — each one opens here as soon as it does.</div></div></div>`);
+}
+
+function ipCard(it, inView){
   const rc = REGIME_CLASS[it.regime] || "";
-  const tasks = (it.tasks || []).map(t =>
-    `<span class="chip${t.status === "running" ? " gold" : ""}">${
+  /* A FINISHED task's chip opens the job at that task; the rest are labels.
+     In the job's own view the chips above the card do that, so none here. */
+  const tasks = inView ? "" : (it.tasks || []).map((t, i) => ipDone(t)
+    ? `<button type="button" class="chip" data-ipjob="${esc(ipKey(it))}" data-iptask="${i}">${
+        esc(TASK_MARK[t.status] || "·")} ${esc(phaseText(t.kind))} ›</button>`
+    : `<span class="chip${t.status === "running" ? " gold" : ""}">${
       esc(TASK_MARK[t.status] || "·")} ${esc(phaseText(t.kind))}</span>`).join("");
   const form = it.awaiting_pick ? sendForm(Object.assign({}, it, {mode: "confirm"}))
     : it.changeable ? sendForm(Object.assign({}, it, {mode: "override"})) : "";
@@ -8492,7 +8550,7 @@ function inProgressSection(){
     (!RESULTS_MACHINE || it.machine === RESULTS_MACHINE));
   if(!items.length) return "";
   return `<div class="section-label">${items.length} not finished yet</div>` +
-    items.map(ipCard).join("");
+    items.map(it => ipCard(it, false)).join("");
 }
 
 function renderSchedule(){
@@ -12797,6 +12855,17 @@ function repaintCards(){
      graph under your thumb. */
   syncStuck();
 }
+
+/* 2026-10-01 -- a running job's finished task, from its "not finished" card. */
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-ipjob]");
+  if(!c) return;
+  RESULTS_FROM = null;
+  RESULTS_JOB = "ip:" + c.dataset.ipjob;
+  RESULTS_TASK_OPEN = Number(c.dataset.iptask) || 0;
+  document.getElementById("page-results").innerHTML = renderResults();
+  window.scrollTo(0, 0);
+});
 
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-rtask]");
