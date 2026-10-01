@@ -1729,7 +1729,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-095603";
+const APP_BUILD = "20261001-102359";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2801,7 +2801,8 @@ function passPick(f){
    ⚠️ SO THIS BUTTON HAS NO TRAY ITEM BEHIND IT YET. It is not `restart_current()`
    under a friendlier name, and wiring it to that would do the destructive thing
    while the card promised the careful one. It needs its own supervisor action;
-   until then the commit refuses like the rest.
+   until then a tap says so and sends nothing (2026-10-01: still true -- the
+   other five went live, this one did not, on purpose).
 
    WHAT IS IN THAT MENU AND DELIBERATELY NOT HERE. Trevor, 2026-09-18: the
    tray's "Restart tray after current job" is *"not necessary anymore"*, and
@@ -2811,12 +2812,18 @@ function passPick(f){
    confuse the next reader about whether it happened. "Open Strategy Tester"
    opens a window on the machine, which is no use from a phone.
 
-   🔴 NOTHING IS SENT YET, AND THE COMMIT IS WHERE THAT SURFACES. The page is
-   https on a public host; the machine's API is plain http on its own network,
-   which a secure page may not call. Disabling every button would have hidden
-   the arming behaviour that this badge mostly IS, so the buttons work, the
-   confirm works, and the commit reports honestly that it went nowhere. */
-const OPSTATE = { open: null, arm: null, said: null };
+   🔴 SENT THROUGH THE LAPTOP LINK SINCE 2026-10-01. Trevor: *"Make skip work,
+   and double check that all the other operations work."* Until then the commit
+   said "was not sent" every time -- written before the phone had any route back,
+   and never wired once the Laptop link gave it one. Now a confirm POSTs
+   /control; the machine's tray runs the SAME call its menu item makes and
+   writes back what happened (run_control.py), and the badge shows Sent ->
+   Done / Refused with the machine's own reason. Skip and Kill carry the job the
+   card was drawn for, so a tap that lands after the round changed is refused
+   rather than killing the next one. */
+const OPSTATE = { open: null, arm: null, msg: {} };
+/* machine -> run_control.status_for, from the snapshot ({} on an older publisher) */
+let RUN_CONTROL = {};
 
 /* The engine's ladders, not this card's -- machine_capabilities.TIERS and
    compute_mode.MODE_LABELS, shown whole with the current rung marked. */
@@ -2835,7 +2842,8 @@ const OPS_RUN = [
   ["skip", "\u23ed", "Skip this group", false, true],
   ["pause", "\u23f8", "Pause after current job", false, false],
   ["resume", "\u25b6", "Resume", false, false],
-  ["restart", "\u21ba", "Restart this task", true, true],
+  /* not armed: it sends nothing yet (see above), so there is nothing to confirm */
+  ["restart", "\u21ba", "Restart this task", true, false],
   ["kill", "\u2715", "Kill current job", true, true],
   ["stop", "\u23f9", "Stop everything", true, true],
 ];
@@ -2846,6 +2854,134 @@ function opsKey(f){
 function opsLabel(k){
   const r = OPS_RUN.find(x => x[0] === k);
   return r ? r[2] : k;
+}
+
+/* What became of this machine's last tap: this phone's own message while it is
+   news (an error or a send in flight always; a "Sent" until the machine has
+   answered, or 90 s), else the machine's answer from the snapshot. */
+function opsReply(m){
+  const nowS = Date.now() / 1000;
+  const st = RUN_CONTROL[m] || null;
+  const mine = OPSTATE.msg[m];
+  const seen = st && mine && mine.rid && (st.request || {}).request_id === mine.rid;
+  if(mine && (mine.kind !== "ok" || !seen || st.pending))
+    return `<div class="lmsg ${mine.kind}">${esc(mine.text)}</div>`;
+  if(!st) return "";
+  const req = st.request || {};
+  if(st.pending && req.action){
+    if(st.stale)
+      return `<div class="lmsg err">✖ “${esc(opsLabel(req.action))}”, sent ${
+        esc(whenShort(Number(req.at)))}, was never picked up by ${esc(m)} — too old to act
+        on now. Send it again if you still want it.</div>`;
+    return `<div class="lmsg busy">Sent ${esc(whenShort(Number(req.at)))}: “${
+      esc(opsLabel(req.action))}” — waiting for ${esc(m)}.${st.takes_controls ? ""
+      : ` ${esc(m)} hasn’t taken the update that adds phone controls yet; it acts on
+        this once it has (between jobs).`}</div>`;
+  }
+  const h = st.handled;
+  if(h && h.request_id && nowS - Number(h.at) < 6 * 3600){
+    return h.result === "done"
+      ? `<div class="lmsg ok">✓ “${esc(opsLabel(h.action))}” — done ${
+          esc(whenShort(Number(h.at)))}.${h.detail ? " " + esc(h.detail) : ""}</div>`
+      : `<div class="lmsg err">✖ “${esc(opsLabel(h.action))}” refused ${
+          esc(whenShort(Number(h.at)))}: ${esc(h.detail || "no reason given")}</div>`;
+  }
+  if(!st.takes_controls)
+    return `<div class="lmsg busy">${esc(m)} hasn’t taken the update that adds phone
+      controls yet — a tap is saved, and acted on once it has (between jobs).</div>`;
+  return "";
+}
+
+/* One confirmed tap. The key is machine|regime|bucket|group (opsKey); Skip and
+   Kill send the job so the machine can refuse a tap that arrives after the
+   round changed. A request is SAFE TO REPEAT, so an unreachable link gets one
+   retry, as machine settings do. */
+async function opsSend(key, act){
+  const [m, regime, bucket, group] = String(key).split("|");
+  const label = opsLabel(act);
+  const now = () => whenShort(Date.now() / 1000);
+  if(act === "restart"){
+    OPSTATE.msg[m] = {kind: "err", at: Date.now() / 1000, text: "✖ Restart this "
+      + "task isn’t built yet, so nothing was sent. The tray’s own Restart re-runs "
+      + "the whole round — during the round’s backtests that throws away a finished "
+      + "sweep — which is not what this button promises."};
+    repaintCards(); return;
+  }
+  const job = regime && bucket && group ? [regime, bucket, group].join("|") : null;
+  OPSTATE.msg[m] = {kind: "busy", at: Date.now() / 1000,
+                    text: "Sending “" + label + "” to " + m + "…"};
+  repaintCards();
+  const body = {machine: m, action: act, job: job};
+  let res = await apiCall("/control", body);
+  if(!res.ok && res.error === "unreachable"){
+    OPSTATE.msg[m] = {kind: "busy", at: Date.now() / 1000, text: "No answer — the "
+      + "phone’s tunnel may be waking up. Trying once more…"};
+    repaintCards();
+    await new Promise(r => setTimeout(r, 2500));
+    res = await apiCall("/control", body);
+  }
+  if(res.ok){
+    /* The server's own clock stamps it, so the newer-wins merge (rcMerge) does
+       not depend on this phone's clock agreeing with the machines'. */
+    const st = RUN_CONTROL[m] = Object.assign({}, RUN_CONTROL[m] || {});
+    st.request = {at: Number(res.out.at) || Date.now() / 1000, action: act, job: job,
+                  request_id: res.out.request_id};
+    st.pending = true; st.stale = false;
+    const rep = res.out.replaced;
+    OPSTATE.msg[m] = {kind: "ok", at: Date.now() / 1000, rid: res.out.request_id,
+      text: "✓ Sent " + now()
+      + " — " + m + " acts on “" + label + "” within a few seconds and "
+      + "reports back here." + (rep ? " It replaces your earlier “"
+      + opsLabel(rep.action) + "”, which " + m + " hadn’t picked up yet." : "")};
+  } else {
+    const e = res.error;
+    const why = e === "read-only" ? "this phone has no Laptop link — add it under "
+        + "Settings → Laptop link."
+      : e === "unreachable" ? "the Laptop didn’t answer, twice. The Laptop link "
+        + "card’s Test checks the same path."
+      : e === "not found" ? "the Laptop hasn’t taken the update that adds phone "
+        + "controls yet — it lands between its jobs."
+      : (e || "no answer from the Laptop.");
+    OPSTATE.msg[m] = {kind: "err", at: Date.now() / 1000,
+                      text: "✖ “" + label + "” not sent " + now() + ": " + why};
+  }
+  repaintCards();
+  if(res.ok) opsWatch(m, res.out.request_id);
+}
+
+/* The newer record per machine wins: a snapshot GENERATED before a tap must not
+   put back the state from before it (the machine-settings lesson of 09-29). */
+function rcStamp(s){
+  s = s || {};
+  return Math.max(Number((s.request || {}).at) || 0, Number((s.handled || {}).at) || 0,
+                  Number(s.reported_at) || 0);
+}
+function rcMerge(incoming){
+  const out = Object.assign({}, RUN_CONTROL);
+  for(const [m, s] of Object.entries(incoming || {})){
+    if(s && typeof s === "object" && (!out[m] || rcStamp(s) >= rcStamp(out[m]))) out[m] = s;
+  }
+  return out;
+}
+
+/* After a tap, read the machine's answer live (GET /control/<m>) every 4 s for
+   a minute, so Done shows seconds after the tray acts instead of on the next
+   snapshot. Stops as soon as the machine has answered this request. */
+async function opsWatch(m, rid){
+  const base = apiBase();
+  if(!base) return;
+  for(let i = 0; i < 15; i++){
+    await new Promise(r => setTimeout(r, 4000));
+    try{
+      const r = await fetch(base + "/control/" + encodeURIComponent(m), {cache: "no-store"});
+      if(!r.ok) return;                    // an older Laptop: the snapshot will do
+      const out = await r.json();
+      RUN_CONTROL = rcMerge(out.run_control);
+      repaintCards();
+      const h = (RUN_CONTROL[m] || {}).handled || {};
+      if(h.request_id === rid) return;
+    }catch(e){ /* the tunnel blinked; try again next round */ }
+  }
 }
 
 /* 🔴 REACHABLE AND WORKING ARE TWO QUESTIONS, and one chip cannot hold both.
@@ -2921,15 +3057,19 @@ function opsBadge(f){
       <div class="opsh">Run state</div>
       <div class="opsrow">${runRow}</div>
       ${armed ? `<div class="opsarm">Armed. Press <b>Confirm</b> to send
-        \u201c${esc(opsLabel(armed))}\u201d, or Cancel.</div>` : ""}
-      ${OPSTATE.said ? `<div class="opsdis">${OPSTATE.said}</div>` : ""}
+        \u201c${esc(opsLabel(armed))}\u201d, or Cancel.${armed === "stop"
+        ? ` <b>This quits GoldBot on ${esc(f.machine)}</b> \u2014 the phone cannot
+          start it again; someone has to start it at the machine.${
+          f.machine === "Laptop" ? " The Laptop link and this page\u2019s updates stop with it." : ""}`
+        : ""}</div>` : ""}
+      ${opsReply(f.machine)}
       <div class="opsnote"><b>Skip this group</b> hands it back and takes the
         next one. <b>Pause</b> waits for the current job to finish \u2014 nothing is
-        interrupted. <b>Restart this task</b> takes the pending update and comes
-        back up at the <i>task</i> that was running, so the tasks this round has
-        already finished are kept. <b>Kill</b> ends the running pass now and
-        releases the group so a peer can claim it. <b>Stop everything</b> ends
-        the job and the supervisor with it.</div>
+        interrupted; <b>Resume</b> cancels it. <b>Kill</b> ends the running pass
+        now, releases the group so a peer can claim it, and pauses this machine.
+        <b>Stop everything</b> ends the job and quits the tray. <b>Restart this
+        task</b> is not built yet. Each one is carried out by the machine\u2019s
+        own tray within a few seconds, and its answer shows here.</div>
 
       <div class="opsh">This machine</div>
       ${opsLadder(OPS_TIERS, f.tier, "This machine has not reported a tier.")}
@@ -11476,6 +11616,8 @@ function applySnapshot(d, source){
   STATUS = (d.status && typeof d.status === "object") ? d.status : {};
   MACHINE_SETTINGS = (d.machine_settings && typeof d.machine_settings === "object")
     ? d.machine_settings : {};
+  /* 2026-10-01 -- what became of each Operations tap (run_control). */
+  RUN_CONTROL = rcMerge((d.run_control && typeof d.run_control === "object") ? d.run_control : {});
   MS_VOCAB = (d.machine_settings_vocab && typeof d.machine_settings_vocab === "object")
     ? d.machine_settings_vocab : null;
   if(d.settings && d.settings.bucket_priority){
@@ -12401,7 +12543,11 @@ document.addEventListener("click", e => {
   if(oo){
     const k = oo.getAttribute("data-opsopen");
     OPSTATE.open = OPSTATE.open === k ? null : k;
-    OPSTATE.arm = null; OPSTATE.said = null; repaintCards(); return;
+    OPSTATE.arm = null;
+    /* An old error is not news on reopening; a send in flight still is. */
+    const om = String(k).split("|")[0];
+    if(OPSTATE.msg[om] && OPSTATE.msg[om].kind === "err") delete OPSTATE.msg[om];
+    repaintCards(); return;
   }
   if(e.target.closest("[data-opscancel]")){
     OPSTATE.arm = null; repaintCards(); return;
@@ -12432,20 +12578,17 @@ document.addEventListener("click", e => {
   if(oa){
     OPSTATE.arm = {key: oa.getAttribute("data-opsarm"),
                    act: oa.getAttribute("data-opsact")};
-    OPSTATE.said = null; repaintCards(); return;
+    repaintCards(); return;
   }
   const og = e.target.closest("[data-opsgo]");
   if(og){
     const k = og.getAttribute("data-opsgo"), act = og.getAttribute("data-opsact");
     OPSTATE.arm = null;
-    /* THE COMMIT IS WHERE THE MISSING CHANNEL SURFACES, and it names the action
-       back rather than saying "not implemented" -- so what you confirmed and
-       what did not happen are the same sentence. */
-    OPSTATE.said = "\u26a0\ufe0f <b>" + esc(opsLabel(act)) + "</b> was not sent. This page "
-      + "reads a published snapshot and has no route back to "
-      + esc(String(k).split("|")[0]) + " yet \u2014 it needs the app served from the "
-      + "laptop rather than a public host.";
-    repaintCards(); return;
+    /* 2026-10-01 -- SENT. This used to say "was not sent" for every action; see
+       the OPSTATE note. opsSend shows Sending -> Sent, and the machine's own
+       Done / Refused arrives with the snapshot. */
+    opsSend(k, act);
+    return;
   }
   const os = e.target.closest("[data-optslice]");
   if(os){ OPTSTATE.slice = os.getAttribute("data-optslice"); repaintCards(); return; }
