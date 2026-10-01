@@ -449,6 +449,11 @@ article.jrow{cursor:default;}
   font-size:.72rem;color:var(--faint);padding-top:2px;
 }
 .fcloop .fcb{border-style:dashed;}
+/* 2026-10-01 -- the SEEDS step, ahead of block 1: they cut in line, so they are
+   drawn as the step before the chain -- dashed (not a block of the chain),
+   gold-filled once one is running. */
+.fcr.seeds .fcb{border-color:var(--gold);color:var(--gold);border-style:dashed;}
+.fcr.seeds.run .fcb{background:rgba(224,180,87,.15);border-style:solid;}
 
 /* ---------- the task card ---------- */
 /* ONE ROUND, FULLY DESCRIBED. Trevor, 2026-09-16: *"build a Task Card ...
@@ -1732,7 +1737,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-143514";
+const APP_BUILD = "20261001-150121";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8839,15 +8844,56 @@ function scheduleBadge(){
    people would believe. Jobs spent and time elapsed ARE on the record, so
    those are shown, and `schedEtaLine` says which kind of answer the condition
    can even support. A real per-block bar needs one publisher field. */
+/* 2026-10-01 -- SEEDS RUN FIRST, SO THEY SIT FIRST. Trevor: *"I want to see
+   that seed block in front of my schedule block."* A seed cuts in line ahead of
+   whichever block is active (seeds.py: "a seed is EXTRA work that runs NEXT. It
+   does not reorder the real schedule, which resumes behind it untouched"), and
+   his standing rule is that every display of what comes next shows them first
+   -- held ones too. So the plan opens with them: one step, every open seed in
+   the order the fleet takes them (priority, then age, as queue_preview orders
+   them), each saying what it is and where it stands. Absent when none is open. */
+function schedSeedStep(){
+  const live = s => ["claimed", "running"].includes(String(s.status || "").toLowerCase());
+  const open = (SEEDS || []).filter(s => queuedSeed(s) || live(s));
+  if(!open.length) return "";
+  open.sort((a, b) => ((Number(a.priority) || 3) - (Number(b.priority) || 3))
+                   || ((Number(a.created_at) || 0) - (Number(b.created_at) || 0)));
+  const run = open.some(live);
+  const lines = open.map(s => {
+    const names = (s.variables || []).map(v => typeof v === "string" ? v : (v || {}).name)
+      .filter(Boolean);
+    const vars = !names.length ? ""
+      : names.length <= 3 ? " \u00b7 " + names.map(n => spaceOut(stripRegime(n))).join(", ")
+      : " \u00b7 " + names.length + " variables";
+    const st = String(s.status || "").toLowerCase() === "pending"
+      ? "queued \u00b7 next in line" : seedStatusText(s);
+    const where = live(s) ? "running" + (s.claimed_by ? " on " + s.claimed_by : "")
+      : s.only_machine ? st + " \u00b7 " + s.only_machine + " only" : st;
+    return '<div class="fcsay"><b>' + esc([s.regime, s.label || humanize(s.group_id)
+        || "Seeded work"].filter(Boolean).join(" ")) + '</b> \u00b7 '
+      + esc(roundType(s)) + esc(vars) + ' \u00b7 ' + esc(where) + '</div>';
+  }).join("");
+  return '<div class="fcr seeds' + (run ? " run" : "") + '">'
+    + '<div class="fcb">S</div><div class="fcbody">'
+    + '<div class="fch"><span class="fcn">Seeds</span>'
+    + '<span class="chip gold">' + (run ? "running now" : "run first") + '</span></div>'
+    + lines
+    + '<div class="fcsay" style="color:var(--faint)">A seed runs before the schedule,'
+    + ' whichever block is active \u2014 the block resumes behind it untouched.</div>'
+    + '</div></div>';
+}
+
 function scheduleFlowchart(){
   const sch = schedule();
   const blocks = sch.blocks || [];
   const status = sch.status || "idle";
   const cur = Number(sch.cursor || 0);
   const running = (status === "running");
+  const seedStep = schedSeedStep();
   if(!blocks.length){
     return '<div class="card"><div class="card-in">'
       + '<div class="tlab">The plan</div>'
+      + (seedStep ? '<div class="fc" style="margin-top:4px">' + seedStep + '</div>' : "")
       + '<div class="tnote">No blocks yet. The builder is where a chain is made'
       + ' \u2014 each block targets buckets, narrows to certain groups and'
       + ' machines, and runs until its own condition is met.</div>'
@@ -8859,6 +8905,7 @@ function scheduleFlowchart(){
     + (running ? "on block " + (cur + 1) + " of " + blocks.length
                : esc(status)) + '</span></div>'
     + '<div class="fc" style="margin-top:4px">'
+    + seedStep
     + blocks.map(function(b, i){
         /* IDLE MEANS NOTHING HAS RUN, not "block 1 is active". `cursor` is 0 on
            a chain that was never started, so trusting it alone would light the
