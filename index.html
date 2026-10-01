@@ -1732,7 +1732,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-115359";
+const APP_BUILD = "20261001-143514";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3539,7 +3539,7 @@ function jobCard(r, rep, condensed, hint, cadence){
 /* THE CARDS UNDER ONE TASK'S CHIP -- a finished job's (renderResultsJob) and,
    since 2026-10-01, a running job's finished tasks (renderInProgressJob). One
    function, so the two pages cannot drift. */
-function taskBadges(tasks, open, rep){
+function taskBadges(tasks, open, rep, picked){
   if(!tasks.length) return "";
   const t = tasks[open];
   /* THE PER-CHIP BADGES. The panel above carries what belongs to the TASK
@@ -3558,7 +3558,8 @@ function taskBadges(tasks, open, rep){
          time rather than empty. */
       : graphBadge(t, rep) +
         /* How many non-backtest tasks the job has reached, this one included. */
-        optimizeBadge(t, tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length) +
+        optimizeBadge(t, tasks.slice(0, open + 1).filter(x => !isBacktest(x)).length,
+                      picked) +
         nextRoundBadge(t)) +
     graphFull(t, rep);
 }
@@ -3628,7 +3629,7 @@ function renderResultsJob(r){
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
     whyBadge(tasks.length ? tasks[0] : null, r) +
-    taskBadges(tasks, open, rep) +
+    taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style}) +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
        showing as a card that simply stops. The round happened -- its PF moved and
        the ledger recorded it -- but nothing tied its report folder to it, so
@@ -5790,7 +5791,12 @@ function optPasses(valid, d){
   return OPTSTATE.slice === "bottom" ? rows.slice(-20).reverse() : rows.slice(0, 20);
 }
 
-function optimizeBadge(t, nth){
+/* The digit a pass style or a sweep's kind ends in -- "2" / "3" for the second
+   and third passes, "" for the first. Read off the data, never spelled: this
+   repo is public and its leak scan refuses the style names (see isBacktest). */
+const passDigit = s => ((/(\d)$/.exec(String(s || "")) || [])[1]) || "";
+
+function optimizeBadge(t, nth, picked){
   const two = nth >= 2;
   const d = (t || {}).detail || {};
   const title = two ? "Second pass" : "The sweep";
@@ -5816,7 +5822,15 @@ function optimizeBadge(t, nth){
   const rows = optPasses(split.valid, d);
 
   const cad = d.cadence || {};
-  const assigned = cad.pass_number != null ? String(cad.pass_number) : null;
+  /* 2026-10-01 -- THE PASS THIS JOB APPLIED WINS, when it came from THIS sweep.
+     Trevor: *"why does it say pass 117"* -- he applied 81. The cadence row is
+     the round's own suggestion at best (115 here), and until this date's
+     task_detail fix it could be ANOTHER round's (117 was PASS1's, 09-06). A
+     job's pick belongs to the sweep whose number its style ends in. */
+  const own = picked && picked.pass != null &&
+    passDigit(picked.style) === passDigit((t || {}).kind) ? String(picked.pass) : null;
+  const assigned = own != null ? own
+    : cad.pass_number != null ? String(cad.pass_number) : null;
   const key = String((t || {}).at || title);
   const chosen = OPT_PICK[key] != null ? String(OPT_PICK[key]) : assigned;
   /* 🔴 THE FREE FIELD IS THE SAME HOLE WEARING A DIFFERENT HAT. The table can
@@ -5868,7 +5882,9 @@ function optimizeBadge(t, nth){
 
   return `<div class="card"><div class="card-in">
       <div class="tlab">${esc(title)}${
-        assigned ? " \u00b7 pass " + esc(assigned) + " assigned" : ""}</div>` +
+        assigned ? " \u00b7 pass " + esc(assigned) + (own != null ? " applied" : " assigned") : ""}${
+        own != null && cad.pass_number != null && String(cad.pass_number) !== own
+          ? " \u00b7 the round's top was " + esc(cad.pass_number) : ""}</div>` +
     (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
        the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
     statesAtNote(d) +
@@ -6905,11 +6921,18 @@ function stateChip(v){
   if(st === "PINNED"){
     const arrow = v.edge === "UPPER" ? " ↑" : v.edge === "LOWER" ? " ↓" : "";
     const sig = (v.sigma != null && isFinite(Number(v.sigma))) ? Number(v.sigma) : null;
-    label += arrow + (sig != null ? " " + esc(sig.toFixed(1)) + "σ" : "");
+    /* 2026-10-01 -- THE SIGN IS PART OF THE NUMBER. "-2.7σ" read as a strong
+       pin a second pass should chase; it is the opposite -- the edge did WORSE
+       than the value next to it. A plus is now written out, and the tip says
+       which way round it is. */
+    label += arrow + (sig != null ? " " + (sig > 0 ? "+" : "") + esc(sig.toFixed(1)) + "σ" : "");
     if(sig != null){
       weak = sig < SIGMA_BAR;
-      tip = weak ? "Below 2σ -- the edge may be noise; no second pass chases it."
-                 : "2σ or more -- a real pin; a second pass chases it.";
+      tip = sig < 0 ? "Negative -- the edge did worse than the value next to it; "
+                      + "no second pass chases it."
+          : weak ? "Below +2σ -- the edge may be noise; no second pass chases it."
+                 : "+2σ or more -- the edge beat the value next to it; a second "
+                   + "pass chases it.";
     }
   }
   return `<span class="tst ${stateClass(st)}${weak ? " weak" : ""}"${
@@ -8524,7 +8547,8 @@ function renderInProgressJob(key){
           esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
   return back + chips + ipCard(it, true) +
     (open >= 0
-      ? whyBadge(tasks[0], it) + taskBadges(tasks, open, rep)
+      ? whyBadge(tasks[0], it) + taskBadges(tasks, open, rep,
+          {pass: it.applied_pass, style: it.applied_pass_style})
       : `<div class="card"><div class="card-in"><div class="soon">No task of this job
           has finished yet — each one opens here as soon as it does.</div></div></div>`);
 }
