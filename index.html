@@ -1472,6 +1472,38 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-gst.on{color:var(--good);}
 .lv-gst.off{color:var(--faint);}
 
+/* how close to a trade (2026-10-01) */
+.lv-ent{padding:12px 13px 8px;gap:8px;}
+.lv-pill.near{background:rgba(224,180,87,.16);color:var(--gold);}
+.lv-pill.block{background:rgba(224,104,90,.16);color:var(--bad);}
+.lv-etot{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.lv-etot .lv-v{font-size:1.3rem;}
+.lv-etot .lv-need{font-size:.78rem;color:var(--dim);}
+.lv-etot .lv-need b{color:var(--text);font-weight:500;font-family:"Roboto Mono",ui-monospace,monospace;}
+.lv-etot .lv-pct{margin-left:auto;font-family:"Roboto Mono",ui-monospace,monospace;font-size:.82rem;
+  color:var(--gold);font-variant-numeric:tabular-nums;}
+.lv-etot .lv-pct.ok{color:var(--good);}
+/* The line sits at 80% of the track, so a score PAST it still has room to show. */
+.lv-meter{position:relative;height:8px;border-radius:999px;background:var(--card-2);overflow:hidden;}
+.lv-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--gold);}
+.lv-meter i.ok{background:var(--good);}
+.lv-meter b{position:absolute;left:80%;top:-2px;bottom:-2px;width:2px;background:var(--text);opacity:.8;}
+.lv-esteps{display:flex;flex-direction:column;border-top:1px solid var(--line);margin-top:2px;}
+.lv-erow{
+  display:grid;grid-template-columns:1.1rem 1fr auto;gap:2px 8px;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid var(--line);font-size:.76rem;
+}
+.lv-erow:last-child{border-bottom:0;}
+.lv-erow .mk{font-weight:700;text-align:center;}
+.lv-erow .mk.ok{color:var(--good);}
+.lv-erow .mk.no{color:var(--bad);}
+.lv-erow .mk.na{color:var(--faint);}
+.lv-erow .ev{font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;
+  color:var(--text);white-space:nowrap;}
+.lv-erow .ev small{color:var(--faint);font-size:.68rem;}
+.lv-erow .ed{grid-column:2 / -1;color:var(--faint);font-size:.7rem;line-height:1.4;}
+.lv-erow.skip{opacity:.55;}
+
 /* chart */
 .lv-chead{display:flex;align-items:baseline;gap:9px;padding:12px 13px 8px;flex-wrap:wrap;}
 .lv-sym{font-weight:700;letter-spacing:.02em;}
@@ -1737,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261001-150121";
+const APP_BUILD = "20261001-204013";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10404,6 +10436,7 @@ function lvSkeleton(){
     + '<div id="lvstatus" class="home"></div>'
     + '<div class="lv-stats" id="lvstats"></div>'
     + '<div class="card lv-tin" id="lvtin"></div>'
+    + '<div class="card lv-ent" id="lvent"></div>'
     + '<div class="card" id="lvchartcard">'
     +   '<div class="lv-chead" id="lvchead"></div>'
     +   '<div class="lv-controls">'
@@ -10502,6 +10535,7 @@ function lvPaint(){
   lvPaintStatus();
   lvPaintStats();
   lvPaintTin();
+  lvPaintEntry();
   lvPaintHead();
   lvPaintOpen();
   lvPaintHistory();
@@ -10620,6 +10654,122 @@ function lvPaintTin(){
   }).join("");
   el.innerHTML = head + `<div class="lv-line">${line}</div>` +
                  (rows ? `<div class="lv-gates">${rows}</div>` : "");
+}
+
+/* HOW CLOSE TO A TRADE (2026-10-01). Trevor: "I want to see how close we are to
+   taking a trade." The EA's own numbers, once a minute: whether its score has
+   turned hard enough to ARM, the three hard gates in the order it checks them,
+   and the final line -- the score times the session's weight against what it
+   needs. The EA reads it as if armed this minute, so the total is there even
+   when arming is what is missing. Thresholds arrive as data over the tailnet;
+   nothing here names an input. */
+const LV_SESS = {ASIAN: "Asian", LONDON: "London", LONDON_NY: "London/NY", NEW_YORK: "New York"};
+function lvEntryNum(v, d){ return v == null || !isFinite(Number(v)) ? "—" : Number(v).toFixed(d == null ? 3 : d); }
+function lvEntryRow(mark, label, val, need, note, skip){
+  const mk = mark === true ? '<span class="mk ok">✓</span>' : mark === false ? '<span class="mk no">✗</span>'
+                                                                   : '<span class="mk na">·</span>';
+  return `<div class="lv-erow${skip ? " skip" : ""}">${mk}<span>${label}</span>` +
+         `<span class="ev">${val}${need ? ` <small>${need}</small>` : ""}</span>` +
+         (note ? `<span class="ed">${note}</span>` : "") + `</div>`;
+}
+function lvPaintEntry(){
+  const el = document.getElementById("lvent");
+  if(!el) return;
+  const d = LV.data, ea = d && d.ea, e = ea && ea.entry;
+  const head = (pill, cls) => `<div class="lv-tinhead"><span class="lv-k">How close to a trade</span>` +
+    (e && e.candidate ? lvRegTag(e.candidate) : "") +
+    /* No side chip in a trade: it would read as the open trade's side. */
+    (e && e.dir && e.dir !== "NONE" && e.off !== "in_trade" ? `<span class="lv-dir"><span class="ar">${e.dir === "LONG" ? "▲" : "▼"}</span> ` +
+                                      `${e.dir === "LONG" ? "BUY" : "SELL"}</span>` : "") +
+    (pill ? `<span class="lv-pill ${cls}">${pill}</span>` : "") + `</div>`;
+  if(!d){ el.innerHTML = head("", "") + '<div class="lv-line">Waiting for the VPS.</div>'; return; }
+  if(!e){
+    el.innerHTML = head("", "") + '<div class="lv-line">The EA on the VPS doesn\'t report its entry score yet. ' +
+      'It shows here once the VPS runs the EA build from 10-01.</div>';
+    return;
+  }
+  const age = Number(d.served_gmt) + Math.floor((Date.now() - LV.at) / 1000) - Number(e.at_gmt);
+  const asOf = isFinite(age) ? ` <span style="color:var(--faint)">· as of ${lvAgo(Math.max(0, age))}</span>` : "";
+  const off = e.off || "none";
+  const OFF = {
+    in_trade: "In a trade. The EA holds one position at a time, so it isn't looking for an entry.",
+    history: "The EA is still loading its daily history, so no entries yet.",
+    blocked: "Entries are blocked: the EA found more than one of its own positions open.",
+    news: "Entries are paused for news.",
+    regime: `${esc(e.candidate)} trades are switched off on the VPS.`,
+  };
+  if(off === "in_trade" || (OFF[off] && e.block === "na")){
+    el.innerHTML = head(off === "in_trade" ? "In a trade" : "Paused", off === "in_trade" ? "on" : "off") +
+                   `<div class="lv-line">${OFF[off]}${asOf}</div>`;
+    return;
+  }
+  if(e.block === "na"){
+    el.innerHTML = head("", "") + `<div class="lv-line">${esc(e.candidate)} trades on its own scalp rules, ` +
+                   `which this card doesn't read yet.${asOf}</div>`;
+    return;
+  }
+  const a = e.arm || {}, g = e.gates || {};
+  const total = Number(e.total), need = Number(e.total_min), w = Number(e.session_w);
+  const have = isFinite(total) && isFinite(need) && need > 0;
+  const pct = have ? total / need : null;
+  const over = have && total >= need;
+  const armed = a.armed === true;
+  const gateNames = {slope: "slope", htf: "higher-timeframe", health: "health score"};
+  let pill, cls, say;
+  if(OFF[off] || off === "gate"){
+    pill = "Off"; cls = "off";
+    say = off === "gate" ? `${esc(e.candidate)} isn't armed, so no trade opens whatever the score. ` +
+                           `These are the numbers it would trade on.` : OFF[off];
+  } else if(gateNames[e.block]){
+    pill = "Blocked"; cls = "block";
+    say = `Stopped at the ${gateNames[e.block]} gate, so the score counts as zero until that passes.`;
+  } else if(over && armed){
+    pill = "Ready"; cls = "on";
+    say = "Armed and over the line: a trade opens unless a check before the score stops it.";
+  } else if(over){
+    pill = "Waiting to arm"; cls = "near";
+    say = "The score clears the line. It trades once the score turns hard enough to arm (first row).";
+  } else {
+    pill = armed ? "Armed · below" : "Below the line"; cls = pct != null && pct >= 0.75 ? "near" : "off";
+    say = armed ? "Armed, but the score is under the line." : "Not armed, and the score is under the line.";
+  }
+  const fill = have ? Math.max(0, Math.min(1, pct * 0.8)) * 100 : 0;
+  const sess = LV_SESS[e.session] || esc(e.session || "");
+  const perScore = have && w > 0 ? need / w : null;
+  const tot = `<div class="lv-etot"><span class="lv-v">${lvEntryNum(e.total, 4)}</span>` +
+    `<span class="lv-need">needs <b>${lvEntryNum(e.total_min, 4)}</b></span>` +
+    (have ? `<span class="lv-pct${over ? " ok" : ""}">${Math.round(pct * 100)}%</span>` : "") + `</div>` +
+    `<div class="lv-meter" role="img" aria-label="${have ? Math.round(pct * 100) : 0}% of the line">` +
+    `<i class="${over ? "ok" : ""}" style="width:${fill.toFixed(1)}%"></i><b></b></div>` +
+    `<div class="lv-line">Score <b>${lvEntryNum(e.blend, 4)}</b> × ${sess} session <b>×${lvEntryNum(w, 2)}</b>` +
+    (perScore != null ? ` · this session the score needs <b>${lvEntryNum(perScore, 4)}</b>` : "") + `</div>`;
+  /* The rows, in the EA's order. A gate after the one that stopped it was never
+     checked this minute: shown dimmed with no mark, never as a pass. */
+  const order = ["slope", "htf", "health"];
+  const stopAt = order.indexOf(e.block);
+  const gRow = (k, label, what) => {
+    const x = g[k] || {}, i = order.indexOf(k);
+    if(stopAt >= 0 && i > stopAt) return lvEntryRow(null, label, "not checked", "", "", true);
+    const ok = x.value != null && x.min != null ? Number(x.value) >= Number(x.min) : null;
+    return lvEntryRow(ok, label, lvEntryNum(x.value), x.min != null ? "needs " + lvEntryNum(x.min) : "", what);
+  };
+  const armOk = armed ? true : (a.vel != null && a.vel_min != null && a.acc != null && a.acc_min != null
+    && Number(a.vel) > Number(a.vel_min) && Number(a.acc) > Number(a.acc_min) ? null : false);
+  const rows =
+    lvEntryRow(armOk, "Armed", armed ? "yes" : "no",
+      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} signals` : "",
+      `Score turning: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
+      `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`) +
+    gRow("slope", "Slope gate", "D1/H4 trend in the trade's direction.") +
+    gRow("htf", "Higher timeframes", "H1/H4/D1 agreeing with the trade.") +
+    gRow("health", "Health score", "Size of the score itself.") +
+    lvEntryRow(have ? over : null, "Total × session", lvEntryNum(e.total, 4),
+      "needs " + lvEntryNum(e.total_min, 4),
+      stopAt >= 0 ? "Zero while a gate above is failing." :
+      `Score ${lvEntryNum(e.blend, 4)} = slope, health, MACD ${lvEntryNum(e.macd, 1)} and squeeze ` +
+      `${lvEntryNum(e.volc, 2)} blended, × confluence ${lvEntryNum(e.conf, 2)}.`);
+  el.innerHTML = head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot +
+                 `<div class="lv-esteps">${rows}</div>`;
 }
 
 function lvPaintHead(){
