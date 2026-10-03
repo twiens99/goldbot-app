@@ -1769,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261003-111722";
+const APP_BUILD = "20261003-134727";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11865,7 +11865,8 @@ function holdNote(blindSnap){
 }
 
 function liveStamp(){
-  return "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
+  return "live · " + (SNAP_SOURCE ? SNAP_SOURCE + " · " : "")
+       + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
        + " · epoch " + EPOCH + SNAP_NOTE + REFRESH_NOTE + " · app " + APP_BUILD;
 }
 
@@ -11948,7 +11949,8 @@ function applySnapshot(d, source){
      nine-minute-old snapshot looking exactly like a live one -- which is what
      it did. Recomputed on every repaint, so the poll below keeps it honest. */
   LAST_SNAPSHOT = d;
-  paint(source + " · " + fmtWhen(d.generated_at) + snapAge(d) +
+  paint(source + (source === "live" && SNAP_SOURCE ? " · " + SNAP_SOURCE : "") +
+        " · " + fmtWhen(d.generated_at) + snapAge(d) +
         " · epoch " + EPOCH + (source === "live" ? SNAP_NOTE + REFRESH_NOTE : ""));
   return true;
 }
@@ -11982,6 +11984,56 @@ async function fromArtifactDb(){
   }catch(e){ return false; }
 }
 
+/* WHERE THE SNAPSHOT COMES FROM (2026-10-03). Trevor: *"I actually wouldn't
+   mind doing that almost all the time, and use the gist as backup only."*
+   FIRST the Laptop, over the tailnet: GET /snapshot is the newest snapshot it
+   built -- every ~20 s, kept gzipped by app_snapshot, ~250 KB a read against
+   the gist's 2.4 MB, and no GitHub budget spent (100 gist updates an hour for
+   the whole account froze this page :40 -> :57 every hour until 10-03). The
+   GIST only when the Laptop does not answer, has no copy, or its copy is BLIND
+   or older than LAPTOP_STALE_S; then the newer of the two wins. A Laptop that
+   failed is left alone for LAPTOP_RETRY_MS, so a phone with Tailscale off
+   does not wait on it every poll. The stamp names the source. */
+const LAPTOP_STALE_S = 180;
+const LAPTOP_RETRY_MS = 2 * 60 * 1000;
+let LAPTOP_DOWN_UNTIL = 0;
+let SNAP_SOURCE = "";
+async function fromLaptop(first){
+  const base = apiBase();
+  if(!base || Date.now() < LAPTOP_DOWN_UNTIL) return null;
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  /* For the ANSWER, short on the opening load: the screen is blank and the
+     gist is waiting. A Laptop that is up answers in well under a second (the
+     file is already built); one asleep on the tailnet never answers at all.
+     The download then gets its own, longer, allowance. */
+  let timer = ctl ? setTimeout(() => ctl.abort(), first ? 3000 : 8000) : null;
+  try{
+    const r = await fetch(base + "/snapshot", {cache: "no-store",
+                                               signal: ctl ? ctl.signal : undefined});
+    if(timer){ clearTimeout(timer); timer = setTimeout(() => ctl.abort(), 30000); }
+    if(!r.ok){ LAPTOP_DOWN_UNTIL = Date.now() + LAPTOP_RETRY_MS; return null; }
+    const d = await r.json();
+    return (d && d.kind === "goldbot.app.snapshot") ? d : null;
+  }catch(e){
+    LAPTOP_DOWN_UNTIL = Date.now() + LAPTOP_RETRY_MS;
+    return null;
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
+}
+async function fromGist(){
+  if(!GIST_URL) return {err: "nosource"};
+  try{
+    // ?t= defeats the raw URL's 5-minute CDN cache (verified 200).
+    const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache: "no-store"});
+    if(!r.ok) return {err: "HTTP " + r.status};
+    return {d: await r.json()};
+  }catch(e){ return {err: "offline"}; }
+}
+function laptopUsable(d){
+  return !!d && !snapBlindS(d) && (Date.now() / 1000 - snapGenS(d)) < LAPTOP_STALE_S;
+}
+
 /* ONE FETCH WAS THE WHOLE PROBLEM. This ran once, at load, and nothing ever
    re-read the gist -- so an open page was frozen at whatever the snapshot said
    when you opened it. Telegram announced a round instantly while the app still
@@ -11994,26 +12046,40 @@ async function fromArtifactDb(){
    wipe the screen -- the stamp is already saying how old the data is, and stale
    numbers beat an error page over the top of them. */
 async function loadLive(first){
-  if(!GIST_URL){
-    if(first){
-      showState("This page has no data source.<br><br>It needs the snapshot id in " +
-                "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
-      document.getElementById("stamp").textContent = "no source";
-    }
-    return;
-  }
-  try{
-    // ?t= defeats the raw URL's 5-minute CDN cache (verified 200).
-    const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache: "no-store"});
-    if(!r.ok){
-      if(first) showState("Snapshot unreachable — HTTP " + r.status + ".");
+  let fetched = null, source = "";
+  const lap = await fromLaptop(first);
+  if(laptopUsable(lap)){ fetched = lap; source = "Laptop"; }
+  else{
+    const g = await fromGist();
+    if(g.d){
+      fetched = g.d; source = "GitHub";
+      /* A Laptop copy past LAPTOP_STALE_S that can still see beats an OLDER gist. */
+      if(lap && !snapBlindS(lap) && snapGenS(lap) > snapGenS(g.d)){
+        fetched = lap; source = "Laptop";
+      }
+    }else if(lap){ fetched = lap; source = "Laptop"; }
+    else{
+      if(first){
+        if(g.err === "nosource"){
+          showState("This page has no data source.<br><br>It needs the snapshot id in " +
+                    "the link: <b>#g=&lt;id&gt;</b><br>Open it from your saved shortcut.");
+          document.getElementById("stamp").textContent = "no source";
+        }else if(g.err === "offline"){
+          showState("Could not load the snapshot.<br><br>Offline, or the id in the " +
+                    "link is wrong.");
+        }else{
+          showState("Snapshot unreachable — " + g.err + ".");
+        }
+      }
       return;
     }
-    const fetched = await r.json();
+  }
+  try{
+    SNAP_SOURCE = source;
     let d = chooseSnapshot(fetched);
     if(d === fetched && snapBlindS(fetched)){
       const back = await seeingFromHistory(fetched);
-      if(back){ d = back; SNAP_NOTE = holdNote(fetched); }
+      if(back){ d = back; SNAP_NOTE = holdNote(fetched); SNAP_SOURCE = "GitHub"; }
     }
     /* HOLDING WHAT IS ALREADY ON SCREEN: nothing new to paint, and a full
        repaint every 20 s would reset whatever you were scrolling. The stamp
@@ -12040,15 +12106,13 @@ async function loadLive(first){
    getting immediate telegram notifications. But the app isn't updating for a
    few minutes later ... if I refresh the goldbot page. It also asks for any and
    all timers to be reset, and immediately updated."*
-   The gist holds only what was last PUBLISHED, and between an event and a
-   publish sit the beacon (20 s), the publisher's wake (20 s), its floor and its
-   skip-if-unchanged. So a load also leaves a refresh with the Laptop: every
-   machine runs its timed checks now and publishes past its floor
-   (app_refresh.py). Then this asks the Laptop -- a few hundred bytes, never the
-   2.4 MB snapshot -- every REFRESH_POLL_MS whether it has published a snapshot
-   BUILT AFTER the request, and reads the gist once when it has.
+   So a load also leaves a refresh with the Laptop: every machine runs its timed
+   checks now, the beacons beat, and the Laptop builds a snapshot past its floor
+   (app_refresh.py). Then this asks the Laptop -- a few hundred bytes -- every
+   REFRESH_POLL_MS whether it has BUILT one after the request, and reads it once
+   (fromLaptop) when it has. No GitHub budget is spent on a refresh.
    No link, no Tailscale, or a Laptop whose tray predates the route (404):
-   nothing changes, and the 20 s poll carries on as before. */
+   nothing changes, and the 20 s poll carries on. */
 const REFRESH_POLL_MS = 2000;
 const REFRESH_GIVE_UP_MS = 90000;
 /* Only the NEWEST refresh may clear the note: an older one finishing must not
@@ -12083,20 +12147,16 @@ async function askFleetRefresh(){
       await new Promise(r => setTimeout(r, REFRESH_POLL_MS));
       const s = await refreshStatus(base);
       /* Against OUR request's time, not `done`: a second reload may have
-         replaced the request on the Laptop, and either publish answers this one. */
-      if(s && (Number(s.published_at) || 0) >= at){
+         replaced the request on the Laptop, and either build answers this one. */
+      if(s && (Number(s.built_at) || 0) >= at){
+        LAPTOP_DOWN_UNTIL = 0;            // it just answered
         await loadLive(false);
         return;
       }
-      /* THE FORCED PUBLISH WAS REFUSED -- GitHub allows 100 gist updates an
-         hour for the whole fleet (app_snapshot.GIST_RESERVE). Say so, and when
-         it lifts, rather than wait out the timeout in silence. */
-      if(s && s.forced && s.forced.ok === false){
-        const until = Number(s.blocked_until) || 0;
-        setRefreshNote(" · " + (until > Date.now() / 1000
-          ? "GitHub's hourly limit — next update after "
-            + new Date(until * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
-          : "the Laptop could not publish"));
+      /* THE BUILD FOR THIS REFRESH FAILED. Say so rather than wait out the
+         timeout in silence; the 20 s poll carries on with what there is. */
+      if(s && s.failed){
+        setRefreshNote(" · the Laptop could not refresh");
         await new Promise(r => setTimeout(r, 10000));
         return;
       }
