@@ -1769,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261003-134727";
+const APP_BUILD = "20261003-135054";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12147,8 +12147,12 @@ async function askFleetRefresh(){
       await new Promise(r => setTimeout(r, REFRESH_POLL_MS));
       const s = await refreshStatus(base);
       /* Against OUR request's time, not `done`: a second reload may have
-         replaced the request on the Laptop, and either build answers this one. */
-      if(s && (Number(s.built_at) || 0) >= at){
+         replaced the request on the Laptop, and either build answers this one.
+         `published_at` when there is no `built_at`: a Laptop whose tray took
+         the 10-03 11:17 shelf answers the older way (a forced gist publish)
+         until its next job boundary, and that still answers this reload. */
+      const doneAt = s ? (s.built_at != null ? Number(s.built_at) : Number(s.published_at)) : 0;
+      if(s && (doneAt || 0) >= at){
         LAPTOP_DOWN_UNTIL = 0;            // it just answered
         await loadLive(false);
         return;
