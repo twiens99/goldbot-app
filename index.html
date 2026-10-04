@@ -1769,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261003-152414";
+const APP_BUILD = "20261003-182151";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4368,7 +4368,8 @@ function pickCard(pk){
               — or reply to this round's alert with just the pass number.</li>
           </ol>`}
           ${none ? "" : sendForm({regime: pk.regime, bucket_id: pk.bucket_id,
-            group_id: pk.group_id, mode: "confirm", round: roundOf(pk.rel_dir)})}
+            group_id: pk.group_id, mode: "confirm", round: pickRound(pk),
+            since: pk.since})}
         </div>
       </div>
     </article>` + ((pk.passes || []).length ? optimizeBadge(t, 1) : "");
@@ -8357,11 +8358,40 @@ function sendErr(err){
   return String(err || "refused") + " Nothing changed.";
 }
 
+/* 2026-10-03 -- A PICK BELONGS TO ONE ROUND. Trevor: *"When the app says pass
+   81 is already picked (previous round) that's confusing."* A seeded narrow
+   round (PASS3) finished waiting on a pick, and its card said "✓ Pass 81
+   applied 10-01" -- PASS2's pick, found by GROUP. A record counts on
+   a card only for the card's round: by name when both say one, else by time (a
+   pick cannot be sent before its round went pending). A card that knows
+   neither keeps the old rule. */
+function pickIsThisRounds(rec, o){
+  if(!rec || !o) return true;
+  const want = String(o.round || "").toUpperCase();
+  const got = String(rec.round || "").toUpperCase();
+  if(want && got) return want === got;
+  const since = Number(o.since);
+  const at = rec.requested_at ? Date.parse(rec.requested_at) : Number(rec.at);
+  if(since > 0 && isFinite(at)) return at >= since * 1000 - 60000;
+  return true;
+}
+
+/* The round a pending pick is FOR: the publisher names it (`round`, 10-03); an
+   older publisher only names the report folder, and the in-progress list
+   carries it too. */
+function pickRound(pk){
+  const ip = IN_PROGRESS.find(it => it.awaiting_pick && pkey(it) === pkey(pk));
+  return String(pk.round || "").toUpperCase() || roundOf(pk.rel_dir) ||
+         String((ip && ip.round) || "").toUpperCase();
+}
+
 /* The newest thing known about this group's pick: what THIS visit sent, or
-   the snapshot's record once it catches up. */
-function sendRecord(key){
-  const loc = SEND.local[key];
-  const snap = APP_PICKS.find(p => pkey(p) === key);
+   the snapshot's record once it catches up -- for THIS round (pickIsThisRounds). */
+function sendRecord(key, o){
+  let loc = SEND.local[key];
+  if(loc && !pickIsThisRounds(loc, o)) loc = null;
+  let snap = APP_PICKS.find(p => pkey(p) === key);
+  if(snap && !pickIsThisRounds(snap, o)) snap = null;
   const snapAt = snap ? Date.parse(snap.requested_at || "") : NaN;
   if(snap && (!loc || (isFinite(snapAt) && snapAt >= loc.at - 60000)))
     return Object.assign({src: "snap"}, snap);
@@ -8369,7 +8399,7 @@ function sendRecord(key){
 }
 
 function sendStatusLine(key, o){
-  const s = sendRecord(key);
+  const s = sendRecord(key, o);
   if(!s) return "";
   if(s.src === "local"){
     if(s.state === "sending")
@@ -8478,15 +8508,16 @@ function syncSendBtn(btn){
 async function sendPick(o, n){
   const key = pkey(o);
   SEND.arm = null; SEND.busy = key;
-  SEND.local[key] = {pass: n, state: "sending", at: Date.now()};
+  const round = o.round || null;
+  SEND.local[key] = {pass: n, state: "sending", at: Date.now(), round: round};
   repaintCards();
   const res = await apiCall("/pick", {
     regime: o.regime, bucket_id: o.bucket_id, group_id: o.group_id,
     pass_number: n, override: o.mode === "override",
     round: o.round || undefined, by: "app"});
   SEND.busy = null;
-  SEND.local[key] = res.ok ? {pass: n, state: "sent", at: Date.now()}
-                           : {pass: n, state: "error", msg: res.error, at: Date.now()};
+  SEND.local[key] = res.ok ? {pass: n, state: "sent", at: Date.now(), round: round}
+                           : {pass: n, state: "error", msg: res.error, at: Date.now(), round: round};
   if(res.ok) delete SEND.typed[key];
   repaintCards();
 }
