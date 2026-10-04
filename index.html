@@ -1769,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261003-182151";
+const APP_BUILD = "20261003-212135";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3665,7 +3665,7 @@ function renderResultsJob(r){
        seed explains why the whole job exists, so it does NOT change with the
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
-    whyBadge(tasks.length ? tasks[0] : null, r) +
+    whyBadge(whyTask(tasks), r) +
     taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style}) +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
        showing as a card that simply stops. The round happened -- its PF moved and
@@ -5527,6 +5527,12 @@ function graphFull(t, rep){
    A ROTATION ROUND STILL GETS A LINE. Returning "" for anything unseeded would
    render "the scheduler picked this in its normal order" and "the seed data
    never reached the app" identically, and those are opposite problems. */
+/* WHICH TASK EXPLAINS THE JOB: the first that carries a seed, else the first.
+   2026-10-03 -- a seeded second pass's job opens with round one's sweep, which
+   was nobody's seed; its own sweep (second) carries the reason. */
+const whyTask = tasks => (tasks || []).find(x => x && x.detail && x.detail.seed) ||
+  (tasks && tasks.length ? tasks[0] : null);
+
 function whyBadge(t, r){
   const sd = ((t || {}).detail || {}).seed;
   if(!sd){
@@ -5865,8 +5871,15 @@ function optimizeBadge(t, nth, picked){
      the round's own suggestion at best (115 here), and until this date's
      task_detail fix it could be ANOTHER round's (117 was PASS1's, 09-06). A
      job's pick belongs to the sweep whose number its style ends in. */
-  const own = picked && picked.pass != null &&
-    passDigit(picked.style) === passDigit((t || {}).kind) ? String(picked.pass) : null;
+  /* 2026-10-03 -- A SEEDED SECOND PASS'S JOB (published `from_pass` on round
+     one's sweep, `seed_sweep` on the job's own). The job's pick is a pass of its
+     OWN sweep; round one's sweep names the pass THAT round applied. */
+  const from = (t || {}).from_pass || null;
+  const own = from
+    ? ((t.from_picked != null) ? String(t.from_picked) : null)
+    : picked && picked.pass != null &&
+      ((t || {}).seed_sweep || passDigit(picked.style) === passDigit((t || {}).kind))
+      ? String(picked.pass) : null;
   const assigned = own != null ? own
     : cad.pass_number != null ? String(cad.pass_number) : null;
   const key = String((t || {}).at || title);
@@ -5923,6 +5936,9 @@ function optimizeBadge(t, nth, picked){
         assigned ? " \u00b7 pass " + esc(assigned) + (own != null ? " applied" : " assigned") : ""}${
         own != null && cad.pass_number != null && String(cad.pass_number) !== own
           ? " \u00b7 the round's top was " + esc(cad.pass_number) : ""}</div>` +
+    (from ? `<div class="sub" style="margin:0 0 2px">From ${esc(from)} — the round
+       this job's seeded second pass continues${own != null ? `; it applied pass
+       ${esc(own)}` : ""}. Its own backtests are that round's row on Results.</div>` : "") +
     (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
        the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
     statesAtNote(d) +
@@ -7524,7 +7540,8 @@ function renderTimeline(tl){
       : r.status === "running" ? "running now" : "";
     /* Tappable only when there is a card behind it -- a row that opens an
        empty panel teaches you not to tap the ones that are not empty. */
-    const card = taskCard(r, tl.rel_dir);
+    /* A stitched round one lives in its own folder (2026-10-03). */
+    const card = taskCard(r, r.rel_dir || tl.rel_dir);
     return `<div class="tlr ${esc(r.status)}${r.inferred ? " inferred" : ""}${
         card ? " tappable" : ""}"${card ? ' data-task' : ""}>
         <div class="tlm">${ROUND_MARK[r.status] || ""}</div>
@@ -7532,7 +7549,7 @@ function renderTimeline(tl){
           <div class="tlh"><span class="tlk">${esc(phaseText(r.kind))}</span>` +
           (r.at ? `<span class="tlw">${esc(fmtWhen(r.at))}</span>` : "") + `</div>` +
           (note ? `<div class="tlnote">${esc(note)}</div>` : "") +
-          reportButtons(r, tl.rel_dir) + card + `</div>
+          reportButtons(r, r.rel_dir || tl.rel_dir) + card + `</div>
       </div>`;
   }).join("");
   /* WHICH PASS, because a group is deliberately re-run and "it passed"
@@ -8614,7 +8631,7 @@ function renderInProgressJob(key){
           esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
   return back + chips + ipCard(it, true) +
     (open >= 0
-      ? whyBadge(tasks[0], it) + taskBadges(tasks, open, rep,
+      ? whyBadge(whyTask(tasks), it) + taskBadges(tasks, open, rep,
           {pass: it.applied_pass, style: it.applied_pass_style})
       : `<div class="card"><div class="card-in"><div class="soon">No task of this job
           has finished yet — each one opens here as soon as it does.</div></div></div>`);
