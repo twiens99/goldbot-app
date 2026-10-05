@@ -84,6 +84,13 @@ h1{
   font-size:.68rem;color:var(--faint);
   font-family:"Roboto Mono",ui-monospace,monospace;
 }
+/* 2026-10-05 -- NO SCHEDULE IS LOUD. See noScheduleReason. */
+.nosched{
+  display:block;width:100%;margin-top:7px;text-align:left;cursor:pointer;
+  font:inherit;font-size:.8rem;font-weight:700;line-height:1.4;color:var(--bg);
+  background:var(--bad);border:0;border-radius:6px;padding:7px 9px;
+}
+.nosched[hidden]{display:none;}
 .baked{
   margin-top:7px;
   font-size:.7rem;color:var(--warn);
@@ -1717,6 +1724,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     </div>
     <div class="stamp" id="stamp"></div>
     <div class="baked" id="banner" hidden></div>
+    <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
   </header>
 
   <main>
@@ -1769,7 +1777,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-092538";
+const APP_BUILD = "20261005-095832";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4224,7 +4232,6 @@ function queueChips(q){
   const out = [];
   if(q.kind) out.push(String(q.kind).toUpperCase());
   if(q.source === "seed") out.push("SEEDED");
-  if(q.source === "block") out.push("BLOCK");
   if(q.source === "backtest") out.push("OWED");
   if(q.rider) out.push("RIDER");
   return out;
@@ -4271,8 +4278,6 @@ function queueCard(q){
       ? "The schedule’s ranking right now. Whichever machine frees up first "
         + "takes one of the top few, and an owed second pass or a peer’s lane "
         + "can step ahead of it — so the order is a best reading, not a promise."
-    : q.source === "block"
-      ? "A line in the block file — these run in file order, ahead of the schedule."
     : q.source === "backtest"
       ? "This round’s pass is applied and its two readings are owed. They run "
         + "before any new round. Nothing is swept; every variable is measured."
@@ -7839,6 +7844,33 @@ let SETTINGS_STATE = {bucket_priority: {mode: "off",
                       lease_extensions: {}};
 let LEASES = [];
 let BUCKET_SHARES = [];
+
+/* 2026-10-05 -- NO SCHEDULE IS LOUD. Trevor: *"If the schedule ends, fall back to
+   regular rotation, and scream loudly that there is no schedule."* "" while a
+   chain is running a block; otherwise why not, in the same words the Telegram
+   alarm uses (schedule_builder.no_schedule_reason). Shown in the header on every
+   page, not only home -- and only once settings have actually loaded, so a page
+   still waiting on its first snapshot does not cry wolf. */
+function noScheduleReason(){
+  if(!SETTINGS_STATE || SETTINGS_STATE.schedule === undefined) return "";
+  const sch = schedule();
+  const n = (sch.blocks || []).length;
+  if(!n) return "no schedule has been built";
+  const status = sch.status || "idle";
+  if(status === "running"){
+    const cur = Number(sch.cursor || 0);
+    return (cur >= 0 && cur < n) ? "" : "the schedule has run past its last block";
+  }
+  return status === "finished" ? "the schedule finished" : "the schedule is stopped";
+}
+function paintNoSchedule(){
+  const el = document.getElementById("nosched");
+  if(!el) return;
+  const why = noScheduleReason();
+  el.hidden = !why;
+  if(why) el.textContent = "\u{1F6A8} NO SCHEDULE \u2014 " + why.charAt(0).toUpperCase()
+    + why.slice(1) + ". The fleet is on the regular rotation. Tap to open Schedule.";
+}
 
 function scheduleSummary(){
   const sch = schedule();
@@ -11790,6 +11822,7 @@ function paint(stamp){
   document.getElementById("hsub").textContent =
     FLEET.length + " running · " + campaignProgress();
   document.getElementById("banner").hidden = true;
+  paintNoSchedule();
 }
 
 let LAST_SNAPSHOT = null;
