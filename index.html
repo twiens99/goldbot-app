@@ -273,6 +273,17 @@ button.chip.on::before{content:"\2713\00a0";}
 .v.rider{color:var(--gold);}
 .v.rider::before{background:var(--gold);}
 
+/* 2026-10-05 -- THE MACHINE'S OWN AGENTS (agentsPanel). One square per agent
+   this round: gold running a pass, dark idle. */
+.agline{display:flex;gap:6px;align-items:center;width:100%;background:none;border:0;
+  padding:0;color:var(--dim);font:inherit;font-size:.78rem;text-align:left;cursor:pointer;}
+.agline b{color:var(--gold);}
+.agstrip{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;}
+.agsq{width:9px;height:9px;border-radius:2px;background:var(--line);}
+.agsq.on{background:var(--gold);}
+.agrow{display:flex;justify-content:space-between;gap:8px;font-size:.74rem;
+  color:var(--dim);padding:3px 0;border-top:1px solid var(--line);}
+.agrow:first-of-type{margin-top:6px;}
 .warnrow{
   font-size:.78rem;color:var(--warn);line-height:1.42;font-weight:500;
   display:flex;gap:7px;align-items:flex-start;
@@ -1801,7 +1812,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-141251";
+const APP_BUILD = "20261005-150434";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3303,6 +3314,47 @@ function haltPanel(h){
     </div>`;
 }
 
+/* 2026-10-05 -- THIS MACHINE'S OWN AGENTS, LIVE. Trevor: *"Is there a way for
+   the app to actually tell us how many of the agents are actually being
+   utilized? Or the status of each agent?"* From each agent's own MT5 log, read
+   by the machine's running job (agent_activity) and carried on its beacon.
+   "Used" = active since this phase began; an agent that is switched off, or
+   was never handed a pass, is "not used". A GENETIC round keeps only ~10-14
+   agents busy whatever the machine has -- a half-dark strip there is the
+   search, not a fault. Tap the line for each agent's own row. */
+const AGENTS_OPEN = {};
+function agentsPanel(f){
+  const a = f && f.agents_local;
+  if(!a || !a.total) return "";
+  const used = (a.agents || []).filter(x => x && x[1] !== "u");
+  if(!used.length) return "";
+  const now = Date.now() / 1000;
+  const pct = a.used ? Math.round(100 * a.busy / a.used) : 0;
+  const open = !!AGENTS_OPEN[f.machine];
+  const strip = used.map(x =>
+    `<span class="agsq${x[1] === "b" ? " on" : ""}"></span>`).join("");
+  const rows = open ? used.map(x =>
+    `<div class="agrow"><span>Agent ${esc(String(x[0]))}</span><span>${
+      x[1] === "b" ? "running a pass " + esc(dur(now - x[2]))
+                   : "idle " + esc(dur(now - x[2]))}</span><span>${
+      esc(String(x[3]))} done</span></div>`).join("") : "";
+  return `<div><button type="button" class="agline" data-agents="${esc(f.machine)}">`
+    + `Agents: <b>${a.busy}</b> of ${a.used} busy (${pct}%)`
+    + (a.total > a.used ? ` · ${a.total - a.used} not used` : "")
+    + `<span class="sp"></span>${open ? "▾" : "▸"}</button>`
+    + `<div class="agstrip">${strip}</div>${rows}</div>`;
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-agents]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const m = t.dataset.agents;
+  AGENTS_OPEN[m] = !AGENTS_OPEN[m];
+  document.getElementById("page-home").innerHTML = renderHome();
+  document.getElementById("page-active").innerHTML = renderActive();
+});
+
 function machineCard(f){
     const rc = RC[f.regime] || "";
     const live = running(f);
@@ -3389,6 +3441,7 @@ function machineCard(f){
                    ["Jobs done", jobsDone(f.regime, f.bucket_id)],
                    ["In phase", phaseFor(f)]])}
         ${progressBar(f, rc)}
+        ${agentsPanel(f)}
         ${etaNote(f)}
         ${passPick(f)}
         ${(f.seed && (f.seed.variables || []).some(v => v && v.min != null))
@@ -3522,7 +3575,23 @@ function jobVariables(rep, openTask){
    the PF moved, and how recently. Mode and Took stay because they qualify the PF
    beside them -- an OHLC number and a real-tick number are not comparable, and a
    two-hour job and a three-day job are different claims about the same delta. */
-const JOB_META_CONDENSED = ["Mode", "Took"];
+const JOB_META_CONDENSED = ["Mode", "Took", "Efficiency"];
+
+/* 2026-10-05 -- HOW EFFICIENT THE SWEEP WAS. Trevor: *"I'd like to see what
+   efficiency each round is ... I don't want core hours, I want a percentage."*
+   The share of the agents' time spent running passes (the fleet's own task
+   records; a genetic round idles agents at every generation's tail). MEASURED
+   ONLY: a round older than MT5's ~7-day log has none and shows nothing. The
+   machine is named when it is not the card's -- the sweep's machine can differ
+   from the one that applied and measured the round. */
+function effText(r){
+  const e = r && r.efficiency;
+  if(!e || e.pct == null) return null;
+  return e.pct + "%"
+    + (e.second_pct != null ? " (2nd pass " + e.second_pct + "%)" : "")
+    + (e.agents ? " · " + e.agents + " agents" : "")
+    + (e.machine && e.machine !== r.machine ? " on " + e.machine : "");
+}
 
 /* 2026-09-29 (item 71) -- a pass number WITH the pass it is a row of. A style
    ending in 2: the round's second pass landed and its winner was applied, so the
@@ -3554,6 +3623,7 @@ function jobCard(r, rep, condensed, hint, cadence){
        caveat as a task's: it is the gap between reports, so it misses whatever
        ran before the first one. */
     ["Took", jobSpan(rep.tasks)],
+    ["Efficiency", effText(r)],
   ].filter(c => !condensed || JOB_META_CONDENSED.indexOf(c[0]) >= 0);
 
   const pfBlock = (lab, before, after) =>
