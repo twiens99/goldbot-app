@@ -84,6 +84,30 @@ h1{
   font-size:.68rem;color:var(--faint);
   font-family:"Roboto Mono",ui-monospace,monospace;
 }
+/* 2026-10-05 -- Insert seed. See renderSeedBuilder. */
+.seedv{border-top:1px solid var(--line);padding:8px 0;}
+.seedv.off .seedv-n{color:var(--dim);}
+.seedv-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.seedv-n{font-weight:600;font-size:.86rem;overflow-wrap:anywhere;}
+.seedv-m{font-size:.75rem;color:var(--dim);margin:3px 0 0 32px;}
+.seedck{width:24px;height:24px;flex:0 0 24px;border-radius:6px;border:1.5px solid var(--dim);
+  background:transparent;color:var(--bg);font-weight:800;cursor:pointer;padding:0;line-height:1;}
+.seedck.on{background:var(--gold);border-color:var(--gold);}
+.seedsls{margin:6px 0 0 32px;display:flex;flex-direction:column;gap:4px;}
+.seedsl{display:flex;align-items:center;gap:8px;}
+.seedsl-l{width:44px;flex:0 0 44px;font-size:.72rem;color:var(--dim);}
+.seedsl input[type=range]{flex:1;min-width:0;accent-color:var(--gold);}
+.seedsl-v{width:64px;flex:0 0 64px;text-align:right;font-family:"Roboto Mono",ui-monospace,monospace;font-size:.75rem;}
+.seedsearch{width:100%;box-sizing:border-box;margin-top:6px;padding:8px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:.85rem;}
+.seedhit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;
+  background:transparent;border:0;border-top:1px solid var(--line);padding:7px 2px;color:var(--text);font:inherit;cursor:pointer;}
+.seedhit span{font-size:.72rem;color:var(--dim);}
+.seeddates{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;}
+.seeddates input{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);
+  color:var(--text);font:inherit;color-scheme:dark;}
+.seedstatus{margin-top:12px;padding:9px 10px;border-radius:8px;background:var(--tonal);font-size:.8rem;line-height:1.45;}
+.linkbtn{background:none;border:0;color:var(--gold);font:inherit;font-size:inherit;padding:0;cursor:pointer;text-decoration:underline;}
 /* 2026-10-05 -- NO SCHEDULE IS LOUD. See noScheduleReason. */
 .nosched{
   display:block;width:100%;margin-top:7px;text-align:left;cursor:pointer;
@@ -1777,7 +1801,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-102907";
+const APP_BUILD = "20261005-114012";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2338,9 +2362,13 @@ const executingSeed = sd =>
   EXECUTING_STATUSES.has(String(sd.status || "").toLowerCase());
 /* `held` (2026-09-27) is queued too: work waiting for a build, not a person --
    seeds.HELD. A machine takes it the moment it is on the build that can run it. */
-const queuedSeed = sd => ["pending", "held"].includes(String(sd.status || "").toLowerCase());
-const seedStatusText = sd => String(sd.status || "").toLowerCase() === "held"
-  ? "held · waits for the build" : String(sd.status || "");
+/* `inserted` (2026-10-05): queued by an "Insert seed" block in the schedule. */
+const queuedSeed = sd => ["pending", "held", "inserted"].includes(String(sd.status || "").toLowerCase());
+const seedStatusText = sd => {
+  const st = String(sd.status || "").toLowerCase();
+  return st === "held" ? "held · waits for the build"
+    : st === "inserted" ? "queued by the schedule · next in line" : String(sd.status || "");
+};
 const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
 
 function renderSeeds(list, label){
@@ -9107,8 +9135,577 @@ function schedFrozen(sch){
     + esc(bits.join(" \u00b7 ")) + '.</div>';
 }
 
+/* ==========================================================================
+   INSERT SEED (2026-10-05)
+   ==========================================================================
+   Trevor: *"I want a section added into the app "Insert Seed" ... This will
+   insert a block in the schedule chain. I'll be able to move it up and down
+   like a regular block. Build it with chips. Start at the top. Example - Task:
+   optimize - regime: bull - bucket:1600 - Line: Exit - Group:G1. If I pick
+   optimize I want to be able to Checkbox pick the variables. I want to be able
+   to search any variable to add a rider or two or three. I want to pick the
+   variable range and count. Maybe some sliders here would be slick touch. Date
+   range adjustable. machine assignment ... I also don't want pass number cap
+   limit. But you can calculate it for me somewhere on the page."*
+
+   The builder makes ONE BLOCK of type "seed" in the chain draft
+   (schedule_builder.new_seed_block's shape). Nothing reaches the fleet until
+   Save chain, like every other edit; when the chain reaches the block the
+   engine queues the seed (status "inserted"), one machine runs it, the others
+   fill in from the next block, and the block ends when the seed is done.
+
+   🔴 THE VARIABLES COME FROM THE LAPTOP, NEVER FROM THE SNAPSHOT. Values and
+   windows are the method (transparency rule); the snapshot travels through a
+   gist. fleet_api serves /seed_catalog on the tailnet behind the token.
+
+   🔴 SLIDERS PATCH, TAPS REPAINT. Every tap repaints the page, which would
+   replace a slider under your finger mid-drag. So range, search, date and
+   text inputs update the form and their own readouts in place; only taps
+   (chips, checkboxes, Insert) repaint. */
+let SEED_CAT = null, SEED_CAT_ERR = "", SEED_CAT_BUSY = false;
+let SEED_FORM = null;
+let SEED_MSG = "";
+
+async function seedCatalogLoad(force){
+  if((SEED_CAT && !force) || SEED_CAT_BUSY) return;
+  const base = apiBase();
+  if(!base){
+    SEED_CAT_ERR = "Add the Laptop link in Settings — the variables and their "
+      + "ranges come from the Laptop, never from the public snapshot.";
+    return repaintSettings();
+  }
+  SEED_CAT_BUSY = true; SEED_CAT_ERR = "";
+  repaintSettings();
+  try{
+    const r = await fetch(base + "/seed_catalog", {cache: "no-store"});
+    if(r.status === 404)
+      SEED_CAT_ERR = "The Laptop has not loaded the Insert seed update yet — it "
+        + "does at the end of its current job.";
+    else if(!r.ok) SEED_CAT_ERR = "The Laptop could not build the variable list (HTTP " + r.status + ").";
+    else SEED_CAT = await r.json();
+  }catch(e){
+    SEED_CAT_ERR = "The Laptop did not answer — is Tailscale on?";
+  }finally{
+    SEED_CAT_BUSY = false;
+    repaintSettings();
+  }
+}
+
+function seedNewForm(){
+  return {editing: null, task: "", regime: "", bucket: "", line: "", group: "",
+          vars: {}, open: {}, riders: [], search: "", win: "campaign",
+          from: "", to: "", machine: "", picks: "manual", note: ""};
+}
+function seedBucket(){
+  const f = SEED_FORM || {};
+  return ((SEED_CAT || {}).buckets || []).find(function(b){ return b.key === f.bucket; }) || null;
+}
+function seedGroup(){
+  const b = seedBucket(), f = SEED_FORM || {};
+  return b ? (b.groups || []).find(function(g){ return g.id === f.group; }) || null : null;
+}
+function seedCatVar(name){
+  const b = seedBucket();
+  return (b && b.vars && b.vars[name]) || null;
+}
+function seedFmt(x, t){
+  if(x == null || isNaN(x)) return "?";
+  if(t === "int") return String(Math.round(Number(x)));
+  const a = Math.abs(Number(x));
+  return String(Number(Number(x).toPrecision(a >= 100 ? 5 : 4)));
+}
+/* The slider's outer limits: the hard bounds where there are some, else room
+   either side of the ordinary window. */
+function seedLimits(c){
+  const lo = Number(c.lo != null ? c.lo : c.v), hi = Number(c.hi != null ? c.hi : c.v);
+  const span = Math.max(Math.abs(hi - lo), Math.abs(Number(c.v) || 0) * 0.5,
+                        c.t === "int" ? 4 : 0.0001);
+  let min = c.blo != null ? Math.max(Number(c.blo), lo - 4 * span)
+          : (lo >= 0 ? Math.max(0, lo - 2 * span) : lo - 2 * span);
+  let max = c.bhi != null ? Math.min(Number(c.bhi), hi + 4 * span) : hi + 2 * span;
+  if(c.t === "int"){ min = Math.floor(min); max = Math.ceil(max); }
+  const step = c.t === "int" ? 1 : Number(((max - min) / 200).toPrecision(2)) || 0.0001;
+  return {min: min, max: max, step: step};
+}
+function seedMaxPoints(s, c){
+  if(c && c.t === "int") return Math.max(2, Math.min(25, Math.round(s.hi - s.lo) + 1));
+  return 25;
+}
+
+/* The group's own rows, as an ordinary round would test them: active ones on,
+   locked ones off (one ticked by hand sweeps on its own window). */
+function seedPickGroup(gid){
+  const f = SEED_FORM;
+  f.group = gid; f.vars = {}; f.open = {};
+  const g = seedGroup();
+  ((g && g.vars) || []).forEach(function(n){
+    const c = seedCatVar(n) || {};
+    f.vars[n] = {on: !c.locked, lo: c.lo, hi: c.hi, p: c.p || 2, touched: false};
+  });
+  f.riders = f.riders.filter(function(r){ return !f.vars[r.name]; });
+}
+function seedRiderAdd(name){
+  const f = SEED_FORM, c = seedCatVar(name);
+  if(!c || f.vars[name] || f.riders.some(function(r){ return r.name === name; })) return;
+  f.riders.push({name: name, lo: c.lo, hi: c.hi, p: c.p || 3});
+  f.open["r:" + name] = true;
+  f.search = "";
+}
+/* Nothing changed from the group's ordinary round: send no variables at all,
+   and it runs (and counts) as a whole-group round. */
+function seedIsWholeGroup(){
+  const f = SEED_FORM, g = seedGroup();
+  if(!g || f.riders.length) return false;
+  return (g.vars || []).every(function(n){
+    const s = f.vars[n], c = seedCatVar(n) || {};
+    return s && !s.touched && (s.on === !c.locked);
+  });
+}
+function seedVariablesOut(){
+  const f = SEED_FORM;
+  if(seedIsWholeGroup()) return [];
+  const out = [];
+  Object.keys(f.vars).forEach(function(n){
+    const s = f.vars[n], c = seedCatVar(n) || {};
+    if(!s.on) return;
+    if(s.touched || c.locked) out.push(seedWindowOut(n, s, c));
+    else out.push(n);
+  });
+  f.riders.forEach(function(r){ out.push(seedWindowOut(r.name, r, seedCatVar(r.name) || {})); });
+  return out;
+}
+/* One explicit window, as the engine reads it (seeds.narrow_ranges): an int
+   cannot take more points than it has whole numbers. */
+function seedWindowOut(name, s, c){
+  let pts = Math.max(2, Math.round(Number(s.p)));
+  if(c.t === "int") pts = Math.min(pts, Math.max(2, Math.round(Number(s.hi) - Number(s.lo)) + 1));
+  if(c.t === "bool") return {name: name, min: 0, max: 1, points: 2};
+  return {name: name, min: Number(s.lo), max: Number(s.hi), points: pts};
+}
+/* The grid: every combination. An untouched variable in a narrowed round is
+   sized by the round's own tier, so that count is an estimate -- said so. */
+function seedGrid(){
+  const f = SEED_FORM;
+  if(!f || f.task !== "optimize" || !seedGroup()) return null;
+  const on = Object.keys(f.vars).filter(function(n){ return f.vars[n].on; });
+  const n = on.length + f.riders.length;
+  if(!n) return {grid: 0, parts: [], approx: false};
+  const tiers = (SEED_CAT || {}).tiers || {};
+  const tier = Number(tiers[Math.min(12, n)] || 3);
+  const whole = seedIsWholeGroup();
+  let grid = 1, approx = false;
+  const parts = [];
+  on.forEach(function(nm){
+    const s = f.vars[nm], c = seedCatVar(nm) || {};
+    let p;
+    if(c.t === "bool") p = 2;
+    else if(s.touched || c.locked) p = Number(s.p);
+    else if(whole) p = Number(c.p || tier);
+    else { p = tier; approx = true; }
+    grid *= p; parts.push(p);
+  });
+  f.riders.forEach(function(r){ grid *= Number(r.p); parts.push(Number(r.p)); });
+  return {grid: grid, parts: parts, approx: approx};
+}
+function seedStatusLine(){
+  const f = SEED_FORM;
+  if(!f || !f.task) return "";
+  const where = f.machine ? "on " + f.machine + " only" : "on whichever machine frees up first";
+  if(f.task === "backtest"){
+    return "One bucket test at the bucket’s current values, real ticks, " + where + ". "
+      + (f.win === "campaign"
+          ? "On the 2-year window it is filed as the bucket’s baseline (this is what re-measures a stale bucket)."
+          : "On its own window it is recorded on the seed only, not as the baseline.");
+  }
+  const g = seedGrid();
+  if(!g) return "Pick a group to see its size.";
+  if(!g.grid) return "Tick at least one variable, or add a rider.";
+  return (g.approx ? "≈ " : "") + g.grid.toLocaleString() + " passes"
+    + (g.parts.length > 1 ? " (" + g.parts.join(" × ") + ")" : "")
+    + " · real ticks · no pass cap — runs " + where + "."
+    + (g.approx ? " Untouched variables are sized by the round, so that count is an estimate." : "");
+}
+function seedPatchStatus(){
+  const el = document.getElementById("seedstatus");
+  if(el) el.textContent = seedStatusLine();
+}
+
+/* ---------- the page ---------- */
+function seedChip(attr, val, on, label){
+  return '<button type="button" class="chip' + (on ? " on" : "") + '" data-' + attr
+    + '="' + esc(String(val)) + '">' + esc(label) + '</button>';
+}
+function seedSection(title, body, note){
+  return '<div class="section-label" style="margin-top:12px">' + esc(title) + '</div>'
+    + body + (note ? '<div class="tnote">' + note + '</div>' : "");
+}
+function seedSliders(key, s, c){
+  if(c.t === "bool") return '<div class="tnote">Sweeps false and true.</div>';
+  const L = seedLimits(c);
+  const row = function(label, attr, val, min, max, step, id){
+    return '<div class="seedsl"><span class="seedsl-l">' + label + '</span>'
+      + '<input type="range" data-' + attr + '="' + esc(key) + '" min="' + min + '" max="'
+      + max + '" step="' + step + '" value="' + val + '">'
+      + '<span class="seedsl-v" id="' + id + '">' + esc(id.indexOf("p_") === 0 ? String(val) : seedFmt(val, c.t)) + '</span></div>';
+  };
+  const k = key.replace(/[^A-Za-z0-9_:]/g, "_");
+  return '<div class="seedsls">'
+    + row("From", "seedlo", s.lo, L.min, L.max, L.step, "lo_" + k)
+    + row("To", "seedhi", s.hi, L.min, L.max, L.step, "hi_" + k)
+    + row("Count", "seedp", s.p, 2, seedMaxPoints(s, c), 1, "p_" + k)
+    + '<div class="tnote">Limits ' + seedFmt(L.min, c.t) + ' – ' + seedFmt(L.max, c.t)
+    + (c.blo != null || c.bhi != null ? " (hard bounds)" : "") + '. '
+    + '<button type="button" class="linkbtn" data-seedreset="' + esc(key) + '">Reset to the ordinary window</button></div>'
+    + '</div>';
+}
+function seedVarRow(name, s, c, isRider){
+  const key = (isRider ? "r:" : "") + name;
+  const open = !!SEED_FORM.open[key];
+  const win = c.t === "bool" ? "false / true"
+    : seedFmt(s.lo, c.t) + " – " + seedFmt(s.hi, c.t) + " × " + s.p;
+  return '<div class="seedv' + (isRider || s.on ? "" : " off") + '">'
+    + '<div class="seedv-h">'
+    + (isRider
+        ? '<button type="button" class="seedck on" data-seedriderdel="' + esc(name) + '" title="Remove rider">✕</button>'
+        : '<button type="button" class="seedck' + (s.on ? " on" : "") + '" data-seedvar="' + esc(name) + '">' + (s.on ? "✓" : "") + '</button>')
+    + '<span class="seedv-n">' + esc(spaceOut(stripRegime(name))) + '</span>'
+    + (c.locked ? '<span class="chip">locked</span>' : "")
+    + (isRider ? '<span class="chip gold">rider</span>' : "")
+    + '</div>'
+    + '<div class="seedv-m">now ' + esc(c.t === "bool" ? String(c.v) : seedFmt(c.v, c.t))
+    + ' · <span id="w_' + esc(key.replace(/[^A-Za-z0-9_:]/g, "_")) + '">' + esc(win) + '</span>'
+    + ((isRider || s.touched || c.locked) && c.t !== "bool" ? ' · its own window' : "")
+    + (c.t === "bool" ? "" : ' <button type="button" class="linkbtn" data-seedadj="' + esc(key) + '">'
+        + (open ? "Done" : "Adjust") + '</button>')
+    + '</div>'
+    + (open && (isRider || s.on) ? seedSliders(key, s, c) : "")
+    + '</div>';
+}
+function seedSearchResults(){
+  const f = SEED_FORM, b = seedBucket(), q = String(f.search || "").trim().toLowerCase();
+  if(!b || q.length < 2) return "";
+  const own = f.vars;
+  const hits = Object.keys(b.vars || {}).filter(function(n){
+    return !own[n] && !f.riders.some(function(r){ return r.name === n; })
+      && n.toLowerCase().indexOf(q.replace(/\s+/g, "_")) >= 0;
+  }).slice(0, 8);
+  if(!hits.length) return '<div class="tnote">No variable in this bucket matches.</div>';
+  return hits.map(function(n){
+    const c = b.vars[n] || {};
+    return '<button type="button" class="seedhit" data-seedrider="' + esc(n) + '">'
+      + '<b>+ ' + esc(spaceOut(stripRegime(n))) + '</b>'
+      + '<span>' + esc(humanize(c.g || "")) + ' · now ' + esc(seedFmt(c.v, c.t)) + '</span></button>';
+  }).join("");
+}
+function seedWindowDates(which){
+  const w = (SEED_CAT || {}).window || ["", ""];
+  const iso = function(d){ return String(d || "").replace(/\./g, "-"); };
+  const shift = function(d, days){
+    const t = new Date(iso(d) + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + days);
+    return t.toISOString().slice(0, 10);
+  };
+  if(which === "older") return [iso(w[0]), shift(w[0], 365)];
+  if(which === "recent") return [shift(w[1], -365), iso(w[1])];
+  return [iso(w[0]), iso(w[1])];
+}
+function renderSeedBuilder(){
+  const f = SEED_FORM;
+  let h = '<div class="home">'
+    + '<button type="button" class="chip" data-seedclose>‹ Back to the chain</button>'
+    + '<div class="section-label" style="margin-top:8px">' + (f.editing ? "Edit seed" : "Insert seed") + '</div>';
+  if(!SEED_CAT){
+    return h + '<div class="card"><div class="card-in"><div class="tnote">'
+      + esc(SEED_CAT_BUSY ? "Loading the variables from the Laptop…" : (SEED_CAT_ERR || "Loading…"))
+      + '</div>' + (SEED_CAT_ERR ? '<div class="chips" style="margin-top:8px">'
+        + '<button type="button" class="chip" data-seedreload>Try again</button></div>' : "")
+      + '</div></div></div>';
+  }
+  const cat = SEED_CAT, b = seedBucket(), g = seedGroup();
+  let card = seedSection("Task", '<div class="chips">'
+      + seedChip("seedtask", "optimize", f.task === "optimize", "Optimize")
+      + seedChip("seedtask", "backtest", f.task === "backtest", "Backtest")
+      + '</div>',
+      f.task === "backtest" ? "A bucket test of the bucket as it stands. Nothing is swept or changed."
+      : f.task === "optimize" ? "A round over the variables you pick. Its winner is applied the usual way — you pick the pass, or it applies itself."
+      : "");
+  if(f.task){
+    const regimes = [];
+    (cat.buckets || []).forEach(function(x){ if(regimes.indexOf(x.regime) < 0) regimes.push(x.regime); });
+    card += seedSection("Regime", '<div class="chips">'
+      + regimes.map(function(r){ return seedChip("seedreg", r, f.regime === r, r); }).join("") + '</div>');
+  }
+  if(f.regime){
+    const list = (cat.buckets || []).filter(function(x){ return x.regime === f.regime; });
+    card += seedSection("Bucket", '<div class="chips">'
+      + list.map(function(x){ return seedChip("seedbkt", x.key, f.bucket === x.key, String(x.bucket_id)); }).join("") + '</div>');
+  }
+  if(f.task === "optimize" && b){
+    const lines = [];
+    (b.groups || []).forEach(function(x){ if(lines.indexOf(x.line) < 0) lines.push(x.line); });
+    card += seedSection("Line", '<div class="chips">'
+      + lines.map(function(l){ return seedChip("seedline", l, f.line === l, l); }).join("") + '</div>');
+    if(f.line){
+      const gs = (b.groups || []).filter(function(x){ return x.line === f.line; });
+      card += seedSection("Group", '<div class="chips">'
+        + gs.map(function(x){ return seedChip("seedgrp", x.id, f.group === x.id, x.label); }).join("") + '</div>');
+    }
+  }
+  if(f.task === "optimize" && g){
+    const rows = (g.vars || []).map(function(n){ return seedVarRow(n, f.vars[n], seedCatVar(n) || {}, false); }).join("");
+    card += seedSection("Variables", rows,
+      "Ticked variables sweep; the rest of the group holds where it is. Leave a window alone and the round sizes it the ordinary way; "
+      + "change it and it sweeps exactly that window, and its winner is applied as a fresh reading.");
+    card += seedSection("Riders",
+      f.riders.map(function(r){ return seedVarRow(r.name, r, seedCatVar(r.name) || {}, true); }).join("")
+      + '<input type="search" class="seedsearch" data-seedsearch placeholder="Search any variable in this bucket" value="'
+      + esc(f.search || "") + '">'
+      + '<div id="seedsearchres">' + seedSearchResults() + '</div>',
+      "A rider is a variable from another group, swept alongside on its own window.");
+  }
+  if(f.bucket && (f.task === "backtest" || g)){
+    const dates = f.win === "custom" ? [f.from, f.to] : seedWindowDates(f.win);
+    card += seedSection("Date range", '<div class="chips">'
+      + seedChip("seedwin", "campaign", f.win === "campaign", "2 years to yesterday")
+      + seedChip("seedwin", "older", f.win === "older", "Older year")
+      + seedChip("seedwin", "recent", f.win === "recent", "Recent year")
+      + seedChip("seedwin", "custom", f.win === "custom", "Custom")
+      + '</div>'
+      + (f.win === "custom"
+          ? '<div class="seeddates"><input type="date" data-seedfrom value="' + esc(f.from) + '">'
+            + '<span>to</span><input type="date" data-seedto value="' + esc(f.to) + '"></div>'
+          : '<div class="tnote">' + esc(dates[0]) + ' → ' + esc(dates[1])
+            + (f.win === "campaign" ? " — whatever the window is on the day it runs." : "") + '</div>'),
+      f.task === "optimize" ? "For the optimize run only. Its bucket test and full test keep the 2-year window, so the PF compares with everything else." : "");
+    /* Optimizers only: an agent lends cores and never takes a job. */
+    const machines = (FLEET || []).filter(function(m){ return m && m.tier !== "agent_only"; })
+      .map(function(m){ return m.machine_id || m.machine; })
+      .filter(function(m, i, a){ return m && a.indexOf(m) === i; });
+    card += seedSection("Machine", '<div class="chips">'
+      + seedChip("seedmach", "", !f.machine, "Any")
+      + machines.map(function(m){ return seedChip("seedmach", m, f.machine === m, m); }).join("") + '</div>');
+    if(f.task === "optimize"){
+      card += seedSection("Pass picks", '<div class="chips">'
+        + seedChip("seedpicks", "manual", f.picks === "manual", "Manual")
+        + seedChip("seedpicks", "auto", f.picks === "auto", "Automatic") + '</div>',
+        f.picks === "manual" ? "You pick the pass (15-min timer, like a Manual block)." : "Its top pass applies itself.");
+    }
+    card += seedSection("Note", '<input type="text" class="seedsearch" data-seednote placeholder="Why (optional)" value="' + esc(f.note || "") + '">');
+    card += '<div class="seedstatus" id="seedstatus">' + esc(seedStatusLine()) + '</div>'
+      + (SEED_MSG ? '<div class="tnote" style="color:var(--bad)">' + esc(SEED_MSG) + '</div>' : "")
+      + '<div class="chips" style="margin-top:10px">'
+      + '<button type="button" class="chip gold" data-seedinsert>' + (f.editing ? "Update block" : "Insert into schedule") + '</button>'
+      + '<button type="button" class="chip" data-seedclose>Cancel</button></div>';
+  }
+  return h + '<div class="card"><div class="card-in"><div class="tsec">' + card + '</div></div></div></div>';
+}
+
+/* ---------- the block it makes ---------- */
+function seedSpecOut(){
+  const f = SEED_FORM;
+  const bid = Number(String(f.bucket).split("|")[1]);
+  const spec = {task: f.task, regime: f.regime, bucket_id: bid,
+                group_id: f.task === "optimize" ? f.group : null,
+                variables: f.task === "optimize" ? seedVariablesOut() : [],
+                machine: f.machine || null, note: f.note || ""};
+  if(f.win !== "campaign"){
+    const d = f.win === "custom" ? [f.from, f.to] : seedWindowDates(f.win);
+    spec.from_date = String(d[0]).replace(/-/g, ".");
+    spec.to_date = String(d[1]).replace(/-/g, ".");
+  }
+  return spec;
+}
+function seedCheck(){
+  const f = SEED_FORM;
+  if(!f.task || !f.regime || !f.bucket) return "Pick a task, a regime and a bucket.";
+  if(f.task === "optimize"){
+    if(!f.group) return "Pick a group.";
+    const g = seedGrid();
+    if(!g || !g.grid) return "Tick at least one variable, or add a rider.";
+    const bad = seedVariablesOut().filter(function(v){
+      return typeof v === "object" && !(Number(v.min) < Number(v.max)); });
+    if(bad.length) return "A window needs its From below its To: " + spaceOut(stripRegime(bad[0].name)) + ".";
+  }
+  if(f.win === "custom"){
+    if(!f.from || !f.to) return "Set both dates.";
+    if(f.from >= f.to) return "The start date must be before the end date.";
+  }
+  return "";
+}
+function seedBlockOut(){
+  const f = SEED_FORM, spec = seedSpecOut();
+  const g = seedGroup();
+  const b = f.editing ? (schedFind(f.editing) || schedNewBlock()) : schedNewBlock();
+  b.type = "seed";
+  b.seed = spec;
+  b.regimes = [f.regime];
+  b.buckets = [f.bucket];
+  b.select = "explicit"; b.select_n = 1; b.groups = "any"; b.order = "default";
+  b.machines = f.machine ? [f.machine] : [];
+  b.until = {kind: "seed_done"};
+  b.max_jobs = null;
+  b.name = (f.task === "backtest" ? "Seed · Bucket test " : "Seed · ")
+    + f.regime + " " + spec.bucket_id + (g ? " · " + humanize(g.id) : "");
+  if(f.task === "optimize" && f.picks === "manual"){
+    b.pass_picks = "manual"; b.pick_timer_min = 15;
+    if(!b.fallback) b.fallback = schedNewFallback();
+  } else if(f.task === "optimize"){
+    b.pass_picks = "auto"; delete b.pick_timer_min; delete b.fallback;
+  } else {
+    b.pass_picks = null; delete b.pick_timer_min; delete b.fallback;
+  }
+  return b;
+}
+/* Back from a saved block: the builder as it was left. */
+function seedFormFromBlock(b){
+  const s = b.seed || {}, f = seedNewForm();
+  f.editing = b.id;
+  f.task = s.task || "optimize"; f.regime = s.regime || "";
+  f.bucket = (s.regime || "") + "|" + s.bucket_id;
+  f.machine = s.machine || ""; f.note = s.note || "";
+  f.picks = b.pass_picks === "auto" ? "auto" : "manual";
+  if(s.from_date && s.to_date){
+    f.win = "custom"; f.from = String(s.from_date).replace(/\./g, "-"); f.to = String(s.to_date).replace(/\./g, "-");
+  }
+  SEED_FORM = f;
+  if(f.task === "optimize" && s.group_id){
+    const bk = seedBucket();
+    const grp = bk ? (bk.groups || []).find(function(x){ return x.id === s.group_id; }) : null;
+    f.line = grp ? grp.line : "";
+    seedPickGroup(s.group_id);
+    const list = s.variables || [];
+    if(list.length){
+      Object.keys(f.vars).forEach(function(n){ f.vars[n].on = false; });
+      list.forEach(function(v){
+        const name = typeof v === "string" ? v : (v || {}).name;
+        if(!name) return;
+        const explicit = typeof v === "object" && v.min != null;
+        if(f.vars[name]){
+          f.vars[name].on = true;
+          if(explicit){ f.vars[name].lo = v.min; f.vars[name].hi = v.max; f.vars[name].p = v.points; f.vars[name].touched = true; }
+        } else if(explicit){
+          f.riders.push({name: name, lo: v.min, hi: v.max, p: v.points});
+        }
+      });
+    }
+  }
+  return f;
+}
+function seedSentence(b){
+  const s = b.seed || {};
+  const vars = s.variables || [];
+  const riders = vars.filter(function(v){ return v && typeof v === "object" && v.min != null; }).length;
+  let what;
+  if(s.task === "backtest") what = "Bucket test " + s.regime + " " + s.bucket_id + " at its current values";
+  else what = "Optimize " + s.regime + " " + s.bucket_id + " · " + humanize(s.group_id || "")
+    + " · " + (vars.length ? vars.length + " variable" + (vars.length === 1 ? "" : "s")
+      + (riders ? " (" + riders + " on their own window)" : "") : "the whole group");
+  const win = s.from_date && s.to_date ? s.from_date + " → " + s.to_date : "2-year window";
+  const m = s.machine ? "on " + s.machine + " only" : "any machine";
+  const pp = s.task === "optimize" ? (b.pass_picks === "auto" ? " · applies its top pass" : " · you pick the pass") : "";
+  return esc("Seed — " + what + " · " + win + " · " + m + pp + " — until it is done");
+}
+
+/* ---------- taps ---------- */
+document.addEventListener("click", function(e){
+  const t = e.target.closest("[data-seedopen],[data-seedclose],[data-seedreload],[data-seedtask],"
+    + "[data-seedreg],[data-seedbkt],[data-seedline],[data-seedgrp],[data-seedvar],[data-seedadj],"
+    + "[data-seedreset],[data-seedrider],[data-seedriderdel],[data-seedwin],[data-seedmach],"
+    + "[data-seedpicks],[data-seedinsert],[data-seededit]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = t.dataset;
+  SEED_MSG = "";
+  if(d.seedopen !== undefined){ SEED_FORM = seedNewForm(); seedCatalogLoad(); return repaintSettings(); }
+  if(d.seededit !== undefined){
+    const b = schedFind(d.seededit);
+    if(!b) return;
+    if(!SEED_CAT){
+      SEED_FORM = seedNewForm(); SEED_FORM.editing = b.id;
+      seedCatalogLoad().then(function(){ if(SEED_CAT){ seedFormFromBlock(b); repaintSettings(); } });
+      return repaintSettings();
+    }
+    seedFormFromBlock(b);
+    return repaintSettings();
+  }
+  if(d.seedclose !== undefined){ SEED_FORM = null; return repaintSettings(); }
+  if(d.seedreload !== undefined){ return seedCatalogLoad(true); }
+  const f = SEED_FORM;
+  if(!f) return;
+  if(d.seedtask !== undefined){ f.task = d.seedtask; }
+  else if(d.seedreg !== undefined){
+    if(f.regime !== d.seedreg){ f.regime = d.seedreg; f.bucket = ""; f.line = ""; f.group = ""; f.vars = {}; f.riders = []; }
+    const list = ((SEED_CAT || {}).buckets || []).filter(function(x){ return x.regime === f.regime; });
+    if(list.length === 1) f.bucket = list[0].key;
+  }
+  else if(d.seedbkt !== undefined){ if(f.bucket !== d.seedbkt){ f.bucket = d.seedbkt; f.line = ""; f.group = ""; f.vars = {}; f.riders = []; } }
+  else if(d.seedline !== undefined){ if(f.line !== d.seedline){ f.line = d.seedline; f.group = ""; f.vars = {}; } }
+  else if(d.seedgrp !== undefined){ seedPickGroup(d.seedgrp); }
+  else if(d.seedvar !== undefined){ const s = f.vars[d.seedvar]; if(s) s.on = !s.on; }
+  else if(d.seedadj !== undefined){ f.open[d.seedadj] = !f.open[d.seedadj]; }
+  else if(d.seedreset !== undefined){
+    const key = d.seedreset, rider = key.indexOf("r:") === 0, name = rider ? key.slice(2) : key;
+    const c = seedCatVar(name) || {};
+    const s = rider ? f.riders.find(function(r){ return r.name === name; }) : f.vars[name];
+    if(s){ s.lo = c.lo; s.hi = c.hi; s.p = c.p || s.p; if(!rider) s.touched = false; }
+  }
+  else if(d.seedrider !== undefined){ seedRiderAdd(d.seedrider); }
+  else if(d.seedriderdel !== undefined){ f.riders = f.riders.filter(function(r){ return r.name !== d.seedriderdel; }); }
+  else if(d.seedwin !== undefined){
+    f.win = d.seedwin;
+    if(f.win === "custom" && !(f.from && f.to)){ const w = seedWindowDates("campaign"); f.from = w[0]; f.to = w[1]; }
+  }
+  else if(d.seedmach !== undefined){ f.machine = d.seedmach; }
+  else if(d.seedpicks !== undefined){ f.picks = d.seedpicks; }
+  else if(d.seedinsert !== undefined){
+    const why = seedCheck();
+    if(why){ SEED_MSG = why; return repaintSettings(); }
+    const blk = seedBlockOut();
+    const draft = schedDraft();
+    if(!f.editing || !draft.some(function(x){ return x.id === blk.id; })) draft.push(blk);
+    SEED_FORM = null;
+    SCHED_EDIT = null;
+    return repaintSettings();
+  }
+  return repaintSettings();
+}, true);
+
+/* ---------- drags and typing: patched in place, never repainted ---------- */
+document.addEventListener("input", function(e){
+  const t = e.target, f = SEED_FORM;
+  if(!f || !t || !t.dataset) return;
+  const d = t.dataset;
+  if(d.seedsearch !== undefined){
+    f.search = t.value;
+    const el = document.getElementById("seedsearchres");
+    if(el) el.innerHTML = seedSearchResults();
+    return;
+  }
+  if(d.seednote !== undefined){ f.note = t.value; return; }
+  if(d.seedfrom !== undefined){ f.from = t.value; seedPatchStatus(); return; }
+  if(d.seedto !== undefined){ f.to = t.value; seedPatchStatus(); return; }
+  const key = d.seedlo || d.seedhi || d.seedp;
+  if(key === undefined) return;
+  const rider = key.indexOf("r:") === 0, name = rider ? key.slice(2) : key;
+  const s = rider ? f.riders.find(function(r){ return r.name === name; }) : f.vars[name];
+  const c = seedCatVar(name) || {};
+  if(!s) return;
+  const v = Number(t.value);
+  if(d.seedlo !== undefined) s.lo = Math.min(v, Number(s.hi));
+  if(d.seedhi !== undefined) s.hi = Math.max(v, Number(s.lo));
+  if(d.seedp !== undefined) s.p = Math.round(v);
+  if(!rider) s.touched = true;
+  const k = key.replace(/[^A-Za-z0-9_:]/g, "_");
+  const put = function(id, txt){ const el = document.getElementById(id); if(el) el.textContent = txt; };
+  put("lo_" + k, seedFmt(s.lo, c.t)); put("hi_" + k, seedFmt(s.hi, c.t)); put("p_" + k, String(s.p));
+  put("w_" + k, seedFmt(s.lo, c.t) + " – " + seedFmt(s.hi, c.t) + " × " + s.p);
+  seedPatchStatus();
+}, true);
+
 /* ---------- the builder page ---------- */
 function renderScheduleBuilder(){
+  /* 2026-10-05 -- the seed builder takes the page while it is open. */
+  if(SEED_FORM) return renderSeedBuilder();
   const sch = schedule();
   const blocks = sch.blocks || [];
   const status = sch.status || "idle";
@@ -9131,6 +9728,7 @@ function renderScheduleBuilder(){
         ? '<div class="tnote" style="margin-top:10px"><b>Unsaved changes.</b> Nothing here reaches the fleet until you save the chain.</div>' : "")
     + '<div class="chips" style="margin-top:10px">'
     + '<button type="button" class="chip" data-schedadd>+ Add block</button>'
+    + '<button type="button" class="chip" data-seedopen>+ Insert seed</button>'
     + (blocks.length ? '<button type="button" class="chip" data-schedsave>Save chain</button>' : "")
     + '</div>'
     + '<div class="tnote" style="margin-top:10px">' + '⚠️' + ' A change takes effect '
@@ -9168,8 +9766,10 @@ function schedBlockCard(b, i, isActive, sch, isPast){
         ? '<div class="tnote" style="margin-top:6px">' + esc(outcome.measured) + '</div>' : "")
     + '<div class="chips" style="margin-top:8px">'
     /* An ACTION, not a toggle: never lit, or "✓ Close" would read as a choice. */
-    + '<button type="button" class="chip" data-schededit="'
-    + esc(b.id) + '">' + (editing ? "Close" : "Edit") + '</button>'
+    + (b.type === "seed"
+        ? '<button type="button" class="chip" data-seededit="' + esc(b.id) + '">Edit</button>'
+        : '<button type="button" class="chip" data-schededit="'
+          + esc(b.id) + '">' + (editing ? "Close" : "Edit") + '</button>')
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':-1">\u2191</button>'
     + '<button type="button" class="chip" data-schedmove="' + esc(b.id) + ':1">\u2193</button>'
     /* \ud83d\udd34 CLEAR, NOT DELETE. Trevor, 2026-09-19: *"We need a Clear button
@@ -9181,7 +9781,7 @@ function schedBlockCard(b, i, isActive, sch, isPast){
         + '">Clear selections</button>' : "")
     + '<button type="button" class="chip" data-scheddel="' + esc(b.id) + '">Remove</button>'
     + '</div>'
-    + (editing ? schedEditor(b) : "")
+    + (editing && b.type !== "seed" ? schedEditor(b) : "")
     + '</div></div>';
 }
 
@@ -9321,6 +9921,7 @@ function pickWaitLine(w){
 }
 
 function schedSentence(b){
+  if(b && b.type === "seed") return seedSentence(b);
   const sel = b.select || "explicit";
   let what;
   if(sel === "explicit"){
@@ -9364,6 +9965,7 @@ function schedSentence(b){
 
 function schedUntilPhrase(u){
   const k = u.kind;
+  if(k === "seed_done") return "its seed is done";
   if(k === "jobs") return (u.n || 1) + " job" + ((u.n || 1) === 1 ? "" : "s");
   if(k === "pf_at_least") return "PF reaches " + (u.value != null ? u.value : "?");
   if(k === "pinned_cleared") return (u.percent != null ? u.percent : 50)
