@@ -80,6 +80,9 @@ h1{
   margin:0;font-size:1.2rem;font-weight:700;letter-spacing:-.02em;
 }
 .h-sub{font-size:.76rem;color:var(--dim);}
+.hgear{margin-left:auto;align-self:center;background:none;border:0;cursor:pointer;
+  color:var(--dim);font-size:1.15rem;line-height:1;padding:2px 2px 2px 8px;}
+.hgear:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
 .stamp{
   font-size:.68rem;color:var(--faint);
   font-family:"Roboto Mono",ui-monospace,monospace;
@@ -1756,6 +1759,9 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
      numbers that used to sit here were read back as a measurement and quoted
      onward as one. The real figure is computed in paint(). -->
       <span class="h-sub" id="hsub">…</span>
+      <!-- 2026-10-05 -- SETTINGS, out of the tab bar (Live and Finance took the
+           seats). One tap from every page; a page with no tab keeps Home lit. -->
+      <button type="button" class="hgear" data-go="settings" aria-label="Settings">⚙</button>
     </div>
     <div class="stamp" id="stamp"></div>
     <div class="baked" id="banner" hidden></div>
@@ -1790,7 +1796,12 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     <button role="tab" aria-selected="true" data-p="home"><span class="ic">⌂</span>Home</button>
     <button role="tab" aria-selected="false" data-p="active"><span class="ic">▶</span>Active</button>
     <button role="tab" aria-selected="false" data-p="results"><span class="ic">✓</span>Results</button>
-    <button role="tab" aria-selected="false" data-p="settings"><span class="ic">⚙</span>Settings</button>
+    <!-- 2026-10-05 -- LIVE AND FINANCE ARE TABS NOW; SETTINGS MOVED TO THE
+         HEADER (the gear). Trevor: *"The bottom menu tab. Let's replace settings
+         with live data. And add finance. So that we have 5 buttons on the
+         bottom."* -->
+    <button role="tab" aria-selected="false" data-p="live"><span class="ic">◉</span>Live</button>
+    <button role="tab" aria-selected="false" data-p="finance"><span class="ic">$</span>Finance</button>
   </nav>
 </div>
 
@@ -1812,7 +1823,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-150434";
+const APP_BUILD = "20261005-154018";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10260,7 +10271,10 @@ function schedValueRow(b, u){
 }
 
 function renderSettings(){
+  /* 2026-10-05 -- NO TAB ANY MORE (the header gear opens it), so it carries the
+     way home every tab-less page has. */
   return '<div class="home">'
+    + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
     + '<div class="section-label">Settings</div>'
     /* SAID ONCE, AT THE TOP, rather than on every control. A disabled chip with
        no explanation reads as a bug; the same sentence repeated eleven times
@@ -13682,6 +13696,12 @@ document.querySelectorAll("nav button").forEach(btn => {
     PAGES.forEach(p =>
       document.getElementById("page-" + p).hidden = (p !== btn.dataset.p));
     window.scrollTo(0, 0);
+    /* 2026-10-05 -- LIVE AND FINANCE ARE TABS: their own show runs HERE, because
+       go() hands a page that has a tab straight to this click and returns. Live
+       builds its chart the first time it is SHOWN (a chart created in a hidden
+       section measures zero wide); Finance loads the books from the Laptop. */
+    if(btn.dataset.p === "live") lvShow();
+    if(btn.dataset.p === "finance") finShow();
   });
 });
 
