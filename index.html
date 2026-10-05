@@ -1823,7 +1823,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-154018";
+const APP_BUILD = "20261005-154644";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13704,6 +13704,93 @@ document.querySelectorAll("nav button").forEach(btn => {
     if(btn.dataset.p === "finance") finShow();
   });
 });
+
+/* 2026-10-05 -- THE PHONE'S BACK BUTTON GOES BACK. Trevor: *"I keep pressing
+   the back button on my phone. But every time it completely exists the app. Any
+   way to make that go back to the page I was on previously?"*
+
+   WHY IT LEFT: every page and every detail is a show/hide inside ONE browser
+   page, so the browser's history only ever held the page the app opened on --
+   back had nowhere to go but out.
+
+   THE FIX, WITHOUT TOUCHING ANY HANDLER. After every tap -- once the tap's own
+   handlers have run -- the VIEW is read: the visible page plus the few
+   variables that choose a detail (an open job on Active or Results, the Status
+   drill-down, the schedule view, an open form). When it changed, it becomes a
+   history entry, and the entry it leaves remembers how far down you were. Back
+   (popstate) puts the variables back, redraws, and scrolls to where you were.
+   On the first page back still leaves the app: there is nowhere else to go.
+
+   A TASK CHIP IS NOT A PLACE (switching chips inside one job adds no step), and
+   neither is a form: back closes an open seed or finance form, and its draft is
+   not kept. */
+function navPage(){
+  return PAGES.find(p => { const el = document.getElementById("page-" + p);
+                           return el && !el.hidden; }) || "home";
+}
+function navState(){
+  return {p: navPage(), aj: ACTIVE_JOB, rj: RESULTS_JOB, rf: RESULTS_FROM,
+          st: [ST_NAV.bucket, ST_NAV.group, ST_NAV.variable],
+          sv: SCHED_VIEW, se: SCHED_EDIT, sf: !!SEED_FORM, ff: !!(FIN && FIN.form)};
+}
+let NAV_KEY = null, NAV_STATE = null, NAV_Y = 0, NAV_BUSY = false;
+function navRecord(){
+  if(NAV_BUSY) return;
+  const s = navState(), k = JSON.stringify(s);
+  if(k === NAV_KEY) return;
+  try{
+    if(NAV_STATE) history.replaceState({gb: NAV_STATE, y: NAV_Y}, "");
+    history.pushState({gb: s, y: 0}, "");
+  }catch(err){ return; }
+  NAV_KEY = k;
+  NAV_STATE = s;
+}
+document.addEventListener("click", () => {
+  NAV_Y = window.scrollY;
+  setTimeout(navRecord, 0);
+}, true);
+function navShow(page){
+  const btn = document.querySelector(`nav button[data-p="${page}"]`);
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-selected", String(btn ? b === btn : b.dataset.p === "home")));
+  PAGES.forEach(p => {
+    const el = document.getElementById("page-" + p);
+    if(el) el.hidden = (p !== page);
+  });
+  if(page === "live") lvShow();
+  if(page === "finance") finShow();
+}
+window.addEventListener("popstate", e => {
+  const s = e.state && e.state.gb;
+  if(!s) return;
+  NAV_BUSY = true;
+  try{
+    ACTIVE_JOB = s.aj; RESULTS_JOB = s.rj; RESULTS_FROM = s.rf;
+    if(s.rj == null) RESULTS_TASK_OPEN = 0;
+    ST_NAV = {bucket: s.st[0], group: s.st[1], variable: s.st[2]};
+    SCHED_VIEW = s.sv; SCHED_EDIT = s.se;
+    if(!s.sf) SEED_FORM = null;
+    if(!s.ff && FIN) FIN.form = null;
+    navShow(s.p);
+    document.getElementById("page-home").innerHTML = renderHome();
+    document.getElementById("page-active").innerHTML = renderActive();
+    document.getElementById("page-results").innerHTML = renderResults();
+    repaintSettings();
+    repaintSchedule();
+    repaintStatus();
+    finRender();
+  }catch(err){
+    console.warn("back: could not restore the view", err);
+  }
+  NAV_STATE = navState();
+  NAV_KEY = JSON.stringify(NAV_STATE);
+  NAV_BUSY = false;
+  const y = e.state.y || 0;
+  requestAnimationFrame(() => window.scrollTo(0, y));
+});
+NAV_STATE = navState();
+NAV_KEY = JSON.stringify(NAV_STATE);
+try{ history.replaceState({gb: NAV_STATE, y: 0}, ""); }catch(err){}
 
 /* A HOME BUTTON IS THE TAB IT NAMES. Routing it through `go()` rather than
    duplicating the show/hide means the tab bar's selected state follows a home
