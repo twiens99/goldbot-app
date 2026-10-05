@@ -1801,7 +1801,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-131134";
+const APP_BUILD = "20261005-141251";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10323,7 +10323,7 @@ function msShort(label){ return String(label || "").split(" - ")[0]; }
 const MS_DAY = {mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri",
                 sat: "Sat", sun: "Sun"};
 const MS_FIELD = {compute_mode: "compute", tier: "role", optimizations_enabled:
-  "run optimizations", lend_cores: "lend cores", agent_for: "serves",
+  "run optimizations", backtests_by: "backtests", lend_cores: "lend cores", agent_for: "serves",
   agent_limit: "cores to lend", schedule: "daily minimum", fence_enabled:
   "home rule", resume_on_ac: "plug-in rule"};
 
@@ -10400,6 +10400,27 @@ function machineSettingsRow(f){
     + '<div class="tnote">Takes effect on its next job; a running round keeps the rule it was picked under.</div>');
 
   if(s){
+    // -- backtests (2026-10-05, SPEC_BACKTEST_HELPER) --------------------------
+    /* Who runs this machine's two post-round backtests. A machine that takes
+       rounds can hand them to a peer; an agent takes no rounds, so it only ever
+       SHOWS whose it measures. Machine names come from its own report (peers),
+       never a list in this page. Shown only once the machine reports the field
+       -- an older one would refuse the change as "not a machine setting". */
+    const btFor = s.backtests_for || [];
+    if(s.backtest_helper){
+      const by = s.backtests_by || null;
+      bits.push('<div class="section-label" style="margin-top:10px">Backtests</div>'
+        + (isAgent ? "" : '<div class="chips">'
+            + msChip(m, "backtests_by", null, "This machine", !by)
+            + (s.peers || []).map(p => msChip(m, "backtests_by", p, "Hand to " + p, by === p)).join("")
+            + '</div><div class="tnote">The helper measures each round while this machine '
+            + 'starts its next optimization. Anything still owed is measured here before '
+            + 'the next round is applied.</div>')
+        + (btFor.length ? '<div class="tnote" style="margin-top:6px">Runs backtests for: <b>'
+            + esc(btFor.join(", ")) + '</b></div>'
+          : (isAgent ? '<div class="tnote">Runs nobody&rsquo;s backtests.</div>' : "")));
+    }
+
     // -- agent ------------------------------------------------------------
     if(isAgent){
       const n = Number(s.agents_installed) || 0;
