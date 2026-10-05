@@ -1801,7 +1801,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-114012";
+const APP_BUILD = "20261005-131134";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13348,6 +13348,11 @@ function renderFinance(){
       `${esc(finDate(sm.since))}, ${esc(finNum(sm.balance_usd))} USD now, ` +
       `${esc(String(sm.trades))} trade${sm.trades === 1 ? "" : "s"} since. None of it is real ` +
       "money, and it all comes off the books when real trading starts." +
+      /* 2026-10-05 -- THE DEMO SCOPE: the totals are this account plus GOLDbot's
+         costs. Generic words only: the page is public, the names are data. */
+      (sm.scope === "demo" ? " Until then the totals count only this account and GOLDbot's " +
+        "costs (bills paid on your loan, plus its interest). Your own accounts, the RESPs " +
+        "and other loans are left out, and come back with real money." : "") +
       (sm.updated ? ` <span class="fin-sub">demo data as of ${esc(sm.updated)} broker time</span>` : "") +
       "</div>";
   }
