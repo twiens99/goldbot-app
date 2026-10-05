@@ -1769,7 +1769,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-081418";
+const APP_BUILD = "20261005-083318";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9405,7 +9405,12 @@ function schedEditor(b){
        first because they narrow what the ranking ranks. */
     + '<div class="section-label" style="margin:0 0 2px">Target bucket</div>'
     + '<div class="chips">'
-    + ["BULL", "BEAR", "RANGING"].map(function(r){
+    /* GLOBALS (2026-10-05). Trevor: *"I need to be able to insert that group as
+       it's own block."* Its one group is the exit handover; a block ticking only
+       GLOBALS runs it and nothing else (scheduler._block_universe). It holds no
+       trade share, so PF / profit rankings and "until PF" have nothing to read
+       there -- give a GLOBALS block a job count. */
+    + ["BULL", "BEAR", "RANGING", "GLOBALS"].map(function(r){
         return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
     + vocab("selects").map(function(v){
         return chip("schedsel", v, (b.select || "explicit") === v,
