@@ -1777,7 +1777,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-095832";
+const APP_BUILD = "20261005-102907";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9135,7 +9135,15 @@ function renderScheduleBuilder(){
     + '</div>'
     + '<div class="tnote" style="margin-top:10px">' + '⚠️' + ' A change takes effect '
     + 'at each machine\u2019s next tick. A round already running finishes on the '
-    + 'bucket it claimed.</div>'
+    + 'bucket it claimed.'
+    /* 2026-10-05 -- saving no longer stops a running chain (schedule_builder.
+       resave). Say which edits still do, so Start is pressed when it is needed. */
+    + (status === "running"
+        ? ' Saving keeps it running on block ' + (cur + 1) + '. Only deleting or '
+          + 'replacing that block, or changing which buckets it targets, stops it '
+          + '\u2014 then Start runs it from block 1.'
+        : '')
+    + '</div>'
     + '</div>';
 }
 
