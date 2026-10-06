@@ -87,6 +87,9 @@ h1{
   font-size:.68rem;color:var(--faint);
   font-family:"Roboto Mono",ui-monospace,monospace;
 }
+/* 2026-10-06 -- the fleet's agents, one line. See fleetAgents(). */
+.h-agents{font-size:.76rem;color:var(--dim);}
+.h-agents b{color:var(--text);font-weight:700;}
 /* 2026-10-05 -- Insert seed. See renderSeedBuilder. */
 .seedv{border-top:1px solid var(--line);padding:8px 0;}
 .seedv.off .seedv-n{color:var(--dim);}
@@ -1766,6 +1769,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
       <button type="button" class="hgear" data-go="settings" aria-label="Settings">⚙</button>
     </div>
     <div class="stamp" id="stamp"></div>
+    <div class="h-agents" id="hagents" hidden></div>
     <div class="baked" id="banner" hidden></div>
     <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
   </header>
@@ -1825,7 +1829,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-230050";
+const APP_BUILD = "20261006-084355";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3383,6 +3387,9 @@ function agentsPanel(f){
   return `<div><button type="button" class="agline" data-agents="${esc(f.machine)}">`
     + `Agents: <b>${a.busy}</b> of ${a.used} busy (${pct}%)`
     + (a.total > a.used ? ` · ${a.total - a.used} not used` : "")
+    /* 2026-10-06 -- a LOG reading (a job on code before 20261006-081357)
+       said 45 of 45 busy beside an MT5 showing one agent running. */
+    + (a.source === "cpu" ? "" : " · from logs, may overstate")
     + `<span class="sp"></span>${open ? "▾" : "▸"}</button>`
     + `<div class="agstrip">${strip}</div>${rows}${lent}</div>`;
 }
@@ -3992,6 +3999,35 @@ function showState(msg){
     '<div class="empty">' + msg + '</div>';
   document.getElementById("page-active").innerHTML = "";
   document.getElementById("page-results").innerHTML = "";
+}
+
+/* 2026-10-06 -- THE FLEET'S AGENTS, ONE NUMBER. Trevor: *"This is exactly the
+   efficiency metric that I'm looking to see. Currently T79 and laptop are using
+   a total of 4 agents."* Every machine's own agents in use this round
+   (agents_local: busy of used) plus every lender's running lent agents
+   (agents.activity: busy of the ones not kept back). They are different cores,
+   so they add. A stale machine says nothing about now and is left out.
+
+   CPU-MEASURED ONLY. A machine's own agents count once its job reports them
+   from CPU (agent_activity live_cpu, fleet 20261006-081357, source "cpu"). The
+   log reading said "45 of 45 busy" while the 7910's MT5 had one agent running,
+   and adding that in would print the same wrong number one level up. A machine
+   running a job without a CPU reading is NAMED as not measured instead. */
+function fleetAgents(){
+  let busy = 0, avail = 0;
+  const unmeasured = [];
+  for(const f of FLEET){
+    if(stale(f)) continue;
+    const a = f.agents_local;
+    if(a && a.used && a.source === "cpu"){ busy += a.busy || 0; avail += a.used; }
+    else if(f.phase) unmeasured.push(f.machine);
+    const l = f.agents && f.agents.activity;
+    if(l && l.total && f.agents.state === "RUN"){
+      busy += l.busy || 0;
+      avail += (l.agents || []).filter(x => x && x[1] !== "u").length;
+    }
+  }
+  return (avail || unmeasured.length) ? {busy, avail, unmeasured} : null;
 }
 
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
@@ -12607,6 +12643,11 @@ function paint(stamp){
   document.getElementById("stamp").textContent = stamp + " · app " + APP_BUILD;
   document.getElementById("hsub").textContent =
     FLEET.length + " running · " + campaignProgress();
+  const fa = fleetAgents(), hag = document.getElementById("hagents");
+  hag.hidden = !fa;
+  if(fa) hag.innerHTML = (fa.avail ? `Agents: <b>${fa.busy}</b> of ${fa.avail} working (${
+    Math.round(100 * fa.busy / fa.avail)}%)` : "Agents: none measured")
+    + (fa.unmeasured.length ? ` · not measured yet: ${esc(fa.unmeasured.join(", "))}` : "");
   document.getElementById("banner").hidden = true;
   paintNoSchedule();
 }
