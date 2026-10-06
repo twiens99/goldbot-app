@@ -1823,7 +1823,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-204146";
+const APP_BUILD = "20261005-205558";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10536,7 +10536,13 @@ function machineSettingsRow(f){
               + '</div>' : "")
         + (n ? '<div class="tnote" style="margin-top:6px">Cores to lend (of ' + n + ')</div>'
               + '<div class="chips">' + Array.from({length: n}, (_, i) => i + 1).map(k =>
-                  msChip(m, "agent_limit", k, String(k), lim === k)).join("") + '</div>'
+                  msChip(m, "agent_limit", k, k === n ? "All " + n : String(k), lim === k)).join("") + '</div>'
+              /* 2026-10-05 -- Trevor: lend all, "unless 1 is being used for
+                 backtests". Only a machine that runs jobs of its own (the
+                 fleet's helper) ever keeps one back. */
+              + (lim >= n && (s.backtests_for || []).length
+                  ? '<div class="tnote">All keeps one back while its own backtest runs, and '
+                    + 'takes them all back while its own seed sweeps.</div>' : "")
              : '<div class="tnote">No agent services installed.</div>'));
     }
 
