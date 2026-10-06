@@ -1829,7 +1829,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261006-084355";
+const APP_BUILD = "20261006-085042";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2203,14 +2203,19 @@ function bktEl(id, trail, filterId){
 }
 
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
-const running = f => f.group_id && f.phase;
+/* 2026-10-06 -- A SEED IS A RUNNING JOB, GROUP OR NOT. A blended A/B sweep
+   (regime ALL) has no group, so the Laptop's REGIMEAXIS_ALL_Y2 card read "No
+   group picked yet · Selecting for 16m" over two busy agents -- Trevor: "Still
+   says selecting.. But its clearly not." `f.seed` is set by fleetWithSeed only
+   for a seed this machine is EXECUTING. */
+const running = f => !!((f.group_id || f.seed) && f.phase);
 /* A PHASE WITH NO GROUP IS NOT IDLE. The picking phase writes no detail
    upstream, so
    regime, bucket, group and mode all arrive null and the phase is the only
    true thing on the record. `running` is false for it, which titled the card
    "Idle -- no round" while it wore a picking chip -- the card contradicted
    itself, and the fabricated preview data was hiding it. */
-const picking = f => f.phase && !f.group_id;
+const picking = f => f.phase && !f.group_id && !f.seed;
 /* AN AGENT RUNS NO ROUND. It lends MT5 cores to another machine's optimization
    and says which machine on its own beacon (`agents.agent_for`). Every round
    predicate above is false for it by construction, which is how Kylee read
