@@ -284,6 +284,8 @@ button.chip.on::before{content:"\2713\00a0";}
 .agstrip{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;}
 .agsq{width:9px;height:9px;border-radius:2px;background:var(--line);}
 .agsq.on{background:var(--gold);}
+.agsq.off{opacity:.35;}
+.agline.lent{margin-top:7px;cursor:default;}
 .agrow{display:flex;justify-content:space-between;gap:8px;font-size:.74rem;
   color:var(--dim);padding:3px 0;border-top:1px solid var(--line);}
 .agrow:first-of-type{margin-top:6px;}
@@ -1823,7 +1825,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-224408";
+const APP_BUILD = "20261005-230050";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3249,6 +3251,7 @@ function agentCard(f){
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
         <div class="sub">${esc(String(a.running == null ? "?" : a.running))} of ${esc(String(a.installed == null ? "?" : a.installed))} core(s) · ${esc(a.why || (on ? "running" : "stopped"))}</div>
+        ${on ? lentPanel(f, "Lent cores") : ""}
         ${agentMeter(f.machine)}
       </div>
     </article>`;
@@ -3342,11 +3345,31 @@ function haltPanel(h){
    agents busy whatever the machine has -- a half-dark strip there is the
    search, not a fault. Tap the line for each agent's own row. */
 const AGENTS_OPEN = {};
+/* 2026-10-05 -- A LENDER'S CORES, same squares. The lender reads its own lent
+   agents' logs (agent_activity.lent_summary) and carries them on its beacon as
+   agents.activity; the controller's card shows them under its own. */
+function lentPanel(lender, label){
+  const a = lender && lender.agents && lender.agents.activity;
+  if(!a || !a.total) return "";
+  const live = (a.agents || []).filter(x => x && x[1] !== "u");
+  const strip = (a.agents || []).map(x =>
+    `<span class="agsq${x[1] === "b" ? " on" : ""}${x[1] === "u" ? " off" : ""}"></span>`).join("");
+  const kept = a.total - live.length;
+  return `<div class="agline lent">${esc(label)}: <b>${a.busy}</b> of ${live.length} busy`
+    + (kept ? ` · ${kept} kept back` : "")
+    + `</div><div class="agstrip">${strip}</div>`;
+}
+function lendersPanel(f){
+  return FLEET.filter(a => isAgent(a) && a.agents.agent_for === f.machine && !stale(a)
+                         && a.agents.state === "RUN")
+              .map(a => lentPanel(a, "From " + a.machine)).join("");
+}
 function agentsPanel(f){
   const a = f && f.agents_local;
-  if(!a || !a.total) return "";
+  const lent = lendersPanel(f);
+  if(!a || !a.total) return lent ? `<div>${lent}</div>` : "";
   const used = (a.agents || []).filter(x => x && x[1] !== "u");
-  if(!used.length) return "";
+  if(!used.length) return lent ? `<div>${lent}</div>` : "";
   const now = Date.now() / 1000;
   const pct = a.used ? Math.round(100 * a.busy / a.used) : 0;
   const open = !!AGENTS_OPEN[f.machine];
@@ -3361,7 +3384,7 @@ function agentsPanel(f){
     + `Agents: <b>${a.busy}</b> of ${a.used} busy (${pct}%)`
     + (a.total > a.used ? ` · ${a.total - a.used} not used` : "")
     + `<span class="sp"></span>${open ? "▾" : "▸"}</button>`
-    + `<div class="agstrip">${strip}</div>${rows}</div>`;
+    + `<div class="agstrip">${strip}</div>${rows}${lent}</div>`;
 }
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-agents]");
@@ -4211,8 +4234,11 @@ function lentToHost(host){
                             && Number(a.agents.running) > 0);
   if(!ls.length) return "";
   const n = ls.reduce((t, a) => t + Number(a.agents.running), 0);
+  const act = ls.filter(a => a.agents.activity);
+  const busy = act.reduce((t, a) => t + (Number(a.agents.activity.busy) || 0), 0);
   return " · +" + n + " core" + (n === 1 ? "" : "s") + " from "
-       + ls.map(a => a.machine).join(" + ");
+       + ls.map(a => a.machine).join(" + ")
+       + (act.length ? " (" + busy + " busy)" : "");
 }
 
 function agentJob(f){
