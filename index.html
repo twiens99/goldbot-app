@@ -288,6 +288,43 @@ button.chip.on::before{content:"\2713\00a0";}
 .agsq{width:9px;height:9px;border-radius:2px;background:var(--line);}
 .agsq.on{background:var(--gold);}
 .agsq.off{opacity:.35;}
+/* 2026-10-06 -- THE EFFICIENCY PAGE. See renderEfficiency. */
+.effrow{display:block;width:100%;text-align:left;background:var(--card);color:var(--text);
+  border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:0 0 8px;cursor:pointer;font:inherit;}
+.effrow.sel{border-color:var(--dim);}
+.effrow:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.effhead{display:flex;align-items:center;gap:8px;}
+.effsw{width:16px;height:4px;border-radius:2px;flex:0 0 auto;}
+.effsw.dash{background:repeating-linear-gradient(90deg,var(--text) 0 5px,transparent 5px 8px);}
+.effname{font-weight:700;font-size:.95rem;}
+.efftoday{font-size:.95rem;font-weight:700;}
+.efftoday small{font-weight:400;color:var(--dim);font-size:.75rem;}
+.effstat{font-size:.78rem;color:var(--dim);margin-top:4px;line-height:1.35;}
+.effstat b{color:var(--text);}
+.effpick{font-size:.72rem;color:var(--faint);margin-left:6px;}
+.effseg{display:flex;gap:6px;margin:4px 0 10px;}
+.effseg button{flex:1;background:var(--card-2);color:var(--dim);border:1px solid var(--line);
+  border-radius:10px;padding:7px 8px;font:inherit;font-size:.8rem;cursor:pointer;}
+.effseg button[aria-pressed="true"]{color:var(--text);border-color:var(--dim);}
+.effrange button{padding:6px 2px;font-size:.74rem;}
+.effcon{font-size:.76rem;color:var(--dim);margin-top:6px;line-height:1.4;}
+.effcon b{color:var(--text);}
+.effchart{position:relative;}
+.effchart svg{display:block;width:100%;height:auto;touch-action:pan-y;}
+.efftip{position:absolute;top:4px;pointer-events:none;background:var(--card-2);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font-size:.72rem;line-height:1.45;color:var(--text);
+  max-width:calc(100% - 8px);z-index:2;}
+.effworkhd{margin-top:5px;color:var(--dim);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;}
+.effwork{margin-top:3px;color:var(--dim);}
+.effwork b{color:var(--text);font-weight:600;}
+.effwl{margin-top:2px;}
+.efftip i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+.efflegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.74rem;color:var(--dim);margin:2px 0 6px;}
+.efflegend span{display:inline-flex;align-items:center;gap:5px;}
+.efftable{font-size:.74rem;color:var(--dim);margin-top:8px;}
+.efftable table{width:100%;border-collapse:collapse;margin-top:6px;}
+.efftable th,.efftable td{text-align:right;padding:2px 4px;border-bottom:1px solid var(--line);}
+.efftable th:first-child,.efftable td:first-child{text-align:left;}
 .agline.lent{margin-top:7px;cursor:default;}
 .agrow{display:flex;justify-content:space-between;gap:8px;font-size:.74rem;
   color:var(--dim);padding:3px 0;border-top:1px solid var(--line);}
@@ -1794,6 +1831,8 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
          chart inside is built once and would be destroyed by a repaint. -->
     <section class="page" id="page-live" hidden></section>
     <section class="page" id="page-track" hidden></section>
+    <!-- EFFICIENCY (2026-10-06), no tab: the home badge under Track record. -->
+    <section class="page" id="page-efficiency" hidden></section>
     <!-- FINANCE (2026-09-30), no tab: the home badge under Live. Its data comes
          from the Laptop over the tailnet, never from the gist -- see renderFinance. -->
     <section class="page" id="page-finance" hidden></section>
@@ -1830,7 +1869,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261006-090547";
+const APP_BUILD = "20261006-101229";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1844,6 +1883,7 @@ let PICKS = [];
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
 let FAHIST = null;   // 2026-10-06 -- fleet_agents_history, see fleetAgentBars
+let EFF = null;      // 2026-10-06 -- efficiency, see renderEfficiency
 let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
 /* 2026-09-30 -- GOLDbot's books, from the Laptop (fleet_api /finance). MEMORY
    ONLY: never localStorage, never the snapshot. See renderFinance. */
@@ -3382,7 +3422,14 @@ function agentsPanel(f){
   const used = (a.agents || []).filter(x => x && x[1] !== "u");
   if(!used.length) return lent ? `<div>${lent}</div>` : "";
   const now = Date.now() / 1000;
-  const pct = a.used ? Math.round(100 * a.busy / a.used) : 0;
+  /* 2026-10-06 -- OVER ALL OF THE MACHINE'S CORES. Trevor: *"The t79 can't be
+     100% it's Only got 45 of the 72 usable. At best 62.5 %. That needs to be
+     reflected through out the app for the t79."* The cores come from the
+     publisher's efficiency (the beacon's own count), else the beacon, else the
+     agent folders; the agents in play this round are "usable". */
+  const cores = (EFF && EFF.now && EFF.now[f.machine] && EFF.now[f.machine].cores)
+              || f.cores || a.total || a.used;
+  const pct = cores ? Math.round(100 * a.busy / cores) : 0;
   const open = !!AGENTS_OPEN[f.machine];
   const strip = used.map(x =>
     `<span class="agsq${x[1] === "b" ? " on" : ""}"></span>`).join("");
@@ -3392,8 +3439,8 @@ function agentsPanel(f){
                    : "idle " + esc(dur(now - x[2]))}</span><span>${
       esc(String(x[3]))} done</span></div>`).join("") : "";
   return `<div><button type="button" class="agline" data-agents="${esc(f.machine)}">`
-    + `Agents: <b>${a.busy}</b> of ${a.used} busy (${pct}%)`
-    + (a.total > a.used ? ` · ${a.total - a.used} not used` : "")
+    + `Agents: <b>${a.busy}</b> of ${cores} cores busy (${pct}%)`
+    + (a.used < cores ? ` · ${a.used} usable · best ${effPct(a.used, cores)}%` : "")
     /* 2026-10-06 -- a LOG reading (a job on code before 20261006-081357)
        said 45 of 45 busy beside an MT5 showing one agent running. */
     + (a.source === "cpu" ? "" : " · from logs, may overstate")
@@ -4021,6 +4068,13 @@ function showState(msg){
    and adding that in would print the same wrong number one level up. A machine
    running a job without a CPU reading is NAMED as not measured instead. */
 function fleetAgents(){
+  /* 2026-10-06 -- the publisher's own figure when it has one: busy cores over
+     ALL measured cores (app_snapshot.fleet_agents_now), the same number the
+     Efficiency page and its history use. Below is the older agents rule, for a
+     snapshot from a publisher that predates it. */
+  const c = EFF && EFF.now && EFF.now.Combined;
+  if(c) return (c.cores || (c.unmeasured || []).length)
+    ? {busy: c.busy || 0, avail: c.cores || 0, unmeasured: c.unmeasured || []} : null;
   let busy = 0, avail = 0;
   const unmeasured = [];
   for(const f of FLEET){
@@ -8034,6 +8088,10 @@ function renderHome(){
        record of these things"* -- how long tasks took, how good the ETAs were,
        when each agent lends. Under Schedule: it is what the plan's times stand on. */
     + homeButton("track", "⏱", "Track record", trackSummary(), "var(--done)")
+    /* 2026-10-06 -- EFFICIENCY. Trevor: *"I want another slot on the home
+       screen. Efficiency."* Under Track record: both are about how well the
+       machines are used. See renderEfficiency. */
+    + homeButton("efficiency", "◔", "Efficiency", effSummary(), "var(--good)")
     + homeButton("settings", "⚙", "Settings", settingsSummary())
     /* BELOW RESULTS, and only when there is something in it. An empty "To
        review" heading is a heading that trains you to stop looking. */
@@ -11211,6 +11269,380 @@ function trkKv(pairs){
   return '<div class="trk-kv">' + pairs.filter(p => p[1] != null && p[1] !== "")
     .map(([k, v]) => `<span>${esc(k)}</span><b>${esc(String(v))}</b>`).join("") + '</div>';
 }
+/* 2026-10-06 -- THE EFFICIENCY PAGE. Trevor: *"I want another slot on the home
+   screen. Efficiency. This will bring up a page that lists each machine. Along
+   with combined. Each Has their own 7 day bar graph, current CPU core status.
+   Each machine is selectable for the efficiency graph that will be below it. I
+   want to be able to see each machines 4 week rolling history. Could have up
+   to all 4 machines and combined all on the graph at once. Or one at a time."*
+
+   EVERY FIGURE IS BUSY CORES OVER ALL OF A MACHINE'S CORES -- *"The t79 can't
+   be 100% it's Only got 45 of the 72 usable. At best 62.5 %."* -- minus the
+   compute of passes that were then lost: *"the time that pass was computing,
+   should come off the top and count as a missed pass. Missed passes can also
+   be selected and graphed."* All of it is computed by the publisher
+   (app_snapshot.collect_efficiency, agent_passes); this only draws it. */
+const EFF_SEL = new Set(["Combined"]);
+let EFF_METRIC = "pct";            // "pct" | "missed" | "core"
+const EFF_COMBINED = "Combined";
+/* COLOR FOLLOWS THE MACHINE, NEVER THE SELECTION: one slot per machine by
+   name over every machine in the data, so a toggle never repaints another
+   line. Combined is a neutral DASHED line, not a fifth hue -- five hues fail
+   the all-pairs separation check on this surface. The dark steps of the
+   reference categorical palette, validated against --card (10-06): worst
+   adjacent CVD dE 8.4, normal-vision 19.3, every one >= 3:1. */
+const EFF_HUES = ["#3987e5", "#d95926", "#199e70", "#c98500"];
+function effMachines(){
+  return EFF && EFF.now ? Object.keys(EFF.now).filter(n => n !== EFF_COMBINED).sort() : [];
+}
+function effColor(name){
+  if(name === EFF_COMBINED) return "var(--text)";
+  const i = effMachines().indexOf(name);
+  return i >= 0 && i < EFF_HUES.length ? EFF_HUES[i] : "var(--dim)";
+}
+function effSwatch(name){
+  return name === EFF_COMBINED ? '<span class="effsw dash"></span>'
+       : `<span class="effsw" style="background:${effColor(name)}"></span>`;
+}
+const effPct = (busy, cores) => cores ? Math.round(1000 * busy / cores) / 10 : null;
+
+function effSummary(){
+  if(!EFF || !EFF.now) return "No efficiency data in this snapshot yet";
+  const c = ((EFF.series || {})[EFF_COMBINED] || [])[0] || {};
+  const n = EFF.now[EFF_COMBINED] || {};
+  return (c.pct != null ? `<span class="hcount">${esc(String(c.pct))}%</span> today` : "not measured today")
+       + (n.cores ? ` · ${n.busy} of ${n.cores} cores working now` : "")
+       + (c.missed ? ` · ${c.missed} missed pass${c.missed === 1 ? "" : "es"}` : "");
+}
+
+/* The cores, now: busy, idle but usable, and not usable this round. */
+function effStrip(now){
+  const cores = now.cores || 0, busy = now.busy || 0;
+  const usable = now.usable != null ? now.usable : cores;
+  let s = "";
+  for(let i = 0; i < cores; i++)
+    s += `<span class="agsq${i < busy ? " on" : i >= usable ? " off" : ""}"></span>`;
+  return `<div class="agstrip">${s}</div>`;
+}
+
+/* Seven days, a FIXED 0-100% scale (fleetAgentBars' rule): an empty slot is a
+   day nobody measured, not a zero. */
+function effBars(rows){
+  const days = rows.slice(0, 7).reverse();
+  return '<div class="agbars">' + days.map(r => {
+    if(r.pct == null)
+      return `<span class="agbar" title="${esc(r.day + ": not measured")}"></span>`;
+    const tip = `${r.day}: ${r.pct}% · ${r.busy} of ${r.cores} cores productive on average`
+              + ` · ${r.hours}h measured` + (r.missed ? ` · ${r.missed} missed` : "");
+    return `<span class="agbar" title="${esc(tip)}">`
+         + `<i style="height:${Math.max(Math.min(r.pct, 100), 3)}%"></i></span>`;
+  }).join("") + '</div>';
+}
+
+/* CORE HOURS CONTRIBUTED. Trevor: *"Id also like each machine to have a 'core
+   hours contributed' stat. This takes into account the speed of the cores, and
+   the efficiency of its use. And compares that to the total core hour output
+   of the current entire fleet. If desktop is only contributing 1% then it may
+   not even be worth the electricity it consumes."* Work = productive core
+   hours x speed per core (the fleet's fastest = 1.0, from a real-tick pass
+   under load) -- app_snapshot._contribution. */
+function effContrib(name){
+  const c = (EFF.contrib || {})[name];
+  if(!c) return "";
+  if(name === EFF_COMBINED){
+    const t = c.d7 || {};
+    return t.work_h ? `<div class="effcon">Fleet output: <b>${t.work_h}</b> fastest-core hours in 7 days`
+      + ` · <b>${(c.today || {}).work_h ?? 0}</b> today</div>` : "";
+  }
+  const sh = k => (c[k] && c[k].share != null) ? `<b>${c[k].share}%</b>` : "—";
+  const speed = c.speed != null
+    ? `${c.speed}× speed per core (${c.basis}: ${hm(c.pass_s)} a pass)`
+    : "core speed not measured yet";
+  return `<div class="effcon">Share of fleet output: today ${sh("today")} · 7 days ${sh("d7")} · 4 weeks ${sh("d28")}`
+    + `<br>${esc(String((c.d7 || {}).core_h ?? 0))} productive core hours in 7 days · ${esc(speed)}</div>`;
+}
+
+function effRow(name){
+  const now = (EFF.now || {})[name] || {};
+  const rows = (EFF.series || {})[name] || [];
+  const today = rows[0] || {};
+  const sel = EFF_SEL.has(name);
+  let stat;
+  if(name === EFF_COMBINED){
+    stat = now.cores ? `<b>${now.busy}</b> of ${now.cores} cores working now`
+                     : "nothing measured right now";
+    if((now.unmeasured || []).length)
+      stat += ` · not measured yet: ${esc(now.unmeasured.join(", "))}`;
+  } else if(!now.measured){
+    stat = esc(now.why || "not measured");
+  } else {
+    stat = `<b>${now.busy}</b> of ${now.cores} cores working now`;
+    if(now.usable && now.usable < now.cores)
+      stat += ` · ${now.usable} usable · best ${effPct(now.usable, now.cores)}%`;
+  }
+  const missed = today.missed
+    ? `${today.missed} missed today (${today.missed_h}h lost)` : "no missed passes today";
+  return `<button type="button" class="effrow${sel ? " sel" : ""}" data-effsel="${esc(name)}" aria-pressed="${sel}">
+      <div class="effhead">${effSwatch(name)}<span class="effname">${esc(name)}</span>
+        <span class="effpick">${sel ? "on the graph" : "tap to graph"}</span><span class="sp"></span>
+        <span class="efftoday">${today.pct != null ? esc(String(today.pct)) + "%" : "—"}<small> today</small></span></div>
+      <div class="effstat">${stat}</div>
+      ${name !== EFF_COMBINED && now.measured && now.cores ? effStrip(now) : ""}
+      <div class="agmeter" style="margin-top:8px">${effBars(rows)}<div class="agnote">${esc(missed)}</div></div>
+      ${effContrib(name)}
+    </button>`;
+}
+
+/* One value per day for a series, oldest first. Efficiency: null where not
+   measured (a gap in the line). Missed: 0 from the series' first day with any
+   data on (no record = nothing lost), null before it (not yet recorded). */
+/* THE RANGE. Trevor: *"make that graph rolling timeline selectable. 4 week, 3
+   week, 2 week, 1 week. 2 days."* Days for the weeks; HOURS for 2 days (two
+   daily points say nothing) -- efficiency.hourly, the same rules per hour. */
+let EFF_RANGE = 28;                 // 28 | 21 | 14 | 7 | "2d"
+const EFF_RANGES = [[28, "4 wk"], [21, "3 wk"], [14, "2 wk"], [7, "1 wk"], ["2d", "2 days"]];
+const effHourly = () => EFF_RANGE === "2d";
+/* A series' rows for the range, OLDEST FIRST. */
+function effRowsFor(name){
+  if(effHourly()) return (((EFF.hourly || {})[name]) || []).slice(0, 48).reverse();
+  return (((EFF.series || {})[name]) || []).slice(0, EFF_RANGE).reverse();
+}
+const EFF_WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/* The x label and the tooltip's heading for one row. */
+function effWhen(r, long){
+  if(r.t == null) return long ? (r.day || "") : (r.day || "").slice(5);
+  const d = new Date(r.t * 1000), hh = String(d.getHours()).padStart(2, "0");
+  return long ? `${EFF_WD[d.getDay()]} ${(r.day || "").slice(5, 10)} ${hh}:00–${String((d.getHours() + 1) % 24).padStart(2, "0")}:00`
+              : `${EFF_WD[d.getDay()]} ${hh}h`;
+}
+function effValues(name){
+  const rows = effRowsFor(name);
+  if(EFF_METRIC === "pct") return rows.map(r => r.pct != null ? r.pct : null);
+  /* CORE HOURS -- work in fastest-core hours (speed x productive core hours).
+     Trevor: *"That core hours metric can also be selected to the graph"*. A
+     measured row with nothing productive is 0; an unmeasured one a gap. */
+  if(EFF_METRIC === "core")
+    return rows.map(r => r.work_h != null ? r.work_h : (r.pct != null ? 0 : null));
+  const first = rows.findIndex(r => r.pct != null || r.missed);
+  return rows.map((r, i) => first < 0 || i < first ? null : (r.missed || 0));
+}
+function effNiceMax(v){
+  if(v <= 4) return 4;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for(const m of [1, 2, 2.5, 5, 10]) if(m * p >= v) return m * p;
+  return 10 * p;
+}
+
+const EFF_G = {W: 340, H: 196, pl: 30, pr: 64, pt: 10, pb: 24};
+function effChart(){
+  const sel = [EFF_COMBINED, ...effMachines()].filter(n => EFF_SEL.has(n) && (EFF.series || {})[n]);
+  if(!sel.length) return '<div class="trk-note">Tap a machine above to put it on the graph.</div>';
+  const base = effRowsFor(EFF_COMBINED);
+  const N = base.length;
+  if(N < 2) return '<div class="trk-note">Nothing recorded for this range yet.</div>';
+  const vals = Object.fromEntries(sel.map(n => [n, effValues(n)]));
+  const pctMode = EFF_METRIC === "pct";
+  const unit = pctMode ? "%" : EFF_METRIC === "core" ? "h" : "";
+  const top = pctMode ? 100 : effNiceMax(Math.max(0, ...Object.values(vals).flat().filter(v => v != null)));
+  const {W, H, pl, pr, pt, pb} = EFF_G;
+  const x = i => pl + i * (W - pl - pr) / Math.max(1, N - 1);
+  const y = v => pt + (1 - v / top) * (H - pt - pb);
+  let g = "";
+  const ticks = pctMode ? [0, 25, 50, 75, 100] : [0, top / 2, top];
+  ticks.forEach(t => {
+    g += `<line x1="${pl}" x2="${W - pr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/>`
+       + `<text x="${pl - 5}" y="${y(t) + 3}" text-anchor="end" font-size="9" fill="var(--faint)">${t}${unit}</text>`;
+  });
+  const step = effHourly() ? 12 : Math.max(1, Math.round((N - 1) / 4));
+  [...new Set([...Array.from({length: Math.floor((N - 1) / step) + 1}, (_, k) => k * step), N - 1])]
+    .filter(i => i < N && (i === N - 1 || N - 1 - i >= step / 2)).forEach(i => {
+    g += `<text x="${x(i)}" y="${H - 7}" text-anchor="${i === N - 1 ? "end" : "middle"}" font-size="9" fill="var(--faint)">${esc(effWhen(base[i]))}</text>`;
+  });
+  /* A MACHINE'S CEILING, when it cannot reach 100% this round (the T7910: 45
+     of 72 usable = 62.5%). Faint, in its own color, efficiency view only. */
+  if(pctMode) sel.filter(n => n !== EFF_COMBINED).forEach(n => {
+    const now = EFF.now[n] || {};
+    if(now.usable && now.cores && now.usable < now.cores){
+      const v = effPct(now.usable, now.cores);
+      g += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${effColor(n)}" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>`;
+    }
+  });
+  const ends = [];
+  sel.forEach(n => {
+    let d = "", pen = false;
+    vals[n].forEach((v, i) => {
+      if(v == null){ pen = false; return; }
+      d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1);
+      pen = true;
+    });
+    const last = vals[n].map((v, i) => [v, i]).filter(p => p[0] != null).pop();
+    if(!d) return;
+    const c = effColor(n);
+    g += `<path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${
+           n === EFF_COMBINED ? ' stroke-dasharray="5 3"' : ""}/>`;
+    /* A lone point (one measured day) is a dot, or it would draw nothing. */
+    if(last) g += `<circle cx="${x(last[1])}" cy="${y(last[0])}" r="4" fill="${c}" stroke="var(--card)" stroke-width="2"/>`;
+    if(last) ends.push({n, yy: y(last[0])});
+  });
+  /* Direct labels at the right edge, nudged apart; text in text ink. */
+  ends.sort((a, b) => a.yy - b.yy);
+  for(let i = 1; i < ends.length; i++)
+    if(ends[i].yy - ends[i - 1].yy < 11) ends[i].yy = ends[i - 1].yy + 11;
+  /* ...and never down into the time axis: the stack moves up instead. */
+  const floor = H - pb - 4;
+  for(let i = ends.length - 1; i >= 0; i--)
+    ends[i].yy = Math.min(ends[i].yy, floor - (ends.length - 1 - i) * 11);
+  ends.forEach(e => {
+    g += `<text x="${W - pr + 8}" y="${e.yy + 3}" font-size="9.5" fill="var(--dim)">${esc(e.n)}</text>`;
+  });
+  g += `<line class="effx" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="var(--dim)" stroke-width="1" visibility="hidden"/>`;
+  const legend = '<div class="efflegend">' + sel.map(n => `<span>${effSwatch(n)}${esc(n)}</span>`).join("") + '</div>';
+  const head = ["Day", ...sel];
+  const table = '<details class="efftable"><summary>Table</summary><table><tr>'
+    + head.map(h => `<th>${esc(h)}</th>`).join("") + '</tr>'
+    + base.map((b, i) => '<tr><td>' + esc(effWhen(b, true)) + '</td>' + sel.map(n => {
+        const v = vals[n][i];
+        return `<td>${v == null ? "—" : esc(String(v)) + unit}</td>`;
+      }).join("") + '</tr>').reverse().join("")
+    + '</table></details>';
+  return legend
+    + `<div class="effchart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${
+        pctMode ? "Efficiency" : EFF_METRIC === "core" ? "Core hours contributed" : "Missed passes"}, last ${effHourly() ? "48 hours" : N + " days"}" data-effsvg="1" data-n="${N}">${g}</svg>`
+    + '<div class="efftip" hidden></div></div>' + table;
+}
+
+/* One task a machine ran that day: [task, regime, group, hours, grid, passes].
+   An optimization carries its FULL grid -- every value of every swept range
+   multiplied out -- and the passes it actually ran beside it. */
+/* Its words come from the publisher (`label`, app_snapshot.WORK_LABELS): the
+   leak scan refuses the internal task names in this page's source. */
+function effWorkName(w){
+  const what = w.group ? humanize(w.group) : (w.regime || "");
+  return (w.label || "Task") + (what ? " · " + what : "");
+}
+const effClock = t => { const d = new Date(t * 1000);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+function effWorkLine(w, i, all){
+  const size = w.grid ? ` · ${Number(w.grid).toLocaleString()} combinations`
+                      + (w.passes ? ` (${Number(w.passes).toLocaleString()} run)` : "") : "";
+  /* Seed or schedule. Trevor: *"Include whether or not it was a seed. If not a
+     seed, it was regular schedule."* */
+  const src = w.seed ? `seed · ${w.seed}` : "schedule";
+  /* Overlap. Trevor: *"Tasks need to show if they were overlapping or not."*
+     Named when the other task is listed; said plainly when it is not. */
+  const with_ = (w.overlaps || []).map(j => all[j] && effWorkName(all[j])).filter(Boolean);
+  const ov = with_.length ? `ran alongside ${with_.join(", ")}`
+           : w.overlapped ? "overlapped another task" : "ran alone";
+  return `<div class="effwl">${esc(effWorkName(w))} · ${esc(effClock(w.from))}–${esc(effClock(w.to))}`
+       + ` · ${esc(String(w.hours))}h${w.runs > 1 ? ` · ×${w.runs} runs` : ""}${esc(size)}`
+       + `<br><span style="color:var(--faint)">${esc(src)} · ${esc(ov)}</span></div>`;
+}
+
+/* Tap or hover: the day under the finger, every series on the graph. */
+function effTip(svg, clientX){
+  const wrap = svg.parentElement, tip = wrap.querySelector(".efftip");
+  const cross = svg.querySelector(".effx");
+  const N = +svg.dataset.n;
+  const box = svg.getBoundingClientRect();
+  const {W, pl, pr} = EFF_G;
+  const vx = (clientX - box.left) * W / box.width;
+  const i = Math.max(0, Math.min(N - 1, Math.round((vx - pl) / ((W - pl - pr) / Math.max(1, N - 1)))));
+  const sel = [EFF_COMBINED, ...effMachines()].filter(n => EFF_SEL.has(n) && (EFF.series || {})[n]);
+  const rowsOf = n => effRowsFor(n)[i] || {};
+  const day = effWhen(rowsOf(EFF_COMBINED), true);
+  const xv = pl + i * (W - pl - pr) / Math.max(1, N - 1);
+  cross.setAttribute("x1", xv); cross.setAttribute("x2", xv);
+  cross.setAttribute("visibility", "visible");
+  tip.innerHTML = `<b>${esc(day)}</b><br>` + sel.map(n => {
+    const r = rowsOf(n);
+    const c = n === EFF_COMBINED ? "var(--text)" : effColor(n);
+    const all = rowsOf(EFF_COMBINED).work_h;
+    const v = EFF_METRIC === "pct"
+      ? (r.pct != null ? `${r.pct}% · ${r.busy} of ${r.cores} cores` : "not measured")
+      : EFF_METRIC === "core"
+      ? (r.work_h != null ? `${r.work_h} fastest-core h` + (n !== EFF_COMBINED && all
+            ? ` · ${Math.round(1000 * r.work_h / all) / 10}% of the fleet` : "")
+         : r.core_h ? `${r.core_h} core h (speed not measured)` : "not measured")
+      : (r.missed ? `${r.missed} missed · ${r.missed_h}h lost` : "none missed");
+    return `<i style="background:${c}"></i>${esc(n)}: ${esc(v)}`;
+  }).join("<br>")
+  /* WHAT RAN THAT DAY, per machine -- every machine when Combined is on the
+     graph. Trevor: *"Displaying what was running at the time of that
+     efficiency. As in optimization, backtest, fulltest. Include the full
+     mathmatical pass count for the Optimization."* */
+  + (() => {
+      const who = sel.includes(EFF_COMBINED) ? effMachines() : sel;
+      const blocks = who.map(n => {
+        const w = rowsOf(n).work || [];
+        return w.length ? `<div class="effwork"><b>${esc(n)}</b>`
+          + w.map((x, i) => effWorkLine(x, i, w)).join("") + '</div>' : "";
+      }).join("");
+      return blocks ? '<div class="effworkhd">What ran</div>' + blocks : "";
+    })();
+  tip.hidden = false;
+  const px = xv * box.width / W;
+  tip.style.left = Math.max(0, Math.min(px + 10, box.width - tip.offsetWidth)) + "px";
+}
+["pointermove", "pointerdown"].forEach(t => document.addEventListener(t, e => {
+  const svg = e.target.closest && e.target.closest("svg[data-effsvg]");
+  if(svg) effTip(svg, e.clientX);
+  /* A tap anywhere else closes it -- on a phone there is no pointer to leave. */
+  else if(t === "pointerdown") document.querySelectorAll(".efftip").forEach(tp => {
+    tp.hidden = true;
+    const x = tp.parentElement.querySelector(".effx");
+    if(x) x.setAttribute("visibility", "hidden");
+  });
+}));
+document.addEventListener("pointerleave", e => {
+  if(e.target && e.target.matches && e.target.matches("svg[data-effsvg]")){
+    const w = e.target.parentElement;
+    w.querySelector(".efftip").hidden = true;
+    e.target.querySelector(".effx").setAttribute("visibility", "hidden");
+  }
+}, true);
+
+function renderEfficiency(){
+  const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  if(!EFF || !EFF.now)
+    return '<div class="home">' + back + '<div class="card"><div class="card-in">' +
+      '<div class="trk-note">This snapshot has no efficiency data yet — it arrives with the ' +
+      'publisher that records it.</div></div></div></div>';
+  const names = [EFF_COMBINED, ...effMachines()];
+  return '<div class="home">' + back
+    + '<div class="section-label">Machines</div>'
+    + names.map(effRow).join("")
+    + '<div class="section-label" style="margin-top:12px">History</div>'
+    + '<div class="card"><div class="card-in">'
+    + `<div class="effseg"><button type="button" data-effmetric="pct" aria-pressed="${EFF_METRIC === "pct"}">Efficiency</button>`
+    + `<button type="button" data-effmetric="missed" aria-pressed="${EFF_METRIC === "missed"}">Missed passes</button>`
+    + `<button type="button" data-effmetric="core" aria-pressed="${EFF_METRIC === "core"}">Core hours</button></div>`
+    + '<div class="effseg effrange">' + EFF_RANGES.map(([v, label]) =>
+        `<button type="button" data-effrange="${v}" aria-pressed="${EFF_RANGE === v}">${label}</button>`).join("") + '</div>'
+    + effChart()
+    + '<div class="trk-note" style="margin-top:8px">Efficiency = cores doing work over ALL of a '
+    + "machine's cores, every 5 minutes, minus the time spent on passes that were then lost. "
+    + 'A dotted line is a machine\'s best possible this round (cores it cannot use). '
+    + 'Core hours = productive core hours × each machine\'s speed per core (the fastest = 1.0, '
+    + 'from a real-tick pass under load), so a slow machine\'s hour counts for what it does. '
+    + 'Recorded from 10-06; missed passes reach back as far as the agents\' own logs.</div>'
+    + '</div></div></div>';
+}
+document.addEventListener("click", e => {
+  const s = e.target.closest("[data-effsel]");
+  const m = e.target.closest("[data-effmetric]");
+  const r = e.target.closest("[data-effrange]");
+  if(!s && !m && !r) return;
+  e.preventDefault();
+  if(s){
+    const n = s.dataset.effsel;
+    if(EFF_SEL.has(n)) EFF_SEL.delete(n); else EFF_SEL.add(n);
+  } else if(m) EFF_METRIC = m.dataset.effmetric;
+  else EFF_RANGE = r.dataset.effrange === "2d" ? "2d" : +r.dataset.effrange;
+  const y = window.scrollY;
+  document.getElementById("page-efficiency").innerHTML = renderEfficiency();
+  window.scrollTo(0, y);
+});
+
 function renderTrack(){
   const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
   if(!TRACK.machines)
@@ -12666,6 +13098,7 @@ function paint(stamp){
   document.getElementById("page-results").innerHTML = renderResults();
   document.getElementById("page-settings").innerHTML = renderSettings();
   document.getElementById("page-track").innerHTML = renderTrack();
+  document.getElementById("page-efficiency").innerHTML = renderEfficiency();
   repaintSchedule();
   repaintStatus();
   /* The snapshot's age and the PAGE's build are different questions, and only
@@ -12676,7 +13109,7 @@ function paint(stamp){
     FLEET.length + " running · " + campaignProgress();
   const fa = fleetAgents(), hag = document.getElementById("hagents");
   hag.hidden = !fa;
-  if(fa) hag.innerHTML = (fa.avail ? `Agents: <b>${fa.busy}</b> of ${fa.avail} working (${
+  if(fa) hag.innerHTML = (fa.avail ? `Cores: <b>${fa.busy}</b> of ${fa.avail} working (${
     Math.round(100 * fa.busy / fa.avail)}%)` : "Agents: none measured")
     + (fa.unmeasured.length ? ` · not measured yet: ${esc(fa.unmeasured.join(", "))}` : "");
   document.getElementById("hagbars").innerHTML = fleetAgentBars();
@@ -12847,6 +13280,7 @@ function applySnapshot(d, source){
   FLEET = oneRowPerMachine(d.fleet);
   AGENTEFF = d.agent_efficiency || {};
   FAHIST = d.fleet_agents_history || null;
+  EFF = d.efficiency || null;
   TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
@@ -13833,7 +14267,7 @@ setTimeout(() => { if(apiBase()) finLoad(false); }, 1200);
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
 const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track",
-               "finance"];
+               "finance", "efficiency"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
