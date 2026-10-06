@@ -1770,6 +1770,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     </div>
     <div class="stamp" id="stamp"></div>
     <div class="h-agents" id="hagents" hidden></div>
+    <div id="hagbars"></div>
     <div class="baked" id="banner" hidden></div>
     <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
   </header>
@@ -1829,7 +1830,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261006-085042";
+const APP_BUILD = "20261006-090547";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1842,6 +1843,7 @@ let PICKS = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
+let FAHIST = null;   // 2026-10-06 -- fleet_agents_history, see fleetAgentBars
 let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
 /* 2026-09-30 -- GOLDbot's books, from the Laptop (fleet_api /finance). MEMORY
    ONLY: never localStorage, never the snapshot. See renderFinance. */
@@ -4033,6 +4035,30 @@ function fleetAgents(){
     }
   }
   return (avail || unmeasured.length) ? {busy, avail, unmeasured} : null;
+}
+
+/* 2026-10-06 -- SEVEN DAYS OF THE AGENTS LINE. Trevor: *"Can you put a history
+   bar similar to the one that's on Kylee? 7 day history kinda thing."* Kylee's
+   bars (agentMeter), but each bar is the day's SHARE of agent time working, on
+   a fixed 0-100% scale -- not scaled to the busiest day as Kylee's hours are.
+   100% is the goal here, so a full bar must mean it; scaled to the peak, an 8%
+   day alone in the strip would draw full height. A day nobody measured is an
+   empty slot, not a zero. Recorded by the snapshot's publisher every 5 min
+   (app_snapshot.collect_fleet_agents_history) -- from 2026-10-06 on. */
+function fleetAgentBars(){
+  const days = ((FAHIST && FAHIST.days) || []).slice(0, 7).reverse();
+  if(!days.some(r => r.pct != null)) return "";
+  const bars = days.map(r => {
+    if(r.pct == null)
+      return `<span class="agbar" title="${esc(r.day + ": not measured")}"></span>`;
+    const tip = `${r.day}: ${r.pct}% · ${r.busy} of ${r.avail} working on average`
+              + ` · ${r.hours}h measured`;
+    return `<span class="agbar" title="${esc(tip)}">`
+         + `<i style="height:${Math.max(Math.min(r.pct, 100), 3)}%"></i></span>`;
+  }).join("");
+  const today = days[days.length - 1] || {};
+  return `<div class="agmeter"><div class="agbars">${bars}</div><div class="agnote">${
+    today.pct != null ? esc(String(today.pct)) + "% today" : "not measured today"}</div></div>`;
 }
 
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
@@ -12653,6 +12679,7 @@ function paint(stamp){
   if(fa) hag.innerHTML = (fa.avail ? `Agents: <b>${fa.busy}</b> of ${fa.avail} working (${
     Math.round(100 * fa.busy / fa.avail)}%)` : "Agents: none measured")
     + (fa.unmeasured.length ? ` · not measured yet: ${esc(fa.unmeasured.join(", "))}` : "");
+  document.getElementById("hagbars").innerHTML = fleetAgentBars();
   document.getElementById("banner").hidden = true;
   paintNoSchedule();
 }
@@ -12819,6 +12846,7 @@ function applySnapshot(d, source){
   if(!Array.isArray(d.fleet) || !Array.isArray(d.ledger)) return false;
   FLEET = oneRowPerMachine(d.fleet);
   AGENTEFF = d.agent_efficiency || {};
+  FAHIST = d.fleet_agents_history || null;
   TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
