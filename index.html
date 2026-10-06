@@ -1823,7 +1823,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-154644";
+const APP_BUILD = "20261005-204146";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2210,6 +2210,14 @@ const picking = f => f.phase && !f.group_id;
    predicate above is false for it by construction, which is how Kylee read
    "idle - no round" on 2026-09-23 while lending 4 of 4 cores to the Desktop. */
 const isAgent = f => !!(f && f.agents && f.agents.agent_for);
+/* 2026-10-05 -- AN AGENT THAT IS ALSO THE FLEET'S HELPER (the Laptop serving
+   the T7910) runs jobs of its own: the T7910's backtests, the baselines pinned
+   to it, every seed. Its beacon then carries a phase beside the lending
+   report, and that job has to show -- an agent card alone would read "lending"
+   while it spends an hour on a backtest. A phase that names no regime is the
+   helper looking for work, not a job. */
+const helperBusy = f => isAgent(f) && !stale(f)
+  && (running(f) || !!(f.phase && f.regime) || !!seedOnMachine(f.machine));
 const completed = r => !r.failed;
 
 /* "5 of 28" -- the groups this BUCKET has optimized, out of its own. null when
@@ -2797,7 +2805,7 @@ function renderRounds(){
   return FLEET
     .filter(f => !(f.agents && f.agents.agent_for) || orphan(f))
     .map(f => card(f) + (under[f.machine] || [])
-        .map(a => `<div class="agent-of">${agentCard(a)}</div>`).join(""))
+        .map(a => `<div class="agent-of">${agentCard(a)}${helperBusy(a) ? card(a) : ""}</div>`).join(""))
     .join("");
 }
 
@@ -4218,7 +4226,7 @@ function jobsModel(){
          .forEach(a => ordered.push(a));
   });
   ordered.forEach(f => {
-    if(isAgent(f)){ jobs.push(agentJob(f)); return; }
+    if(isAgent(f)){ jobs.push(agentJob(f)); if(!helperBusy(f)) return; }
     const sd = seedOnMachine(f.machine);
     // THE REGIME, IN WORDS. It used to be carried by the stripe colour alone,
     // and on 2026-09-14 both machines ran a group called ENTRY_G3_COMPOSITE_
@@ -4228,7 +4236,9 @@ function jobsModel(){
     // a beacon that is describing a round it is not running.
     const rg = (sd && sd.regime) || f.regime || null;
     jobs.push({
-      id: "m:" + f.machine, section: "Running now",
+      // A helper agent's own job sits under its lending row with its own id.
+      id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Running now",
+      helper: isAgent(f),
       fleet: fleetWithSeed(f, sd), seed: sd,
       title: f.machine,
       // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
@@ -7691,7 +7701,7 @@ function renderJobDetail(job){
     + (job.fleet ? '<div class="section-label">Machine</div>' +
          /* An agent's own card: cores, why, and its lending meter -- the
             round card would title it "Idle -- no round". */
-         (isAgent(job.fleet) ? agentCard(job.fleet) : machineCard(job.fleet)) : "")
+         (isAgent(job.fleet) && !job.helper ? agentCard(job.fleet) : machineCard(job.fleet)) : "")
     /* ONE MACHINE, ONE JOB, ONE CARD. This used to print the machine card and
        then the seed card underneath it, which read as two jobs on one box --
        Trevor: *"a machine can't have two jobs on the go in the app page."* They
@@ -10493,15 +10503,22 @@ function machineSettingsRow(f){
     const btFor = s.backtests_for || [];
     if(s.backtest_helper){
       const by = s.backtests_by || null;
-      bits.push('<div class="section-label" style="margin-top:10px">Backtests</div>'
+      /* 2026-10-05 evening: the helper takes the SEEDS too (an agent a peer
+         names, on code reporting backtest_helper >= 2) -- every machine then
+         leaves unpinned seeds to it; a seed pinned to a machine still goes
+         there. */
+      bits.push('<div class="section-label" style="margin-top:10px">Backtests + seeds</div>'
         + (isAgent ? "" : '<div class="chips">'
             + msChip(m, "backtests_by", null, "This machine", !by)
             + (s.peers || []).map(p => msChip(m, "backtests_by", p, "Hand to " + p, by === p)).join("")
             + '</div><div class="tnote">The helper measures each round while this machine '
-            + 'starts its next optimization. Anything still owed is measured here before '
+            + 'starts its next optimization, and runs the fleet&rsquo;s seeds (a seed pinned '
+            + 'to a machine still runs there). Anything still owed is measured here before '
             + 'the next round is applied.</div>')
-        + (btFor.length ? '<div class="tnote" style="margin-top:6px">Runs backtests for: <b>'
-            + esc(btFor.join(", ")) + '</b></div>'
+        + (btFor.length ? '<div class="tnote" style="margin-top:6px">Runs backtests + seeds for: <b>'
+            + esc(btFor.join(", ")) + '</b>'
+            + (Number(s.backtest_helper) >= 2 ? "" : ' (backtests only until it updates)')
+            + '</div>'
           : (isAgent ? '<div class="tnote">Runs nobody&rsquo;s backtests.</div>' : "")));
     }
 
