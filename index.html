@@ -1823,7 +1823,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261005-205558";
+const APP_BUILD = "20261005-224408";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4195,7 +4195,24 @@ function agentLine(f, host){
       (a.state === "RUN" ? " · last known: lending " + cores + " to " + to : "");
   }
   if(a.state !== "RUN") return "not lending - " + (a.why || "stopped");
-  return "lending " + cores + " to " + to + agentHostUse(host);
+  /* 2026-10-05 -- lending ALL keeps one back while its own backtest runs
+     (agent_gate.lend_limit); say so, or "9 of 10" reads as a fault. */
+  const kept = Number(a.kept_back) || 0;
+  return "lending " + cores + " to " + to
+       + (kept ? " · " + kept + " kept for its own backtest" : "")
+       + agentHostUse(host);
+}
+
+/* 2026-10-05 -- WHO IS LENDING TO THIS MACHINE, for its own row: "+9 cores
+   from Laptop". Only lenders that are reporting and running count. */
+function lentToHost(host){
+  const ls = FLEET.filter(a => isAgent(a) && a.agents.agent_for === host.machine
+                            && !stale(a) && a.agents.state === "RUN"
+                            && Number(a.agents.running) > 0);
+  if(!ls.length) return "";
+  const n = ls.reduce((t, a) => t + Number(a.agents.running), 0);
+  return " · +" + n + " core" + (n === 1 ? "" : "s") + " from "
+       + ls.map(a => a.machine).join(" + ");
 }
 
 function agentJob(f){
@@ -4255,7 +4272,7 @@ function jobsModel(){
       line: stale(f) ? "not reporting - last seen " + ago(f.age_seconds)
           : f.halt ? f.halt.title
           : sd ? (sd.label || humanize(sd.group_id) || "seeded work")
-          : running(f) ? humanize(f.group_id)
+          : running(f) ? humanize(f.group_id) + (isAgent(f) ? "" : lentToHost(f))
           : picking(f) ? "choosing a group"
           : "idle - no round",
       // Same rule as the card's chip: a claimed seed names the work
@@ -10418,7 +10435,7 @@ const MS_DAY = {mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri",
                 sat: "Sat", sun: "Sun"};
 const MS_FIELD = {compute_mode: "compute", tier: "role", optimizations_enabled:
   "run optimizations", backtests_by: "backtests", lend_cores: "lend cores", agent_for: "serves",
-  agent_limit: "cores to lend", schedule: "daily minimum", fence_enabled:
+  agent_limit: "cores to lend", lend_lid_open: "lend with lid open", schedule: "daily minimum", fence_enabled:
   "home rule", resume_on_ac: "plug-in rule"};
 
 function machineSettingsBadge(){
@@ -10529,6 +10546,11 @@ function machineSettingsRow(f){
       bits.push('<div class="section-label" style="margin-top:10px">Agent</div>'
         + '<div class="chips">'
         + msChip(m, "lend_cores", !s.lend_cores, "Lend cores", !!s.lend_cores)
+        /* 2026-10-05 -- lend with the lid open, no question, through restarts.
+           Shown once the machine reports the field (older code would refuse it). */
+        + ("lend_lid_open" in s
+            ? msChip(m, "lend_lid_open", !s.lend_lid_open, "Lend with lid open", !!s.lend_lid_open)
+            : "")
         + '</div>'
         + ((s.peers || []).length
             ? '<div class="tnote" style="margin-top:6px">Serves</div><div class="chips">'
