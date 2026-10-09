@@ -288,6 +288,13 @@ button.chip.on::before{content:"\2713\00a0";}
 .agsq{width:9px;height:9px;border-radius:2px;background:var(--line);}
 .agsq.on{background:var(--gold);}
 .agsq.off{opacity:.35;}
+/* 2026-10-09 -- A BOX'S MT5 COPIES (T7910 = A, T7910-B = B): each copy's letter
+   in its tray icon's colour; copy B listed right under its box. A pool square
+   filled = busy for that copy, ringed = held idle. */
+.copytag{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
+  padding:0 3px;border-radius:5px;font-size:.68rem;font-weight:800;color:#fff;vertical-align:middle;}
+.agline.box{cursor:default;}
+.agnote.warn{color:var(--warn);opacity:1;}
 /* 2026-10-06 -- THE EFFICIENCY PAGE. See renderEfficiency. */
 .effrow{display:block;width:100%;text-align:left;background:var(--card);color:var(--text);
   border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:0 0 8px;cursor:pointer;font:inherit;}
@@ -1870,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261008-205056";
+const APP_BUILD = "20261009-123554";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3416,7 +3423,77 @@ function lendersPanel(f){
                          && a.agents.state === "RUN")
               .map(a => lentPanel(a, "From " + a.machine)).join("");
 }
+/* 2026-10-09 -- A BOX WITH SEVERAL MT5 COPIES (app_snapshot.box_of / box_fleet).
+   Trevor picked "App: one box" for the T7910 build. Copy A keeps the box's id
+   (T7910), copy B reports as T7910-B. Before this the page read them as two
+   72-core machines and counted none of the SHARED POOL -- the 43 MetaTester
+   services a copy borrows, which only the broker sees -- so the 10-07 test
+   night read 2 + 1 busy while the pool ran 43 of 43. The box's card now
+   measures the box (its copies' own agents + the pool, over its cores once);
+   a copy's card says what it holds. Letters and colours are the trays'
+   (tray_app.COPY_COLORS), so the phone and the taskbar agree. */
+const COPY_COLORS = {A: "#1E90FF", B: "#FF8C00", C: "#2EA043", D: "#A020F0", E: "#DC143C"};
+const copyTag = c => c ? `<span class="copytag" style="background:${COPY_COLORS[c] || "var(--dim)"}">${esc(c)}</span>` : "";
+function poolStrip(p){
+  return '<div class="agstrip">' + (p.agents || []).map(a => {
+    const c = a[2] ? (COPY_COLORS[a[2]] || "var(--dim)") : "";
+    if(a[1] === "u") return '<span class="agsq off"></span>';
+    if(a[1] === "b") return `<span class="agsq" style="background:${c || "var(--gold)"}"></span>`;
+    return c ? `<span class="agsq" style="box-shadow:inset 0 0 0 1.5px ${c}"></span>`
+             : '<span class="agsq"></span>';
+  }).join("") + '</div>';
+}
+function boxPanel(f){
+  const p = f.pool || {};
+  const n = (EFF && EFF.now && EFF.now[f.machine]) || {};
+  const cores = n.cores || f.cores, plan = n.planned || null, denom = plan || cores;
+  let head;
+  if(!p.fresh){
+    head = "Box: not measured — its agent pool has not reported"
+         + (p.at ? " since " + esc(fmtStarted(p.at)) : "");
+  } else if(n.measured){
+    head = `Box: <b>${n.busy}</b> of ${cores} cores busy (${effPct(n.busy, denom)}%`
+         + `${plan ? ` of a planned ${plan}` : ""})`
+         + (n.usable && n.usable < denom ? ` · ${n.usable} usable · best ${effPct(n.usable, denom)}%` : "");
+  } else {
+    head = "Box: " + esc(n.why || "not measured");
+  }
+  let pool = "";
+  if(p.fresh){
+    const by = p.by_copy || {};
+    const free = (p.agents || []).filter(a => a[1] !== "u" && !a[2]).length;
+    const off = (p.agents || []).filter(a => a[1] === "u").length;
+    const parts = Object.keys(by).filter(c => c !== "other").sort()
+      .map(c => `${copyTag(c)} holds ${by[c].held} (${by[c].busy} busy)`);
+    if(by.other) parts.push(`${by.other.held} held by another machine`);
+    if(free) parts.push(`${free} free`);
+    if(off) parts.push(`${off} switched off`);
+    pool = `<div class="agnote" style="margin-top:4px">Pool of ${p.total}: ${parts.join(" · ") || "nothing held"}</div>`;
+  }
+  const lh = p.last_handover;
+  const hv = p.handovers_today || 0;
+  const broker = `<div class="agnote">Broker: ${hv} hand-over${hv === 1 ? "" : "s"} today`
+    + (lh ? ` · last ${copyTag(lh.from)} → ${(lh.to || []).map(copyTag).join(" ")} ${esc(fmtStarted(lh.at) || "")}` : "")
+    + `</div>`
+    + (p.needs_grant ? `<div class="agnote warn">The broker cannot restart agents on this box — `
+                       + `its one-time service grant is missing.</div>` : "");
+  return `<div><div class="agline box">${copyTag(f.copy)}<span>${head}</span></div>`
+    + (p.fresh ? poolStrip(p) : "") + pool + broker + lendersPanel(f) + `</div>`;
+}
+/* A copy that is not its box: its own agent, and what it holds of the pool.
+   The box is measured once, on the box's card. */
+function copyPanel(f){
+  const a = f.agents_local || {};
+  const own = a.total ? `own agent${a.total === 1 ? "" : "s"}: <b>${a.busy}</b> of ${a.used || a.total} busy`
+                      : "no reading of its own agent";
+  const held = f.pool_held != null
+    ? ` · holds <b>${f.pool_held}</b> pool agent${f.pool_held === 1 ? "" : "s"} (${f.pool_busy} busy)` : "";
+  return `<div><div class="agline box">${copyTag(f.copy)}<span>${own}${held}</span></div>`
+    + `<div class="agnote">Measured with its box, on the ${esc(f.box)} card.</div></div>`;
+}
 function agentsPanel(f){
+  if(f && f.pool) return boxPanel(f);
+  if(f && f.copy && f.box && f.box !== f.machine) return copyPanel(f);
   const a = f && f.agents_local;
   const lent = lendersPanel(f);
   if(!a || !a.total) return lent ? `<div>${lent}</div>` : "";
@@ -3478,7 +3555,7 @@ function machineCard(f){
                 used to appear only inside the title sentence this card no
                 longer has. */
             bktEl(f.bucket_id)}
-          <span class="chip gold">${esc(f.machine)}</span>
+          ${copyTag(f.copy)}<span class="chip gold">${esc(f.machine)}</span>
           ${f.halt ? `<span class="chip warn">HALTED</span>`
             : (f.seed || f.phase)
             ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
@@ -4389,8 +4466,13 @@ function jobsModel(){
      place rather than vanishing. */
   const hosts = new Set(FLEET.map(f => f.machine));
   const ordered = [];
-  FLEET.filter(f => !isAgent(f) || !hosts.has(f.agents.agent_for)).forEach(f => {
+  /* 2026-10-09 -- A BOX'S OTHER COPIES DIRECTLY UNDER THE BOX (copy A's row),
+     ahead of its agents: T7910, T7910-B, then whoever lends to it. A copy whose
+     box is not reporting keeps its own place. */
+  const isCopy = f => f.box && f.box !== f.machine && hosts.has(f.box);
+  FLEET.filter(f => (!isAgent(f) || !hosts.has(f.agents.agent_for)) && !isCopy(f)).forEach(f => {
     ordered.push(f);
+    FLEET.filter(c => isCopy(c) && c.box === f.machine).forEach(c => ordered.push(c));
     FLEET.filter(a => isAgent(a) && a.agents.agent_for === f.machine)
          .forEach(a => ordered.push(a));
   });
@@ -4409,7 +4491,7 @@ function jobsModel(){
       id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Running now",
       helper: isAgent(f),
       fleet: fleetWithSeed(f, sd), seed: sd,
-      title: f.machine,
+      title: f.machine, copy: f.copy || null,
       // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
       // a sweep is not one -- so a machine part-way through a seeded sweep can
       // truthfully report the picking phase with no group while it is busy.
@@ -4673,7 +4755,7 @@ function jobRow(j){
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
         <span class="hb">
-          <span class="jtop"><span class="hname">${esc(j.title)}</span>` +
+          <span class="jtop">${copyTag(j.copy)}<span class="hname">${esc(j.title)}</span>` +
           (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
             `${esc(j.regime)}</span>` : "") +
           (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
@@ -11338,7 +11420,8 @@ function effBars(rows){
     if(r.pct == null)
       return `<span class="agbar" title="${esc(r.day + ": not measured")}"></span>`;
     const tip = `${r.day}: ${r.pct}% · ${r.busy} of ${r.cores} cores productive on average`
-              + ` · ${r.hours}h measured` + (r.missed ? ` · ${r.missed} missed` : "");
+              + ` · ${r.hours}h measured` + (r.missed ? ` · ${r.missed} missed` : "")
+              + (r.handovers ? ` · ${r.handovers} hand-overs` : "");
     return `<span class="agbar" title="${esc(tip)}">`
          + `<i style="height:${Math.max(Math.min(r.pct, 100), 3)}%"></i></span>`;
   }).join("") + '</div>';
@@ -11391,10 +11474,21 @@ function effRow(name){
     if(now.usable && now.usable < now.cores)
       stat += ` · ${now.usable} usable · best ${effPct(now.usable, now.cores)}%`;
   }
-  const missed = today.missed
-    ? `${today.missed} missed today (${today.missed_h}h lost)` : "no missed passes today";
+  /* 2026-10-09 -- A BOX: its copies are inside this row (app_snapshot.box_fleet),
+     its shared pool counted in, and the broker's hand-overs beside it. */
+  const pool = now.pool;
+  if(name !== EFF_COMBINED && pool)
+    stat += pool.fresh ? ` · pool ${pool.busy} of ${pool.running} busy` : " · pool not reporting";
+  const hv = today.handovers ? ` · ${today.handovers} hand-over${today.handovers === 1 ? "" : "s"}` : "";
+  const missed = (today.missed
+    ? `${today.missed} missed today (${today.missed_h}h lost)` : "no missed passes today") + hv;
+  const copies = (now.copies || []).length > 1
+    ? ` <span class="effpick">copies ${now.copies.map(c => {
+        const k = c === name ? "A" : c.slice(name.length + 1);
+        return copyTag(k);
+      }).join(" ")}</span>` : "";
   return `<button type="button" class="effrow${sel ? " sel" : ""}" data-effsel="${esc(name)}" aria-pressed="${sel}">
-      <div class="effhead">${effSwatch(name)}<span class="effname">${esc(name)}</span>
+      <div class="effhead">${effSwatch(name)}<span class="effname">${esc(name)}</span>${copies}
         <span class="effpick">${sel ? "on the graph" : "tap to graph"}</span><span class="sp"></span>
         <span class="efftoday">${today.pct != null ? esc(String(today.pct)) + "%" : "—"}<small> today</small></span></div>
       <div class="effstat">${stat}</div>
@@ -11554,7 +11648,8 @@ function effWorkLine(w, i, all){
   const with_ = (w.overlaps || []).map(j => all[j] && effWorkName(all[j])).filter(Boolean);
   const ov = with_.length ? `ran alongside ${with_.join(", ")}`
            : w.overlapped ? "overlapped another task" : "ran alone";
-  return `<div class="effwl">${esc(effWorkName(w))} · ${esc(effClock(w.from))}–${esc(effClock(w.to))}`
+  /* 2026-10-09 -- on a box, which copy ran it (app_snapshot._work_for). */
+  return `<div class="effwl">${w.copy ? copyTag(w.copy) + " " : ""}${esc(effWorkName(w))} · ${esc(effClock(w.from))}–${esc(effClock(w.to))}`
        + ` · ${esc(String(w.hours))}h${w.runs > 1 ? ` · ×${w.runs} runs` : ""}${esc(size)}`
        + `<br><span style="color:var(--faint)">${esc(src)} · ${esc(ov)}</span></div>`;
 }
