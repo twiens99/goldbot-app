@@ -1870,7 +1870,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261007-174639";
+const APP_BUILD = "20261008-205056";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11820,7 +11820,7 @@ function lvBadgeText(){ return lvAlgoChip() + lvBadgeMain(); }
 function lvBadgeMain(){
   if(!liveUrl()) return "Not connected — add the VPS address";
   const d = LV.data;
-  if(!d) return LV.err ? "VPS unreachable" : "Connecting…";
+  if(!d) return LV.err ? "No answer from the VPS — is Tailscale on?" : "Connecting…";
   const tin = d.trading_in;
   const where = tin && tin.regime
     ? lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket) : "") + " · "
@@ -11975,7 +11975,8 @@ function lvIssues(){
     return out;
   }
   if(LV.err) out.push(["warn", `No answer from the VPS for ${lvDur((Date.now() - LV.at) / 1000)} ` +
-                               `(${esc(LV.err)}). This is what it said last.`]);
+                               `(${esc(LV.err)}). This is what it said last. ` +
+                               `Is Tailscale switched on for this phone?`]);
   const feed = (d.health && d.health.feed) || {};
   const s = d.symbol || {}, t = d.terminal || {};
   /* CLOSED: the last tick is old -- or, when there is no price feed to ask,
