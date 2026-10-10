@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261009-123554";
+const APP_BUILD = "20261009-210347";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9203,7 +9203,8 @@ const SCHED_FALLBACK = {
   selects: ["lowest_pf", "highest_pf", "lowest_profit", "highest_profit",
             "most_defaults", "closest_split", "farthest_split"],
   groups: ["any", "pinned", "exit", "entry", "ema"],
-  orders: ["default", "highest_pf", "lowest_pf", "closest_split", "farthest_split"],
+  orders: ["default", "highest_pf", "lowest_pf", "closest_split", "farthest_split",
+           "structural"],
   untils: ["jobs", "pf_at_least", "pinned_cleared", "bucket_splits", "epoch_done"],
   scopes: ["live", "frozen"],
 };
@@ -9217,6 +9218,8 @@ const SCHED_LABEL = {
   closest_split: "Closest to split", farthest_split: "Farthest from split",
   any: "All groups", pinned: "Pinned only", exit: "EXIT only", entry: "ENTRY only",
   default: "Default",
+  /* 2026-10-09 -- schedule_builder.ORDER_STRUCTURAL. */
+  structural: "Epoch 1 order",
   ema: "EMA lane", moved_giveback: "Moved give-back",
   jobs: "N jobs", pf_at_least: "PF reaches", pinned_cleared: "Pins cleared",
   bucket_splits: "It splits", profit_up_pct: "Profit up", giveback_below: "Give-back under",
@@ -9268,6 +9271,9 @@ const SCHED_ORDER_TEXT = {
   farthest_split: "The groups needing the most more locked variables to reach 75% "
                 + "locked go first. A group already at 75% is skipped; a tie is a "
                 + "random pick. A group may run one epoch ahead.",
+  structural: "Epoch 1's fixed order in every epoch: exits first, EMA and the other "
+            + "foundation groups last. A group that already ran this epoch is "
+            + "skipped. For just the next epoch, set Until to Epoch done, 2 passes.",
 };
 
 /* The Group ordering part of a block's sentence. It used to be a two-way
@@ -9276,7 +9282,8 @@ function schedOrderPhrase(order){
   if(!order || order === "default") return "";
   const p = {highest_pf: "biggest PF gain first", lowest_pf: "biggest PF loss first",
              closest_split: "closest to split first",
-             farthest_split: "farthest from split first"}[order];
+             farthest_split: "farthest from split first",
+             structural: "in epoch 1's order"}[order];
   return ", " + (p || ((SCHED_LABEL[order] || order) + " first"));
 }
 
