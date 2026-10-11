@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261011-095141";
+const APP_BUILD = "20261011-133815";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11989,6 +11989,7 @@ function lvSkeleton(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
     + '<div id="lvstatus" class="home"></div>'
+    + '<div class="card lv-tin" id="lvmkt"></div>'
     + '<div class="lv-stats" id="lvstats"></div>'
     + '<div class="card lv-tin" id="lvtin"></div>'
     + '<div class="card lv-ent" id="lvent"></div>'
@@ -12059,6 +12060,8 @@ async function lvShow(){
     page.innerHTML = lvSkeleton();
     LV.built = true;
   }
+  if(!LV.mktTimer)
+    LV.mktTimer = setInterval(() => { if(LV.built && !document.hidden) lvPaintMarket(); }, 30000);
   lvPaintControls();
   lvPaint();
   lvSchedule(0);
@@ -12088,6 +12091,7 @@ function lvPaintControls(){
 function lvPaint(){
   if(!LV.built) return;
   lvPaintStatus();
+  lvPaintMarket();
   lvPaintStats();
   lvPaintTin();
   lvPaintEntry();
@@ -12117,13 +12121,13 @@ function lvIssues(){
   /* CLOSED: the last tick is old -- or, when there is no price feed to ask,
      it is the weekend. Found against the real VPS on a Saturday: with the
      service not yet started, a 6-hour-old EA heartbeat read as "is it still
-     attached?" when the market was simply shut. Gold closes about 21:00 UTC
-     Friday and reopens about 22:00 UTC Sunday. */
-  const u = new Date(), wd = u.getUTCDay(), hr = u.getUTCHours();
-  const weekend = wd === 6 || (wd === 5 && hr >= 21) || (wd === 0 && hr < 22);
+     attached?" when the market was simply shut.
+     2026-10-11 -- was a UTC weekend guess; now the broker's own hours
+     (lvMarket), which also covers the daily break. */
+  const shut = !lvMarket().open;
   const closed = (feed.status === "ok" && s.tick_time)
     ? lvNow() - Number(s.tick_time) > 600
-    : weekend;
+    : shut;
   if(feed.status === "missing")
     out.push(["warn", "The VPS is answering, but the MT5 feed is not running. In MT5 on the VPS: " +
                       "<b>Navigator → right-click Services → Refresh, then right-click GoldBot_LiveFeed → Add Service</b>."]);
@@ -12140,7 +12144,7 @@ function lvIssues(){
   if(d.ea && d.ea.gate_enforced === false)
     out.push(["warn", "The EA is not enforcing the live gate, so it can trade in ANY regime, armed or not."]);
   if(closed) out.push(["", s.tick_time ? `Market closed. Last price ${lvWhen(s.tick_time)}.`
-                                       : "Market closed for the weekend."]);
+                                       : "Market closed."]);
   return out;
 }
 function lvPaintStatus(){
@@ -12166,6 +12170,104 @@ function lvPaintStats(){
 
 /* TRADING IN -- the regime the EA is in, the bucket whose values are in force,
    and whether that bucket's gate lets it trade. Then every regime's gate. */
+/* 2026-10-11 -- GOLD's TRADING HOURS, IN THIS PHONE's TIME ZONE. Trevor: "I want to
+   know when the market opens. If we're open. I want to know when the next close is.
+   I want this in my current timezone ... Let's also add what session we're
+   currently trading in." He moves between Mountain and Pacific, so every time
+   below is formatted by the phone and follows whatever zone it is set to.
+   THE BROKER's DAY. PU Prime's server clock is New York + 7 h ALL YEAR -- measured
+   10-11 on PoolTest B: the first M1 bar of every trading day stays at 01:00 server
+   through both weeks US and EU daylight saving disagree (2025-10-26..11-02,
+   2026-03-08..03-29), so the server moves with US DST. XAUUSD.s trading sessions
+   (SymbolInfoSessionTrade, same run): Mon-Thu 01:01-23:58, Fri 01:01-23:57 server,
+   none Sat/Sun. Broker holidays and early closes are not in that table, so they
+   are not here either. Worked out from the phone's clock: no VPS answer needed. */
+const LV_MKT = [null, [61, 1438], [61, 1438], [61, 1438], [61, 1438], [61, 1437], null];
+/* The EA's sessions, in server hours -- UpdateSessionWeight() in the .mq5. Named
+   through LV_SESS (the entry readout's labels), so both say the same thing. */
+const LV_SESS_HRS = [[8, 13, "LONDON"], [13, 17, "LONDON_NY"], [17, 22, "NEW_YORK"]];
+const LV_SESS_CUTS = [8, 13, 17, 22];
+const LV_NYF = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23",
+  year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric"});
+/* The server's wall clock at real time `ms`, as an epoch number read with getUTC*. */
+function lvSrvWall(ms){
+  const p = {};
+  for(const x of LV_NYF.formatToParts(new Date(ms))) p[x.type] = x.value;
+  return Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second) + 7 * 3600e3;
+}
+/* A server wall time back to real time. The offset is read again AT that time, so a
+   daylight-saving change in between (always while the market is shut) is right. */
+function lvSrvToReal(wall, now){
+  let real = wall - (lvSrvWall(now) - now);
+  real = wall - (lvSrvWall(real) - real);
+  return real;
+}
+function lvSessionAt(hour){
+  for(const [a, b, n] of LV_SESS_HRS) if(hour >= a && hour < b) return LV_SESS[n] || n;
+  return LV_SESS.ASIAN || "Asian";
+}
+/* {open, next: the next close (open) or open (closed), reopen: after a daily break,
+   session, sessEnd} -- every time a real epoch ms. */
+function lvMarket(now){
+  now = now == null ? Date.now() : now;
+  const w = lvSrvWall(now), day0 = w - (w % 86400e3), wins = [];
+  for(let k = -1; k <= 8; k++){
+    const start = day0 + k * 86400e3, win = LV_MKT[new Date(start).getUTCDay()];
+    if(win) wins.push([start + win[0] * 60e3, start + win[1] * 60e3]);
+  }
+  const cur = wins.find(([a, b]) => w >= a && w < b);
+  if(cur){
+    const after = wins.find(([a]) => a >= cur[1]);
+    const cuts = LV_SESS_CUTS.map(h => day0 + h * 3600e3)
+      .concat(LV_SESS_CUTS.map(h => day0 + 86400e3 + h * 3600e3)).filter(t => t > w);
+    return {open: true, next: lvSrvToReal(cur[1], now),
+            reopen: after ? lvSrvToReal(after[0], now) : null,
+            session: lvSessionAt(new Date(w).getUTCHours()),
+            sessEnd: lvSrvToReal(Math.min(cuts[0], cur[1]), now)};
+  }
+  const nxt = wins.find(([a]) => a > w);
+  return {open: false, next: nxt ? lvSrvToReal(nxt[0], now) : null,
+          session: nxt ? lvSessionAt(new Date(nxt[0]).getUTCHours()) : null};
+}
+const LV_LT = new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"});
+const LV_LD = new Intl.DateTimeFormat(undefined, {weekday: "short"});
+function lvLocal(ms, now){
+  const day = new Date(ms).toDateString();
+  const label = day === new Date(now).toDateString() ? "today"
+              : day === new Date(now + 86400e3).toDateString() ? "tomorrow"
+              : LV_LD.format(ms);
+  return label + " " + LV_LT.format(ms);
+}
+function lvTzName(ms){
+  try {
+    const z = new Intl.DateTimeFormat("en-US", {timeZoneName: "short"})
+      .formatToParts(new Date(ms)).find(x => x.type === "timeZoneName");
+    return z ? z.value : "";
+  } catch(e){ return ""; }
+}
+function lvPaintMarket(){
+  const el = document.getElementById("lvmkt");
+  if(!el) return;
+  const now = Date.now(), m = lvMarket(now), tz = lvTzName(now);
+  const when = t => `<b>${esc(lvLocal(t, now))}</b>`;
+  const inn = t => `in <b>${lvSpan(Math.max(60, (t - now) / 1000))}</b>`;
+  const lines = [];
+  if(m.open){
+    /* The daily break is ~1 h; the weekend gap is days. Say "reopens" only for the break. */
+    const brk = m.reopen && m.reopen - m.next < 3 * 3600e3;
+    lines.push(`Closes ${when(m.next)}, ${inn(m.next)}` + (brk ? `, reopens ${when(m.reopen)}` : ""));
+    lines.push(`Session <b>${esc(m.session)}</b> until ${when(m.sessEnd)}`);
+  } else if(m.next){
+    lines.push(`Opens ${when(m.next)}, ${inn(m.next)}`);
+    lines.push(`It opens in the <b>${esc(m.session)}</b> session`);
+  }
+  lines.push(`Times in ${tz ? "<b>" + esc(tz) + "</b>, " : ""}this phone's time zone. ` +
+             `Broker holidays and early closes are not included.`);
+  el.innerHTML = '<div class="lv-tinhead"><span class="lv-k">Market · gold</span>' +
+    `<span class="lv-pill ${m.open ? "on" : "off"}">${m.open ? "Open" : "Closed"}</span></div>` +
+    lines.map(l => `<div class="lv-line">${l}</div>`).join("");
+}
+
 function lvPaintTin(){
   const el = document.getElementById("lvtin");
   if(!el) return;
