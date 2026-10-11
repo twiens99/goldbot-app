@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261009-210347";
+const APP_BUILD = "20261011-095141";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4694,9 +4694,37 @@ function pickLine(pk){
   const since = secs == null ? ""
     : "finished " + (secs > 172800 ? Math.round(secs / 86400) + " days ago" : ago(secs));
   return ["#" + pk.n, since,
-          pk.holds_regime ? "holding all " + pk.regime + " work" : ""]
+          /* 2026-10-11 -- the 10-09 lane lock: a pick holds its lane. */
+          pk.holds_regime ? (pk.lane ? "holding " + pk.regime + "'s " + pk.lane + " lane"
+                                     : "holding all " + pk.regime + " work") : ""]
     .filter(Boolean).join(" · ");
 }
+/* 2026-10-11 -- THE BUCKET'S PF BEFORE THE PICK. Trevor: *"I'd like to know what
+   the previous bucket pf was before I pick a pass."* queue_preview's bucket_pf:
+   the bucket's newest bucket-test reading. Then how many valid passes beat it,
+   and the best one -- the same isolated test, same window. */
+function bucketPfLine(b, split){
+  const pf = Number(b.pf);
+  const secs = b.measured_at ? Date.now() / 1000 - Number(b.measured_at) : null;
+  let s = "Bucket test PF <b>" + pf.toFixed(3) + "</b>"
+        + (b.trades != null ? " on " + Number(b.trades).toLocaleString() + " trades" : "")
+        + (secs != null ? ", measured " + ago(secs) : "") + ".";
+  if(b.fresh === false){
+    s += " Taken on values the bucket has since left; the next job re-measures it.";
+  }
+  const valid = split ? split.valid.filter(p => isFinite(Number(p.pf))) : [];
+  if(valid.length){
+    const best = valid.reduce((a, p) => Number(p.pf) > Number(a.pf) ? p : a, valid[0]);
+    const beat = valid.filter(p => Number(p.pf) > pf).length;
+    const d = Number(best.pf) - pf;
+    s += " " + (beat ? "<b>" + beat + " of " + valid.length + "</b> valid passes beat it"
+                     : "<b>No</b> valid pass beats it")
+       + "; the best is pass " + esc(String(best.pass)) + " at PF "
+       + Number(best.pf).toFixed(3) + " (" + (d >= 0 ? "+" : "") + d.toFixed(3) + ").";
+  }
+  return s;
+}
+
 function pickCard(pk){
   const rc = RC[pk.regime] || "";
   /* No `kind`: the badge reads only the passes, and the phase names are words
@@ -4724,11 +4752,16 @@ function pickCard(pk){
         <div class="haltp">
           <div class="opsh">Why it is waiting</div>
           <div class="opsnote">The round finished and nothing is applied until a
-            pass is picked.${pk.holds_regime ? ` A pending pick holds <b>every
-            ${esc(pk.regime)} round</b>, so no ${esc(pk.regime)} work runs until
-            this is done.` : ""}</div>
+            pass is picked.${pk.holds_regime ? (pk.lane
+              /* 2026-10-11 -- the 10-09 lane lock: a pick holds its LANE. */
+              ? ` A pending pick holds <b>${esc(pk.regime)}'s ${esc(pk.lane)}
+                lane</b>; its other lanes keep running.`
+              : ` A pending pick holds <b>every ${esc(pk.regime)} round</b>, so no
+                ${esc(pk.regime)} work runs until this is done.`) : ""}</div>
           ${pk.wait ? `<div class="opsh">Timer</div>
             <div class="opsnote">${pickWaitLine(pk.wait)}</div>` : ""}
+          ${pk.bucket_pf ? `<div class="opsh">The bucket before this pick</div>
+            <div class="opsnote">${bucketPfLine(pk.bucket_pf, split)}</div>` : ""}
           <div class="opsh">What to do</div>
           ${none ? `<div class="opsnote"><b>There is no valid pass to pick.</b> Every
             pass this sweep ran was refused (disqualified) — see the table
