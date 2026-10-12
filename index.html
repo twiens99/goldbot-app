@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261011-221923";
+const APP_BUILD = "20261012-092533";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12445,6 +12445,25 @@ function lvPaintEntry(){
      again, and it arms at the target. Once armed the count keeps going, so
      "97 of 4" was "armed long ago", not 97 signals. */
   const turn = e.dir === "SHORT" ? "down" : "up";
+  /* 2026-10-12 -- THE SLOPE GATE IS D1 + MACD (EA of 10-11, fleet 20261011-220758).
+     Trevor: "Does this slope need updating? Should be the D1 and macD." The EA did;
+     this line still described the old D1/H4 EMA blend. Now: the regime's D1 slope
+     the trade's way (scaled by the D1 clamp, held to the minimum) AND the D1 MACD
+     main line rising (falling for a short). The EA folds a disagreeing MACD into
+     the one value (<= 0), so WHICH half stopped it is read here from the D1 slope
+     the feed already carries (ea.bucket_d1_slope). */
+  const macdWay = e.dir === "SHORT" ? "falling" : "rising";
+  const slopeWhat = (() => {
+    const base = `The regime's D1 slope the trade's way, and the D1 MACD ${macdWay}.`;
+    const x = g.slope || {}, v = Number(x.value), mn = Number(x.min);
+    const d1 = Number(ea.bucket_d1_slope);
+    if(e.block !== "slope" || x.value == null || ea.bucket_d1_slope == null || !isFinite(d1)) return base;
+    const d1Way = (e.dir === "SHORT" ? -1 : 1) * d1;
+    if(d1Way <= 0) return base + " <b>Stopped: the D1 slope is against the trade.</b>";
+    if(v <= 0) return base + ` <b>Stopped: the D1 MACD isn't ${macdWay} yet.</b>`;
+    if(isFinite(mn) && v < mn) return base + " <b>Stopped: the D1 slope is too shallow.</b>";
+    return base;
+  })();
   const rows =
     lvEntryRow(armOk, "Armed", armed ? "yes" : "no",
       a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} ticks` : "",
@@ -12452,7 +12471,7 @@ function lvPaintEntry(){
                     `(a turn the other way starts the count again): <b>${lvEntryNum(a.rev, 0)}</b> so far. ` : "") +
       `Now: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
       `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`) +
-    gRow("slope", "Slope gate", "D1/H4 trend in the trade's direction.") +
+    gRow("slope", "Slope gate", slopeWhat) +
     gRow("htf", "Higher timeframes", "H1/H4/D1 agreeing with the trade.") +
     gRow("health", "Health score", "Size of the score itself.") +
     lvEntryRow(have ? over : null, "Total × session", lvEntryNum(e.total, 4),

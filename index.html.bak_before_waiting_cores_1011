@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261011-192219";
+const APP_BUILD = "20261011-221923";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2266,6 +2266,19 @@ const running = f => !!((f.group_id || f.seed) && f.phase);
    "Idle -- no round" while it wore a picking chip -- the card contradicted
    itself, and the fabricated preview data was hiding it. */
 const picking = f => f.phase && !f.group_id && !f.seed;
+/* 2026-10-11 -- HELD FOR CORES IS NOT PICKING. Trevor: *"Currently Laptop A says
+   Selecting... But it can't because all the cores are being used. So that needs
+   to be reflected."* A copy whose sibling is sweeping is held by the core gate,
+   and its phase still says it is picking -- the tick sets that before the gate says
+   no. `f.waiting` ({for, reason, since}) is the gate's own record of the wait. */
+const waitingCores = f => !!(picking(f) && f.waiting);
+function waitedFor(f){
+  const began = new Date((f && f.waiting && f.waiting.since) || "");
+  if(isNaN(began.getTime())) return null;
+  const beaconMs = Date.now() - (f.age_seconds || 0) * 1000;
+  const secs = (beaconMs - began.getTime()) / 1000;
+  return secs >= 0 ? dur(secs) : null;
+}
 /* AN AGENT RUNS NO ROUND. It lends MT5 cores to another machine's optimization
    and says which machine on its own beacon (`agents.agent_for`). Every round
    predicate above is false for it by construction, which is how Kylee read
@@ -3174,6 +3187,7 @@ function opsStatus(f){
   else if(run === "STOPPED") work = "Stopped";
   else if(run === "RESTARTING") work = "Restarting";
   else if(running(f)) work = "Running \u00b7 " + phaseText(f.phase);
+  else if(waitingCores(f)) work = "Waiting for free cores";
   else if(picking(f)) work = "Choosing a group";
   else work = "Idle";
   return `<div class="opsst">
@@ -3557,6 +3571,7 @@ function machineCard(f){
             bktEl(f.bucket_id)}
           ${copyTag(f.copy)}<span class="chip gold">${esc(f.machine)}</span>
           ${f.halt ? `<span class="chip warn">HALTED</span>`
+            : waitingCores(f) ? `<span class="chip">WAITING</span>`
             : (f.seed || f.phase)
             ? `<span class="chip">${esc(f.seed ? roundType(f.seed)
                                                : phaseText(f.phase))}</span>` : ""}
@@ -3580,8 +3595,12 @@ function machineCard(f){
                 two jobs that differ only in their label. */""}
           <div class="title">${f.halt ? esc(f.halt.title) : live
             ? esc((f.seed && f.seed.label) || humanize(f.group_id))
+            : waitingCores(f) ? "Waiting for free cores"
             : picking(f) ? "No group picked yet"
             : "Idle — no round"}</div>
+          ${/* The gate's own words: what holds it, and what it starts under. */
+            !f.halt && waitingCores(f) && f.waiting.reason
+              ? `<div class="sub">${esc(f.waiting.reason)}</div>` : ""}
           ${/* ONLY WHAT THE TITLE DID NOT SAY. The group used to live here
                 and is now the title, so repeating it would be the same string
                 twice. A LABELLED SWEEP is the one case with something left
@@ -3595,7 +3614,8 @@ function machineCard(f){
             /* Picking writes no group, no mode and no percent, so this row is
                otherwise empty and the card has nothing to say at all. How long
                it has been choosing is the one fact that exists. */
-            ? metaRow([["Selecting for", phaseFor(f)]])
+            ? metaRow(waitingCores(f) ? [["Waiting for", waitedFor(f)]]
+                                      : [["Selecting for", phaseFor(f)]])
             : metaRow([["Mode", f.mode === "real_ticks" ? "Real Ticks"
                       : f.mode === "ohlc" ? "OHLC" : null, "gold"],
                    ["Rate", f.pct_per_hour != null
@@ -4507,12 +4527,18 @@ function jobsModel(){
           : f.halt ? f.halt.title
           : sd ? (sd.label || humanize(sd.group_id) || "seeded work")
           : running(f) ? humanize(f.group_id) + (isAgent(f) ? "" : lentToHost(f))
+          /* Held by the core gate while its sibling sweeps (2026-10-11): the
+             phase says picking, the wait is what is true. */
+          : waitingCores(f) ? "waiting for free cores"
+              + (waitedFor(f) ? " - " + waitedFor(f) : "")
           : picking(f) ? "choosing a group"
           : "idle - no round",
       // Same rule as the card's chip: a claimed seed names the work
       // better than a beacon that is describing a round it is not running.
       chip: f.halt && !stale(f) ? "HALTED"
-          : sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
+          : sd ? roundType(sd)
+          : waitingCores(f) && !stale(f) ? "WAITING"
+          : (f.phase ? phaseText(f.phase) : null),
       regime: rg,
       cls: stale(f) || f.halt ? "warn" : (RC[rg] || ""),
     });
