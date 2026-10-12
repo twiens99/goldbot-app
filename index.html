@@ -1877,7 +1877,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261011-133815";
+const APP_BUILD = "20261011-192219";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12413,10 +12413,18 @@ function lvPaintEntry(){
   };
   const armOk = armed ? true : (a.vel != null && a.vel_min != null && a.acc != null && a.acc_min != null
     && Number(a.vel) > Number(a.vel_min) && Number(a.acc) > Number(a.acc_min) ? null : false);
+  /* 2026-10-11 -- THE COUNT IS TICKS. Trevor: "What's the 97 of 4 signals?" The
+     EA's Entry_Reversal_Bars counts every TICK the score turns this way hard
+     enough (speed AND push over their lines); a turn the other way starts it
+     again, and it arms at the target. Once armed the count keeps going, so
+     "97 of 4" was "armed long ago", not 97 signals. */
+  const turn = e.dir === "SHORT" ? "down" : "up";
   const rows =
     lvEntryRow(armOk, "Armed", armed ? "yes" : "no",
-      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} signals` : "",
-      `Score turning: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
+      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} ticks` : "",
+      (a.rev_need ? `Arms once the score has turned ${turn} on <b>${lvEntryNum(a.rev_need, 0)}</b> ticks ` +
+                    `(a turn the other way starts the count again): <b>${lvEntryNum(a.rev, 0)}</b> so far. ` : "") +
+      `Now: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
       `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`) +
     gRow("slope", "Slope gate", "D1/H4 trend in the trade's direction.") +
     gRow("htf", "Higher timeframes", "H1/H4/D1 agreeing with the trade.") +
