@@ -602,6 +602,16 @@ button.chip[disabled]{opacity:.4;cursor:default;}
   color:var(--faint);
 }
 .tnote{font-size:.75rem;color:var(--dim);line-height:1.45;}
+/* 2026-10-13 -- the recurring bucket tests card, and the Live tab's per-regime split */
+.recur{padding:10px 0;border-top:1px solid var(--line);}
+.recur:first-child{border-top:0;padding-top:0;}
+.recur-h{font-size:.85rem;margin-bottom:4px;}
+.recur-t{width:100%;border-collapse:collapse;font-size:.72rem;margin-top:6px;font-variant-numeric:tabular-nums;}
+.recur-t th,.recur-t td{text-align:right;padding:2px 4px;}
+.recur-t th:first-child,.recur-t td:first-child{text-align:left;}
+.recur-t th{color:var(--faint);font-weight:600;}
+.lv-regsplit{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;font-size:.78rem;}
+.lv-regsplit span{white-space:nowrap;}
 .tby{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
 
 /* A variable and where it is up to. The state carries the colour because it is
@@ -8819,6 +8829,12 @@ async function refreshSettings(){
    group's latest applied round (an override -- what a Telegram reply to an
    old alert did). Both take two taps: the first arms, the second sends. */
 let APP_PICKS = [];     // d.app_picks -- what became of each request
+/* 2026-10-13 -- RECURRING bucket tests (recurring_tests.py): a weekly / monthly bucket test on the 2-year
+   rolling window, beside the chain, and every run's PF / net / trades / drawdown -- "what this regime is
+   making". d.recurring from the snapshot; the /recurring answer replaces it after a tap. */
+let RECURRING = [];
+let RECUR_MSG = "";
+let RECUR_ARMED = "";   // a Remove needs a second tap: the id armed by the first
 let IN_PROGRESS = [];   // d.in_progress -- rounds started and not finished
 const SEND = { typed: {}, arm: null, busy: null, local: {} };
 
@@ -9153,8 +9169,87 @@ function renderSchedule(){
     + scheduleBadge()
     + '<div class="section-label" style="margin-top:14px">Flow</div>'
     + scheduleFlowchart()
+    + '<div class="section-label" style="margin-top:14px">Recurring bucket tests</div>'
+    + recurringCard()
     + '</div>';
 }
+
+/* 2026-10-13 -- RECURRING BUCKET TESTS. Trevor: "I'd like to know what this regime is making. I'd like to
+   bucket test it with our 2 year rolling. Probably weekly to start." Each standing order re-runs one bucket
+   test every week / month on the 2-year window to yesterday, at the front of the line, beside the chain;
+   every run's numbers are kept. Started from the seed builder (Backtest -> Repeat). */
+function recurMoney(v){
+  if(v == null || isNaN(Number(v))) return "–";
+  const n = Number(v);
+  return (n < 0 ? "−$" : "+$") + Math.abs(n).toLocaleString(undefined, {maximumFractionDigits: 0});
+}
+function recurWhen(ts){
+  if(!ts) return "–";
+  return new Date(Number(ts) * 1000).toLocaleString(undefined,
+    {weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+}
+function recurringCard(){
+  const list = RECURRING || [];
+  let h = '<div class="card"><div class="card-in">';
+  if(!list.length){
+    h += '<div class="tnote">None yet. A recurring test re-runs one bucket test on the 2-year rolling window '
+      + 'every week or month, at the front of the line, and keeps every result here — what that regime is '
+      + 'making. Start one from the schedule builder: + Insert seed → Backtest → Repeat.</div>';
+  }
+  list.forEach(function(t){
+    const runs = (t.runs || []).filter(function(r){ return r && r.ok; });
+    const last = runs.length ? runs[runs.length - 1] : null;
+    h += '<div class="recur"><div class="recur-h"><span class="chip ' + (REGIME_CLASS[t.regime] || "") + '">'
+      + esc(t.regime || "") + '</span> <b>' + esc(String(t.bucket_id)) + '</b> · ' + esc(t.cadence || "")
+      + (t.machine ? ' · ' + esc(t.machine) + ' only' : '')
+      + (t.paused ? ' · <b>paused</b>' : ' · next ' + esc(recurWhen(t.next_due))) + '</div>';
+    if(last){
+      h += '<div class="tnote">Latest: PF <b>' + (last.pf != null ? Number(last.pf).toFixed(2) : "–") + '</b> · '
+        + recurMoney(last.net) + ' · ' + (last.trades != null ? last.trades : "–") + ' trades · drawdown '
+        + (last.equity_dd != null ? "$" + Math.round(last.equity_dd).toLocaleString() : "–")
+        + ' · ' + esc((last.from || "") + " → " + (last.to || "")) + '</div>'
+        + '<table class="recur-t"><tr><th>Run</th><th>PF</th><th>Net</th><th>Trades</th><th>DD</th></tr>'
+        + runs.slice(-8).reverse().map(function(r){
+            return '<tr><td>' + esc(new Date(Number(r.at) * 1000).toLocaleDateString()) + '</td><td>'
+              + (r.pf != null ? Number(r.pf).toFixed(2) : "–") + '</td><td>' + recurMoney(r.net) + '</td><td>'
+              + (r.trades != null ? r.trades : "–") + '</td><td>'
+              + (r.equity_dd != null ? "$" + Math.round(r.equity_dd).toLocaleString() : "–") + '</td></tr>';
+          }).join("") + '</table>';
+    } else {
+      h += '<div class="tnote">No result yet — ' + (t.last_seed_id ? "its bucket test is in the queue."
+        : "its first bucket test is queued at the next fleet tick.") + '</div>';
+    }
+    const other = t.cadence === "weekly" ? "monthly" : "weekly";
+    h += '<div class="chips" style="margin-top:6px">'
+      + '<button type="button" class="chip" data-recur="run_now" data-recurid="' + esc(t.id) + '">Run now</button>'
+      + '<button type="button" class="chip" data-recur="' + (t.paused ? "resume" : "pause") + '" data-recurid="'
+      + esc(t.id) + '">' + (t.paused ? "Resume" : "Pause") + '</button>'
+      + '<button type="button" class="chip" data-recur="cadence" data-recurcad="' + other + '" data-recurid="'
+      + esc(t.id) + '">Make it ' + other + '</button>'
+      + '<button type="button" class="chip" data-recur="remove" data-recurid="' + esc(t.id) + '">'
+      + (RECUR_ARMED === t.id ? "Tap again to remove" : "Remove") + '</button>'
+      + '</div></div>';
+  });
+  if(RECUR_MSG) h += '<div class="tnote" style="color:var(--bad)">' + esc(RECUR_MSG) + '</div>';
+  return h + '</div></div>';
+}
+document.addEventListener("click", async function(e){
+  const t = e.target.closest("[data-recur]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = t.dataset;
+  RECUR_MSG = "";
+  if(d.recur === "remove" && RECUR_ARMED !== d.recurid){ RECUR_ARMED = d.recurid; return repaintSettings(); }
+  RECUR_ARMED = "";
+  const body = {action: d.recur, id: d.recurid};
+  if(d.recur === "cadence") body.cadence = d.recurcad;
+  const res = await apiCall("/recurring", body);
+  if(res.ok){ if(Array.isArray(res.out.recurring)) RECURRING = res.out.recurring; }
+  else RECUR_MSG = res.error === "read-only" ? "Read-only here — open the app on the tailnet to change it."
+                                             : ("Not saved: " + res.error);
+  repaintSettings();
+}, true);
 
 function repaintSchedule(){
   const el = document.getElementById("page-schedule");
@@ -9606,7 +9701,8 @@ async function seedCatalogLoad(force){
 function seedNewForm(){
   return {editing: null, task: "", regime: "", bucket: "", line: "", group: "",
           vars: {}, open: {}, riders: [], search: "", win: "campaign",
-          from: "", to: "", machine: "", picks: "manual", note: ""};
+          from: "", to: "", machine: "", picks: "manual", note: "",
+          repeat: "once"};   /* 2026-10-13 -- a bucket test can repeat weekly / monthly (recurring tests) */
 }
 function seedBucket(){
   const f = SEED_FORM || {};
@@ -9723,6 +9819,11 @@ function seedStatusLine(){
   const f = SEED_FORM;
   if(!f || !f.task) return "";
   const where = f.machine ? "on " + f.machine + " only" : "on whichever machine frees up first";
+  if(f.task === "backtest" && !f.editing && f.repeat && f.repeat !== "once"){
+    return "One bucket test every " + (f.repeat === "weekly" ? "week" : "month") + " at the bucket’s current values, "
+      + "real ticks, " + where + ", on the 2-year window to yesterday — each one filed as the bucket’s baseline, "
+      + "and every result kept on the Schedule page.";
+  }
   if(f.task === "backtest"){
     return "One bucket test at the bucket’s current values, real ticks, " + where + ". "
       + (f.win === "campaign"
@@ -9874,9 +9975,21 @@ function renderSeedBuilder(){
       + '<div id="seedsearchres">' + seedSearchResults() + '</div>',
       "A rider is a variable from another group, swept alongside on its own window.");
   }
+  /* 2026-10-13 -- REPEAT: a bucket test can be a standing order (recurring_tests.py) -- it then lives
+     beside the chain, not in it, and always uses the 2-year rolling window. Not when editing a block. */
+  const repeating = f.task === "backtest" && !f.editing && f.repeat && f.repeat !== "once";
+  if(f.task === "backtest" && f.bucket && !f.editing){
+    card += seedSection("Repeat", '<div class="chips">'
+      + seedChip("seedrepeat", "once", !repeating, "Once")
+      + seedChip("seedrepeat", "weekly", f.repeat === "weekly", "Weekly")
+      + seedChip("seedrepeat", "monthly", f.repeat === "monthly", "Monthly") + '</div>',
+      repeating ? "A standing order beside the chain: every " + (f.repeat === "weekly" ? "week" : "month")
+        + ", one bucket test on the 2-year window to yesterday, at the front of the line. Every result is kept "
+        + "on the Schedule page under Recurring bucket tests." : "");
+  }
   if(f.bucket && (f.task === "backtest" || g)){
     const dates = f.win === "custom" ? [f.from, f.to] : seedWindowDates(f.win);
-    card += seedSection("Date range", '<div class="chips">'
+    if(!repeating) card += seedSection("Date range", '<div class="chips">'
       + seedChip("seedwin", "campaign", f.win === "campaign", "2 years to yesterday")
       + seedChip("seedwin", "older", f.win === "older", "Older year")
       + seedChip("seedwin", "recent", f.win === "recent", "Recent year")
@@ -9905,7 +10018,8 @@ function renderSeedBuilder(){
     card += '<div class="seedstatus" id="seedstatus">' + esc(seedStatusLine()) + '</div>'
       + (SEED_MSG ? '<div class="tnote" style="color:var(--bad)">' + esc(SEED_MSG) + '</div>' : "")
       + '<div class="chips" style="margin-top:10px">'
-      + '<button type="button" class="chip gold" data-seedinsert>' + (f.editing ? "Update block" : "Insert into schedule") + '</button>'
+      + '<button type="button" class="chip gold" data-seedinsert>' + (f.editing ? "Update block"
+          : repeating ? "Start the " + f.repeat + " test" : "Insert into schedule") + '</button>'
       + '<button type="button" class="chip" data-seedclose>Cancel</button></div>';
   }
   return h + '<div class="card"><div class="card-in"><div class="tsec">' + card + '</div></div></div></div>';
@@ -10017,12 +10131,34 @@ function seedSentence(b){
   return esc("Seed — " + what + " · " + win + " · " + m + pp + " — until it is done");
 }
 
+/* 2026-10-13 -- "Start the weekly test": POST /recurring add. GLOBALS has no bucket test of its own,
+   and SWING joins with V3.1.0 -- the fleet refuses both and the message says so. */
+async function seedRecurringStart(f){
+  const b = seedBucket();
+  if(["BULL", "BEAR", "RANGING"].indexOf(f.regime) < 0){
+    SEED_MSG = f.regime + " has no bucket test of its own to repeat.";
+    return repaintSettings();
+  }
+  const res = await apiCall("/recurring", {action: "add", regime: f.regime, bucket_id: b ? b.bucket_id : null,
+                                           cadence: f.repeat, machine: f.machine || null, note: f.note || ""});
+  if(res.ok){
+    if(Array.isArray(res.out.recurring)) RECURRING = res.out.recurring;
+    SEED_FORM = null;
+    SCHED_EDIT = null;
+    SCHED_VIEW = false;    /* back to the Schedule page, where the new test now shows */
+  } else {
+    SEED_MSG = res.error === "read-only" ? "Read-only here — open the app on the tailnet to start it."
+                                         : ("Not started: " + res.error);
+  }
+  repaintSettings();
+}
+
 /* ---------- taps ---------- */
 document.addEventListener("click", function(e){
   const t = e.target.closest("[data-seedopen],[data-seedclose],[data-seedreload],[data-seedtask],"
     + "[data-seedreg],[data-seedbkt],[data-seedline],[data-seedgrp],[data-seedvar],[data-seedadj],"
     + "[data-seedreset],[data-seedrider],[data-seedriderdel],[data-seedwin],[data-seedmach],"
-    + "[data-seedpicks],[data-seedinsert],[data-seededit]");
+    + "[data-seedpicks],[data-seedinsert],[data-seededit],[data-seedrepeat]");
   if(!t) return;
   e.preventDefault();
   e.stopPropagation();
@@ -10069,9 +10205,14 @@ document.addEventListener("click", function(e){
   }
   else if(d.seedmach !== undefined){ f.machine = d.seedmach; }
   else if(d.seedpicks !== undefined){ f.picks = d.seedpicks; }
+  else if(d.seedrepeat !== undefined){ f.repeat = d.seedrepeat; if(f.repeat !== "once") f.win = "campaign"; }
   else if(d.seedinsert !== undefined){
     const why = seedCheck();
     if(why){ SEED_MSG = why; return repaintSettings(); }
+    if(f.task === "backtest" && !f.editing && f.repeat && f.repeat !== "once"){
+      seedRecurringStart(f);   // a standing order beside the chain, not a block in it
+      return repaintSettings();
+    }
     const blk = seedBlockOut();
     const draft = schedDraft();
     if(!f.editing || !draft.some(function(x){ return x.id === blk.id; })) draft.push(blk);
@@ -12655,6 +12796,30 @@ function lvPaintHistory(){
       `(${Math.round(won.length / rows.length * 100)}%) · PF <b>${gl > 0 ? (gw / gl).toFixed(2) : "—"}</b>` +
       ` · net <b class="${lvTone(net)}">${lvMoney(net)}</b>`
     : (lvTrades().length ? "Nothing closed in this range." : "No closed trades on this account yet.");
+  /* 2026-10-13 -- WHAT EACH REGIME IS MAKING, in the same range (Trevor: "I'd like to know what this regime
+     is making"). Grouped by the trade's own regime label -- SWING gets its row the day its trades carry
+     one; a trade the feed could not label is "unlabelled", never guessed. */
+  if(rows.length){
+    const by = {};
+    rows.forEach(t => {
+      const k = t.regime || "";
+      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0});
+      const p = Number(t.profit) || 0;
+      g.n++; if(p > 0) g.gw += p; else g.gl -= p;
+    });
+    const order = ["BULL", "BEAR", "SWING", "RANGING"];
+    const keys = Object.keys(by).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || a.localeCompare(b);
+    });
+    if(keys.length > 1 || keys[0]){
+      sum.innerHTML += '<div class="lv-regsplit">' + keys.map(k => {
+        const g = by[k], n = g.gw - g.gl;
+        return `<span>${k ? lvRegTag(k) : '<span class="chip">unlabelled</span>'} <b>${g.n}</b> · PF ` +
+               `<b>${g.gl > 0 ? (g.gw / g.gl).toFixed(2) : "—"}</b> · <b class="${lvTone(n)}">${lvMoney(n)}</b></span>`;
+      }).join("") + '</div>';
+    }
+  }
   const shown = rows.slice(0, 100);
   list.innerHTML = shown.map(t => {
     const id = "t" + t.position;
@@ -13627,6 +13792,7 @@ function applySnapshot(d, source){
   TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
+  RECURRING = Array.isArray(d.recurring) ? d.recurring : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
   /* 2026-09-18 -- the Settings badge. Absent on a snapshot from a machine
