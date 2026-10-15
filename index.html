@@ -613,6 +613,27 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .lv-regsplit{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;font-size:.78rem;}
 .lv-regsplit span{white-space:nowrap;}
 .tby{font-size:.67rem;color:var(--faint);font-family:"Roboto Mono",ui-monospace,monospace;}
+/* 2026-10-15 -- V3.1 CHECKPOINTS + the SWING card (checkpoints.py / swing_status.py). See ckCard / swingCard. */
+.ck{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px;}
+.ck:first-child{border-top:0;padding-top:0;}
+.ck-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;}
+.ck-n{font-weight:700;font-size:.9rem;}
+.ck-sub{font-size:.7rem;color:var(--faint);line-height:1.4;}
+.ck-t{width:100%;border-collapse:collapse;font-size:.72rem;font-variant-numeric:tabular-nums;}
+.ck-t th,.ck-t td{text-align:right;padding:3px 4px;white-space:nowrap;}
+.ck-t th:first-child,.ck-t td:first-child{text-align:left;white-space:normal;padding-left:0;}
+.ck-t th{color:var(--faint);font-weight:600;font-size:.66rem;}
+.ck-t tr+tr td{border-top:1px solid var(--line);}
+.ck-t tr.cur td{color:var(--text);font-weight:700;}
+.ck-t tr.pass td:first-child{color:var(--good);}
+.ck-t tr.guard td:first-child{color:var(--warn);}
+.ck-t td{color:var(--dim);}
+.ck-t tr.pass td,.ck-t tr.guard td{color:var(--text);}
+.chip.ckok{background:rgba(95,190,149,.14);color:var(--good);}
+.chip.ckhold{background:rgba(140,160,172,.14);color:var(--dim);}
+.sw-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 8px;}
+.sw-k{font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;}
+.sw-v{font-size:.95rem;font-weight:700;font-variant-numeric:tabular-nums;}
 
 /* A variable and where it is up to. The state carries the colour because it is
    the thing worth scanning down a list for -- a column of names is a column of
@@ -1870,7 +1891,19 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 </div>
 
 <script>
-const EPOCH = "V3.0.0";
+const EPOCH = "V3.1.0";
+/* 2026-10-15 -- WHAT V3.1 DOES NOT RUN. RANGING is switched off (its own build later; opt_schedule.RANGING_ENABLED,
+   its trees untouched on disk) and GLOBALS has no group left (GLOBALS_EXIT_HANDOVER retired). Both read as "off in
+   V3.1" -- one quiet line -- never as stalled, empty or 0 of N. `d.regimes_off` when the publisher sends it; until
+   then, this build's own answer. See regimeOff / onRegimes. */
+const REGIMES_OFF_DEFAULT = ["RANGING", "GLOBALS"];
+let REGIMES_OFF = REGIMES_OFF_DEFAULT.slice();
+function regimeOff(r){ return REGIMES_OFF.indexOf(String(r || "").toUpperCase()) >= 0; }
+function onRegimes(list){ return (list || []).filter(function(r){ return !regimeOff(r); }); }
+function offRegimesLine(){
+  return REGIMES_OFF.length ? REGIMES_OFF.join(" and ") + (REGIMES_OFF.length === 1 ? " is" : " are")
+    + " off in V3.1" + (regimeOff("RANGING") ? " — RANGING's trees stay on disk for its own build." : ".") : "";
+}
 
 // NO DATA IS BAKED INTO THIS REPO. The repo is public (GitHub Pages requires
 // that on a free account), and anything committed here is in the git history
@@ -1887,7 +1920,7 @@ const EPOCH = "V3.0.0";
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261013-120247";
+const APP_BUILD = "20261015-161223";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4230,8 +4263,9 @@ function fleetAgentBars(){
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
    asking -- it counts attempts at groups, and a group is re-run on purpose. */
 function campaignProgress(){
-  const done = BUCKETS.reduce((a, b) => a + (b.groups_done || 0), 0);
-  const total = BUCKETS.reduce((a, b) => a + (b.groups_total || 0), 0);
+  const on = BUCKETS.filter(b => !regimeOff(b.regime));     // an off regime is not owed work (V3.1)
+  const done = on.reduce((a, b) => a + (b.groups_done || 0), 0);
+  const total = on.reduce((a, b) => a + (b.groups_total || 0), 0);
   if(!total) return LEDGER.filter(completed).length + " rounds this epoch";
   return `${done} of ${total} groups this epoch`;
 }
@@ -4685,8 +4719,9 @@ function queueCard(q){
         + "takes one of the top few, and an owed second pass or a peer’s lane "
         + "can step ahead of it — so the order is a best reading, not a promise."
     : q.source === "backtest"
-      ? "This round’s pass is applied and its two readings are owed. They run "
-        + "before any new round. Nothing is swept; every variable is measured."
+      ? "This round’s pass is applied and its two readings are owed. The next free "
+        + "agent on any machine takes each one — the two can run at once — before a "
+        + "machine starts new work. Nothing is swept; every variable is measured."
     : q.held
       ? "Seeded, so it goes first — but it needs the build that has these inputs. "
         + "Each machine takes it the moment it is on that build; one still on "
@@ -6513,7 +6548,7 @@ let STATUS = {};
 let ST_NAV = {bucket: null, group: null, variable: null};
 
 function statusSummary(){
-  const bs = STATUS.buckets || [];
+  const bs = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
   if(!bs.length) return "Arrives with the publisher update";
   return bs.map(b => `${esc(b.regime)} <span class="hcount">${esc(b.left)}</span> left`)
     .join(" · ") + " this epoch";
@@ -6542,13 +6577,189 @@ function stPf(r){
       ? ` <span class="${d > 0 ? "stup" : "stdn"}">(${d > 0 ? "+" : ""}${esc(d.toFixed(2))})</span>` : ""}`;
 }
 
+/* 2026-10-15 -- V3.1 CHECKPOINTS (checkpoints.py) and the SWING card (swing_status.py), on the Status page.
+   Trevor, 10-14: a Checkpoints card per bucket -- switch, trigger, current vs alternatives (Y1 / Y2 net, PF, pooled
+   t), verdict HOLDS / FLIP SUGGESTED / MIXED with a plain one-line explanation, history per switch. FLIP SUGGESTED
+   is a pending pick: accept / reject here, two taps, and NOTHING FLIPS ON ITS OWN -- POST /checkpoint leaves a
+   request the tick applies, so this says "sent" (202), never "applied", until a snapshot carries the decision.
+   RESULTS ONLY: a setting is named by its arm label, never by its values (the snapshot carries none).
+   d.checkpoints / d.swing; absent on an older publisher, which reads as "none yet". */
+let CHECKPOINTS = {buckets: [], answers: []};
+let SWING = null;
+const CK_UI = {arm: "", sent: {}, err: {}};   // arm = "<checkpoint id>|<choice>", armed by a first tap
+
+function ckArm(tag){ return String(tag || "").replace(/_/g, " "); }
+function ckPf(v){ return v == null || isNaN(Number(v)) ? "–" : Number(v).toFixed(2); }
+function ckCap(s){ s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); }
+/* The publisher's sentences are plain ASCII ('pos_3', "--", "->"); drawn here as the page writes its own. */
+function ckText(s){
+  return String(s || "").replace(/'([A-Za-z0-9_.]+)'/g, function(m, tag){ return ckArm(tag); })
+    .replace(/ -- /g, " — ").replace(/ -> /g, " → ");
+}
+function ckTrigger(tr){
+  const s = String(tr || "");
+  return s.indexOf("LANE:") === 0 ? "the " + s.slice(5) + " lane finished its pass" : humanize(s);
+}
+/* What needs a tap from Trevor: a FLIP SUGGESTED nobody has answered, from here or the snapshot. */
+function ckWaiting(c){
+  return c.status === "awaiting" && !c.decision && !CK_UI.sent[c.id]
+    && !(c.request && c.request.status === "requested");
+}
+const CK_CHIP = {"FLIP SUGGESTED": ["gold", "Flip suggested"], "MIXED": ["warn", "Mixed"],
+                 "HOLDS": ["ckhold", "Holds"], "WAITING": ["", "Running"]};
+function ckVerdictChip(c){
+  if(c.decision)
+    return c.decision.choice === "accept" ? '<span class="chip ckok">Accepted</span>'
+                                          : '<span class="chip ckhold">Rejected</span>';
+  if(c.status === "failed") return '<span class="chip warn">Incomplete</span>';   // not seeded, or a run gave no result
+  const m = CK_CHIP[c.verdict] || ["", c.verdict || ""];
+  return '<span class="chip ' + m[0] + '">' + esc(m[1]) + '</span>';
+}
+function ckTable(c){
+  const cell = function(y){
+    if(!y) return '<td>–</td><td>–</td>';
+    if(y.error) return '<td colspan="2">' + esc(y.error) + '</td>';
+    return '<td title="' + esc(y.trades) + ' trades">' + recurMoney(y.net) + '</td><td>' + ckPf(y.pf) + '</td>';
+  };
+  return '<table class="ck-t"><tr><th></th><th colspan="2">Y1</th><th colspan="2">Y2</th><th></th></tr>'
+    + '<tr><th>Setting</th><th>net</th><th>PF</th><th>net</th><th>PF</th><th>t</th></tr>'
+    + (c.rows || []).map(function(r){
+        const cls = r.current ? "cur" : r.mark === "passes" ? "pass" : r.mark === "y1_guard" ? "guard" : "";
+        const name = (r.current ? "Current" : esc(ckArm(r.setting)))
+          + (r.mark === "passes" ? " ✓" : r.mark === "y1_guard" ? " ⚠" : "")
+          + (r.also && r.also.length ? '<div class="ck-sub">= ' + esc(r.also.map(ckArm).join(", ")) + '</div>' : "");
+        return '<tr class="' + cls + '"><td>' + name + '</td>' + cell(r.Y1) + cell(r.Y2)
+          + '<td>' + (r.t != null ? Number(r.t).toFixed(2) : "–") + '</td></tr>';
+      }).join("")
+    + '</table>';
+}
+function ckAnswer(c){
+  if(c.decision)
+    return '<div class="lmsg ' + (c.decision.choice === "accept" ? "ok" : "busy") + '">'
+      + (c.decision.choice === "accept" ? "Accepted " + esc(ckArm(c.decision.pick)) : "Rejected — the current setting stays")
+      + ' · ' + esc(fmtWhen(c.decision.at)) + '</div>';
+  if(c.status !== "awaiting") return "";
+  const sent = CK_UI.sent[c.id], req = c.request;
+  let msg = "";
+  if(sent)
+    msg = '<div class="lmsg busy">Sent: ' + (sent.choice === "accept" ? "accept " + esc(ckArm(sent.tag)) : "reject")
+      + '. The tick applies it at its next boundary.</div>';
+  else if(req && req.status === "requested")
+    msg = '<div class="lmsg busy">' + (req.choice === "accept" ? "Accept " + esc(ckArm(req.pick)) : "Reject")
+      + ' sent ' + esc(fmtWhen(req.requested_at)) + ', waiting for the tick.</div>';
+  else if(req && (req.status === "refused" || req.status === "failed"))
+    msg = '<div class="lmsg err">Not applied: ' + esc(ckText(req.message || req.status)) + '</div>';
+  if(CK_UI.err[c.id]) msg += '<div class="lmsg err">' + esc(CK_UI.err[c.id]) + '</div>';
+  if(!ckWaiting(c)) return msg;
+  /* ONE ACCEPT PER ALTERNATIVE ON OFFER (10-15, Trevor: "Yes to all"): a FLIP's one, or every contender of a MIXED
+     where none beats the others. Each names its tag; the POST carries it. */
+  const btn = function(choice, tag, label){
+    const armed = CK_UI.arm === c.id + "|" + choice + "|" + (tag || "");
+    return '<button type="button" class="chip' + (armed ? " on" : "") + '" data-ck="' + choice
+      + '" data-cktag="' + esc(tag || "") + '" data-ckid="' + esc(c.id) + '">'
+      + esc(armed ? "Tap again to " + (tag ? choice + " " + ckArm(tag) : choice) : label) + '</button>';
+  };
+  const acc = (c.acceptable && c.acceptable.length) ? c.acceptable : (c.pick ? [c.pick] : []);
+  return msg + '<div class="chips">'
+    + acc.map(function(tag){ return btn("accept", tag, "Accept " + ckArm(tag)); }).join("")
+    + btn("reject", "", "Reject, keep current") + '</div>';
+}
+function ckHistory(c){
+  const h = c.history || [];
+  if(!h.length) return "";
+  return '<div class="ck-sub">Earlier: ' + h.slice(0, 4).map(function(x){
+    const v = String(x.verdict || "").toLowerCase();
+    const d = x.decision ? (x.decision.choice === "accept" ? ", accepted " + ckArm(x.decision.pick) : ", rejected")
+            : (x.pick ? " (" + ckArm(x.pick) + ")" : "");
+    return esc(fmtWhen(x.at) + " " + v + d);
+  }).join(" · ") + '</div>';
+}
+function ckCard(c){
+  return '<div class="ck"><div class="ck-h"><span class="ck-n">' + esc(ckCap(c.title)) + '</span>'
+    + ckVerdictChip(c) + '<span class="sp"></span><span class="tby">' + esc(c.switch) + '</span></div>'
+    + '<div class="ck-sub">After ' + esc(ckTrigger(c.trigger)) + ' · ' + esc(fmtWhen(c.at)) + '</div>'
+    + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
+    + ckTable(c) + ckAnswer(c) + ckHistory(c) + '</div>';
+}
+const CK_NONE = 'None yet. A checkpoint re-tests one of a bucket\'s switches (positions, breakeven, the H1 gate, '
+  + 'the confluence timeframes&hellip;) on both years when a group that leans on it is applied.';
+function ckBucketSection(key){
+  const b = (CHECKPOINTS.buckets || []).find(function(x){ return x.key === key; });
+  const list = b ? (b.checkpoints || []) : [];
+  return '<div class="section-label" style="margin-top:12px">Checkpoints (' + list.length + ')</div>'
+    + '<div class="card"><div class="card-in">'
+    + (list.length ? list.map(ckCard).join("") + '<div class="tnote">' + esc(CHECKPOINTS.rule || "") + '</div>'
+                   : '<div class="tnote">' + CK_NONE + '</div>')
+    + '</div></div>';
+}
+function ckOverview(){
+  const bs = (CHECKPOINTS.buckets || []).filter(function(b){ return (b.checkpoints || []).length; });
+  let h = '<div class="section-label" style="margin-top:12px">Checkpoints</div><div class="card"><div class="card-in">';
+  if(!bs.length) return h + '<div class="tnote">' + CK_NONE + '</div></div></div>';
+  bs.forEach(function(b){
+    const cs = b.checkpoints;
+    const wait = cs.filter(ckWaiting).length, run = cs.filter(function(c){ return c.status === "running"; }).length;
+    const known = (STATUS.buckets || []).some(function(x){ return x.key === b.key; });
+    const line = cs.map(function(c){
+      return c.switch + " " + (c.decision ? (c.decision.choice === "accept" ? "accepted" : "rejected")
+        : c.status === "running" ? "running" : String(c.verdict || "").toLowerCase());
+    }).join(" · ");
+    h += (known ? '<button type="button" class="strow" data-stb="' + esc(b.key) + '">' : '<div class="strow">')
+      + '<div class="lrow"><span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
+      + '<span class="stname">Bucket ' + esc(b.bucket_id) + '</span>'
+      + (wait ? '<span class="chip gold">' + wait + ' waiting on you</span>' : "")
+      + (run ? '<span class="chip">' + run + ' running</span>' : "")
+      + (known ? '<span class="sp"></span><span class="hcar">›</span>' : "") + '</div>'
+      + '<div class="stmeta">' + esc(line) + '</div>' + (known ? '</button>' : '</div>');
+  });
+  return h + '</div></div>';
+}
+function swingCard(){
+  const s = SWING;
+  let h = '<div class="section-label" style="margin-top:12px">SWING</div><div class="card"><div class="card-in">';
+  if(!s) return h + '<div class="tnote">Arrives with the V3.1 publisher update.</div></div></div>';
+  const chip = s.live ? '<span class="chip ckok">Live</span>'
+    : s.state === "not measured" ? '<span class="chip">Not measured</span>' : '<span class="chip warn">Not live</span>';
+  h += '<div class="lrow"><span class="stname">Live switch</span>' + chip + '</div>'
+    + '<div class="tnote">' + esc(ckCap(ckText(s.why))) + '</div>';
+  if(s.measured){
+    const kv = function(k, v){ return '<div><div class="sw-k">' + k + '</div><div class="sw-v">' + v + '</div></div>'; };
+    h += '<div class="sw-grid">' + kv("Trades", esc(s.trades != null ? s.trades : "–")) + kv("PF", ckPf(s.pf))
+      + kv("t", s.t != null ? Number(s.t).toFixed(2) : "–") + kv("Worst-case PF", ckPf(s.worst_pf))
+      + kv("Days", esc(s.days != null ? s.days : "–")) + kv("Measured", esc(fmtWhen(s.measured_at) || "–")) + '</div>';
+  }
+  return h + '<div class="tnote">Never optimized: fixed rules, stacked on BULL. It goes live on its own baseline, '
+    + 'the SWING alone on both years' + (s.window ? ' (' + esc(s.window.join(" → ")) + ')' : '')
+    + ', judged by the buckets\' live gate with its own trade floor: t ≥ ' + Number(s.line || 2).toFixed(1)
+    + ' day-pooled, worst-case PF ≥ 1.0, PF ≥ 1.25, ' + esc(s.min_trades || 40) + '+ trades.</div></div></div>';
+}
+document.addEventListener("click", async function(e){
+  const t = e.target.closest("[data-ck]");
+  if(!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const id = t.dataset.ckid, choice = t.dataset.ck, tag = t.dataset.cktag || "";
+  const key = id + "|" + choice + "|" + tag;
+  delete CK_UI.err[id];
+  if(CK_UI.arm !== key){ CK_UI.arm = key; return repaintStatus(); }
+  CK_UI.arm = "";
+  const body = {checkpoint_id: id, choice: choice, by: "app"};
+  if(choice === "accept" && tag) body.tag = tag;
+  const res = await apiCall("/checkpoint", body);
+  if(res.ok) CK_UI.sent[id] = {choice: choice, tag: tag, at: Date.now() / 1000};
+  else CK_UI.err[id] = res.error === "read-only" ? "Read-only here: open the app on the tailnet to answer."
+    : res.error === "unreachable" ? "The Laptop didn't answer, so nothing was sent."
+    : "Not sent: " + res.error;
+  repaintStatus();
+}, true);
+
 function renderStatus(){
   const home = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
   if(!(STATUS.buckets || []).length)
     return '<div class="home">' + home + '<div class="section-label">Status</div>'
       + '<div class="card"><div class="card-in"><div class="tnote">This snapshot has no '
       + 'status yet &mdash; it arrives once a machine on the update that adds it publishes.'
-      + '</div></div></div></div>';
+      + '</div></div></div>' + ckOverview() + swingCard() + '</div>';
   if(ST_NAV.variable && ST_NAV.group) return stVariablePage();
   if(ST_NAV.group) return stGroupPage();
   if(ST_NAV.bucket) return stBucketPage();
@@ -6602,7 +6813,7 @@ function stLegend(b){
 
 function stOverview(home){
   const bs = STATUS.buckets || [];
-  const regimes = ["BULL", "BEAR", "RANGING"].filter(r => bs.some(b => b.regime === r));
+  const regimes = onRegimes(["BULL", "BEAR", "RANGING"]).filter(r => bs.some(b => b.regime === r));
   const cards = regimes.map(r => {
     const mine = bs.filter(b => b.regime === r);
     const left = mine.reduce((a, b) => a + b.left, 0), tot = mine.reduce((a, b) => a + b.total, 0);
@@ -6616,7 +6827,7 @@ function stOverview(home){
       + '</div></div>';
   }).join("");
   const g = STATUS.globals;
-  const glob = g && (g.groups || []).length
+  const glob = g && !regimeOff("GLOBALS") && (g.groups || []).length
     ? '<div class="card"><div class="card-in"><div class="tname">GLOBALS</div>'
       + '<div class="tnote">Shared by every regime. It serves whichever epochs are open '
       + 'when it runs, but it is none of a bucket\'s groups, so it never holds an epoch '
@@ -6633,7 +6844,9 @@ function stOverview(home){
     + 'is on the epoch its slowest group has not finished; a group that ran ahead has already '
     + 'done the later epochs (blue, green&hellip;) and waits for the rest. When an epoch is '
     + 'complete, its colour is free for the next one to open.</div>'
-    + cards + glob + '</div>';
+    + cards + glob
+    + (REGIMES_OFF.length ? '<div class="tnote" style="margin:0 2px">' + esc(offRegimesLine()) + '</div>' : "")
+    + ckOverview() + swingCard() + '</div>';
 }
 
 /* WHAT COUNTS AS A RUN: a completed round the schedule counted. A FAILED round
@@ -6734,6 +6947,7 @@ function stBucketPage(){
     /* WHAT HAS RUN COMES FIRST (2026-09-30). Trevor: *"Can we swap the runs that
        are run? I want those on top of runs left in the epoch."* */
     + sec("Run this epoch", done) + sec("Left this epoch", left) + sec("Parked", parked)
+    + ckBucketSection(b.key)
     + '</div>';
 }
 
@@ -8553,11 +8767,13 @@ document.addEventListener("click", async e => {
   else if(d.schedpp !== undefined){
     b.pass_picks = (b.pass_picks === val) ? null : val;
     if(b.pass_picks === "manual"){
-      if(!b.pick_timer_min) b.pick_timer_min = Number(VOCAB.pick_timer_default || 15);
+      /* 2026-10-14 -- the timer is OFF by default (0): the machine goes straight
+         on, and the next free one applies your pick. */
+      if(b.pick_timer_min == null) b.pick_timer_min = pickTimerDefault();
       schedFb(b);
     }
   }
-  else if(d.schedtimer !== undefined) b.pick_timer_min = Number(val);
+  else if(d.schedtimer !== undefined) b.pick_timer_min = Number(val);   /* 0 = Off */
   else if(d.schedfbreg !== undefined){
     const f = schedFb(b); schedToggle(f.regimes, val); schedDropRegimeBuckets(f, val); }
   else if(d.schedfbbkt !== undefined){
@@ -8904,8 +9120,8 @@ function sendStatusLine(key, o){
       return `<div class="pickfoot">Sending pass ${esc(s.pass)}…</div>`;
     if(s.state === "error")
       return `<div class="pickwarn">⚠️ Pass ${esc(s.pass)} was not sent — ${esc(sendErr(s.msg))}</div>`;
-    return `<div class="pickdone">✓ Pass ${esc(s.pass)} sent. It applies when the job
-      running now finishes, then both backtests run. This card updates on the next
+    return `<div class="pickdone">✓ Pass ${esc(s.pass)} sent. The next free machine applies
+      it, and its two backtests go to the next free agents. This card updates on the next
       snapshot.</div>`;
   }
   const n = esc(s.pass_number);
@@ -8918,7 +9134,8 @@ function sendStatusLine(key, o){
   if(s.status === "requested" && o && o.applied_pass != null &&
      String(o.applied_pass) === String(s.pass_number)){
     const st = String(o.stage || "");
-    const how = st === "backtests_owed" ? "owed and run next"
+    const how = st === "backtests_owed" ? "owed — the next free agents take them"
+      : st === "backtests_running" ? "running — " + esc(ipParts(o) || "under way")
       : st && st !== "running" && st !== "awaiting_pick"
         ? "under way — " + esc(phaseText(st)) + " running now"
         : "under way";
@@ -8927,7 +9144,7 @@ function sendStatusLine(key, o){
   }
   if(s.status === "requested")
     return `<div class="pickdone">✓ Pass ${n} sent ${esc(fmtWhen(s.requested_at))} —
-      waiting for the job running now to finish.</div>`;
+      waiting for the next free machine to apply it.</div>`;
   if(s.status === "applied")
     return `<div class="pickdone">✓ Pass ${n} applied ${esc(fmtWhen(s.done_at))}.
       ${esc(s.message || "")}</div>`;
@@ -9061,13 +9278,33 @@ document.addEventListener("click", e => {
    publisher lists them (d.in_progress); this draws them. */
 const TASK_MARK = {passed: "✓", running: "▶", queued: "·", skipped: "–", failed: "✕"};
 
+/* 2026-10-14 -- THE BACKTEST POOL: each test is its own part, taken by any free
+   agent. "Bucket test ▶ on Kylee · Full test owed". "" when not reported. */
+/* 2026-10-15 -- named by prefix: the report-style constants themselves stay out of this public file
+   (publish.py's leak scan). */
+function partName(p){
+  const s = String(p || "");
+  return /^BUCKET/.test(s) ? "Bucket test" : /^FULL/.test(s) ? "Full test" : s;
+}
+function ipParts(it){
+  const ps = (it && it.parts) || [];
+  if(!ps.length) return "";
+  return ps.map(function(q){
+    const nm = partName(q.part);
+    if(q.state === "done") return nm + " ✓" + (q.by ? " (" + q.by + ")" : "");
+    if(q.state === "running") return nm + " ▶ on " + (q.by || "a machine");
+    return nm + " owed";
+  }).join(" · ");
+}
+
 function ipStage(it){
   const p = passLabel(it.applied_pass ?? it.pass_number,
                       it.applied_pass != null ? it.applied_pass_style : it.pass_style);
   if(it.awaiting_pick) return "Finished — waiting on your pick. Nothing is applied until you pick.";
-  if(it.stage === "backtests_owed"){
+  if(it.stage === "backtests_owed" || it.stage === "backtests_running"){
     const err = String(it.last_error || "");
-    return `Pass ${p} applied · its backtests are owed and run next` +
+    const parts = ipParts(it);
+    return `Pass ${p} applied · ` + (parts || "its backtests are owed — the next free agents take them") +
       (it.attempts ? ` (${it.attempts} of 3 tried` +
         (err ? `; last: ${err.length > 140 ? err.slice(0, 137) + "…" : err}` : "") + ")" : "");
   }
@@ -9942,10 +10179,13 @@ function renderSeedBuilder(){
       : f.task === "optimize" ? "A round over the variables you pick. Its winner is applied the usual way — you pick the pass, or it applies itself."
       : "");
   if(f.task){
-    const regimes = [];
-    (cat.buckets || []).forEach(function(x){ if(regimes.indexOf(x.regime) < 0) regimes.push(x.regime); });
+    const regimes = [], off = [];
+    (cat.buckets || []).forEach(function(x){
+      const into = regimeOff(x.regime) ? off : regimes;      // 2026-10-15: an off regime (V3.1) is not offered
+      if(into.indexOf(x.regime) < 0) into.push(x.regime); });
     card += seedSection("Regime", '<div class="chips">'
-      + regimes.map(function(r){ return seedChip("seedreg", r, f.regime === r, r); }).join("") + '</div>');
+      + regimes.map(function(r){ return seedChip("seedreg", r, f.regime === r, r); }).join("") + '</div>',
+      off.length ? off.join(" and ") + (off.length === 1 ? " is" : " are") + " off in V3.1." : "");
   }
   if(f.regime){
     const list = (cat.buckets || []).filter(function(x){ return x.regime === f.regime; });
@@ -10072,7 +10312,7 @@ function seedBlockOut(){
   b.name = (f.task === "backtest" ? "Seed · Bucket test " : "Seed · ")
     + f.regime + " " + spec.bucket_id + (g ? " · " + humanize(g.id) : "");
   if(f.task === "optimize" && f.picks === "manual"){
-    b.pass_picks = "manual"; b.pick_timer_min = 15;
+    b.pass_picks = "manual"; b.pick_timer_min = pickTimerDefault();
     if(!b.fallback) b.fallback = schedNewFallback();
   } else if(f.task === "optimize"){
     b.pass_picks = "auto"; delete b.pick_timer_min; delete b.fallback;
@@ -10135,8 +10375,9 @@ function seedSentence(b){
    and SWING joins with V3.1.0 -- the fleet refuses both and the message says so. */
 async function seedRecurringStart(f){
   const b = seedBucket();
-  if(["BULL", "BEAR", "RANGING"].indexOf(f.regime) < 0){
-    SEED_MSG = f.regime + " has no bucket test of its own to repeat.";
+  if(regimeOff(f.regime) || ["BULL", "BEAR", "RANGING"].indexOf(f.regime) < 0){
+    SEED_MSG = regimeOff(f.regime) ? f.regime + " is off in V3.1 — nothing to repeat."
+                                   : f.regime + " has no bucket test of its own to repeat.";
     return repaintSettings();
   }
   const res = await apiCall("/recurring", {action: "add", regime: f.regime, bucket_id: b ? b.bucket_id : null,
@@ -10409,21 +10650,29 @@ function schedPassPicks(b, chip){
     + pp.map(function(v){ return chip("schedpp", v, cur === v, PP_LABEL[v] || v); }).join("")
     + '</div>'
     + '<div class="tnote">' + (cur ? esc(vocabText("pass_picks_text", cur))
-        : "<b>Not set</b> — the regular rule: BULL and BEAR apply their top pass, "
-          + "RANGING waits for your pick while the machine moves on.") + '</div>';
+        : "<b>Not set</b> — the regular rule: BULL and BEAR apply their top pass"
+          + (regimeOff("RANGING") ? "." : ", RANGING waits for your pick while the machine moves on."))
+    + '</div>';
   if(cur !== "manual") return h;
-  const presets = (VOCAB.pick_timer_presets || []).length ? VOCAB.pick_timer_presets : [5, 15, 30, 60];
-  const t = Number(b.pick_timer_min || VOCAB.pick_timer_default || 15);
+  const presets = (VOCAB.pick_timer_presets || []).length ? VOCAB.pick_timer_presets : [0, 5, 15, 30, 60];
+  const t = b.pick_timer_min == null ? pickTimerDefault() : Number(b.pick_timer_min);
   const fb = b.fallback || schedNewFallback();
-  return h
-    + '<div class="section-label" style="margin-top:10px">Timer</div>'
+  const timer = '<div class="section-label" style="margin-top:10px">Timer</div>'
     + '<div class="chips">'
-    + presets.map(function(m){ return chip("schedtimer", m, t === Number(m), m + " min"); }).join("")
-    + '<input class="pickin schedin" type="number" inputmode="decimal" step="any" min="1" '
+    + presets.map(function(m){
+        return chip("schedtimer", m, t === Number(m), Number(m) === 0 ? "Off" : m + " min"); }).join("")
+    + '<input class="pickin schedin" type="number" inputmode="decimal" step="any" min="0" '
     + 'placeholder="min" data-schedtimerin="' + esc(b.id) + '" value="' + esc(t) + '">'
-    + '</div>'
-    + '<div class="tnote">How long the machine holds for your pick. A pick inside it goes '
-    + 'straight to that pass’s backtests.</div>'
+    + '</div>';
+  /* 2026-10-14 -- OFF: no hold and no fallback. The round's lane waits for your
+     pick; everything else keeps running, and the next free machine applies it. */
+  if(!(t > 0)) return h + timer
+    + '<div class="tnote"><b>Off</b> — the machine goes straight on to its next job; only '
+    + 'this round’s lane waits. Your pick is applied by the next free machine, and its two '
+    + 'backtests go to the next free agents on any machine.</div>';
+  return h + timer
+    + '<div class="tnote">How long the machine holds for your pick. A pick inside it is '
+    + 'applied at once; its backtests go to the next free agents.</div>'
     /* THE FALLBACK, "tabbed over": its own block, indented under Manual. A
        target and nothing else -- no Until (it runs one job per turn), no Pass
        picks (its jobs apply themselves), no fallback of its own. */
@@ -10433,8 +10682,10 @@ function schedPassPicks(b, chip){
     + 'your pick after each. These jobs apply their own top pass.</div>'
     + '<div class="section-label">Target bucket</div>'
     + '<div class="chips">'
-    + ["BULL", "BEAR", "RANGING"].map(function(r){
-        return chip("schedfbreg", r, (fb.regimes || []).indexOf(r) >= 0, r); }).join("")
+    /* An off regime (V3.1) is not offered -- only shown, as "· off", while a saved fallback still ticks it. */
+    + ["BULL", "BEAR", "RANGING"].filter(function(r){ return !regimeOff(r) || (fb.regimes || []).indexOf(r) >= 0; })
+        .map(function(r){
+          return chip("schedfbreg", r, (fb.regimes || []).indexOf(r) >= 0, regimeOff(r) ? r + " · off" : r); }).join("")
     + vocab("selects").map(function(v){
         return chip("schedfbsel", v, (fb.select || "explicit") === v, SCHED_LABEL[v] || v); }).join("")
     + '</div>'
@@ -10507,12 +10758,19 @@ function schedSentence(b){
           ? ", " + (SCHED_LABEL[b.groups] || b.groups) : "")
           + schedOrderPhrase(b.order);
   const m = (b.machines || []).length ? ", on " + b.machines.join(" + ") : "";
+  /* 2026-10-15 -- a block still ticking a regime V3.1 does not run says so: the fleet skips that part. */
+  const offT = (b.regimes || []).concat((b.buckets || []).map(function(k){ return String(k).split("|")[0]; }))
+    .map(function(r){ return String(r).toUpperCase(); })
+    .filter(function(r, i, a){ return regimeOff(r) && a.indexOf(r) === i; });
+  const offNote = offT.length ? " (" + offT.join(" and ") + " off in V3.1 — skipped)" : "";
+  const tm = b.pick_timer_min == null ? pickTimerDefault() : Number(b.pick_timer_min);
   const pp = b.pass_picks === "auto" ? " \u00b7 passes picked automatically"
     : b.pass_picks === "manual"
-      ? " \u00b7 you pick (" + Number(b.pick_timer_min || 15) + " min, then "
-        + schedFallbackPhrase(b.fallback) + ")"
+      ? (tm > 0 ? " \u00b7 you pick (" + tm + " min, then "
+                  + schedFallbackPhrase(b.fallback) + ")"
+                : " \u00b7 you pick (no timer \u2014 the machine moves on)")
     : "";
-  return esc("Target " + what + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
+  return esc("Target " + what + offNote + g + m + " \u2014 until " + schedUntilPhrase(b.until || {})
              + ((b.max_jobs) ? " (give up after " + b.max_jobs + " jobs)" : "") + pp) ;
 }
 
@@ -10605,8 +10863,11 @@ function schedEditor(b){
        GLOBALS runs it and nothing else (scheduler._block_universe). It holds no
        trade share, so PF / profit rankings and "until PF" have nothing to read
        there -- give a GLOBALS block a job count. */
-    + ["BULL", "BEAR", "RANGING", "GLOBALS"].map(function(r){
-        return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, r); }).join("")
+    /* 2026-10-15 -- V3.1: an off regime is not offered; a saved block that still ticks one shows it as
+       "· off" so it can be unticked (the fleet skips it -- see schedSentence). */
+    + ["BULL", "BEAR", "RANGING", "GLOBALS"].filter(function(r){ return !regimeOff(r) || (b.regimes || []).indexOf(r) >= 0; })
+        .map(function(r){
+          return chip("schedreg", r, (b.regimes || []).indexOf(r) >= 0, regimeOff(r) ? r + " · off" : r); }).join("")
     + vocab("selects").map(function(v){
         return chip("schedsel", v, (b.select || "explicit") === v,
                     SCHED_LABEL[v] || v); }).join("")
@@ -10875,11 +11136,18 @@ const MS_FALLBACK = {
   days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
 };
 function msVocab(){ return MS_VOCAB || MS_FALLBACK; }
+/* 2026-10-14 -- the Manual timer's default: the publisher's vocabulary (Off = 0
+   since today), 0 when it says nothing. Never `|| 15`: 0 is a real value. */
+function pickTimerDefault(){
+  const d = VOCAB && VOCAB.pick_timer_default;
+  return (d === null || d === undefined || d === "") ? 0 : Number(d);
+}
 function msShort(label){ return String(label || "").split(" - ")[0]; }
 const MS_DAY = {mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri",
                 sat: "Sat", sun: "Sun"};
 const MS_FIELD = {compute_mode: "compute", tier: "role", optimizations_enabled:
-  "run optimizations", backtests_by: "backtests", lend_cores: "lend cores", agent_for: "serves",
+  "run optimizations", backtests_by: "backtests", runs_backtests: "runs backtests",
+  lend_cores: "lend cores", agent_for: "serves",
   agent_limit: "cores to lend", lend_lid_open: "lend with lid open", schedule: "daily minimum", fence_enabled:
   "home rule", resume_on_ac: "plug-in rule"};
 
@@ -10956,32 +11224,27 @@ function machineSettingsRow(f){
     + '<div class="tnote">Takes effect on its next job; a running round keeps the rule it was picked under.</div>');
 
   if(s){
-    // -- backtests (2026-10-05, SPEC_BACKTEST_HELPER) --------------------------
-    /* Who runs this machine's two post-round backtests. A machine that takes
-       rounds can hand them to a peer; an agent takes no rounds, so it only ever
-       SHOWS whose it measures. Machine names come from its own report (peers),
-       never a list in this page. Shown only once the machine reports the field
-       -- an older one would refuse the change as "not a machine setting". */
-    const btFor = s.backtests_for || [];
-    if(s.backtest_helper){
-      const by = s.backtests_by || null;
-      /* 2026-10-05 evening: the helper takes the SEEDS too (an agent a peer
-         names, on code reporting backtest_helper >= 2) -- every machine then
-         leaves unpinned seeds to it; a seed pinned to a machine still goes
-         there. */
-      bits.push('<div class="section-label" style="margin-top:10px">Backtests + seeds</div>'
-        + (isAgent ? "" : '<div class="chips">'
-            + msChip(m, "backtests_by", null, "This machine", !by)
-            + (s.peers || []).map(p => msChip(m, "backtests_by", p, "Hand to " + p, by === p)).join("")
-            + '</div><div class="tnote">The helper measures each round while this machine '
-            + 'starts its next optimization, and runs the fleet&rsquo;s seeds (a seed pinned '
-            + 'to a machine still runs there). Anything still owed is measured here before '
-            + 'the next round is applied.</div>')
-        + (btFor.length ? '<div class="tnote" style="margin-top:6px">Runs backtests + seeds for: <b>'
-            + esc(btFor.join(", ")) + '</b>'
-            + (Number(s.backtest_helper) >= 2 ? "" : ' (backtests only until it updates)')
-            + '</div>'
-          : (isAgent ? '<div class="tnote">Runs nobody&rsquo;s backtests.</div>' : "")));
+    // -- backtests (2026-10-14, SPEC_BACKTEST_POOL) -------------------------
+    /* Owed backtests are a fleet-wide pool now: any free agent on any machine
+       takes them, running sweeps first (Trevor: "I want any free Agent to take
+       them on. Doesn't matter what machine it is"). One switch per machine, and
+       how many spare MT5s (backtest slots) it has for them. The 10-05 "Hand to
+       ..." choice is retired. Shown only once the machine reports the field --
+       an older one would refuse the change as "not a machine setting". */
+    if(s.runs_backtests !== undefined){
+      const on = s.runs_backtests !== false;
+      const slots = Number(s.backtest_slots) || 0;
+      bits.push('<div class="section-label" style="margin-top:10px">Backtests</div>'
+        + '<div class="chips">'
+        + msChip(m, "runs_backtests", true, "Runs backtests", on)
+        + msChip(m, "runs_backtests", false, "Never", !on)
+        + '</div><div class="tnote">'
+        + (on ? 'Takes owed tests from the pool whenever it is free — between jobs'
+              + (slots ? ', and on its ' + slots + ' spare MT5' + (slots > 1 ? 's' : '')
+                       + ' whenever the box has a free core' : '')
+              + '. Running sweeps always come first.'
+            : 'Takes no owed tests (it still finishes a round whose tests are in).')
+        + '</div>');
     }
 
     // -- agent ------------------------------------------------------------
@@ -12566,8 +12829,15 @@ function lvPaintEntry(){
     (have ? `<span class="lv-pct${over ? " ok" : ""}">${Math.round(pct * 100)}%</span>` : "") + `</div>` +
     `<div class="lv-meter" role="img" aria-label="${have ? Math.round(pct * 100) : 0}% of the line">` +
     `<i class="${over ? "ok" : ""}" style="width:${fill.toFixed(1)}%"></i><b></b></div>` +
-    `<div class="lv-line">Score <b>${lvEntryNum(e.blend, 4)}</b> × ${sess} session <b>×${lvEntryNum(w, 2)}</b>` +
-    (perScore != null ? ` · this session the score needs <b>${lvEntryNum(perScore, 4)}</b>` : "") + `</div>`;
+    /* 2026-10-15 (V3.1.0) -- the session weighs the ENTRY only where the bucket's switch says so (BEAR, 10-14);
+       otherwise it acts on the exit: the stop's distance x the session's multiplier (S13). */
+    (w === 1 && e.candidate !== "RANGING"
+      ? `<div class="lv-line">Score <b>${lvEntryNum(e.blend, 4)}</b> · the ${sess} session doesn't weigh this entry` +
+        (e.session_sl != null ? ` -- it sets the stop: <b>×${lvEntryNum(e.session_sl, 2)}</b>` : "") + `</div>`
+      : `<div class="lv-line">Score <b>${lvEntryNum(e.blend, 4)}</b> × ${sess} session <b>×${lvEntryNum(w, 2)}</b>` +
+        (perScore != null ? ` · this session the score needs <b>${lvEntryNum(perScore, 4)}</b>` : "") +
+        (e.session_sl != null && e.candidate !== "RANGING" ? ` · stop <b>×${lvEntryNum(e.session_sl, 2)}</b>` : "") +
+        `</div>`);
   /* The rows, in the EA's order. A gate after the one that stopped it was never
      checked this minute: shown dimmed with no mark, never as a pass. */
   const order = ["slope", "htf", "health"];
@@ -12606,20 +12876,26 @@ function lvPaintEntry(){
     return base;
   })();
   const rows =
+    /* 2026-10-15 (V3.1.0, S12) -- arming is held in SECONDS of market time, no longer counted in ticks. */
     lvEntryRow(armOk, "Armed", armed ? "yes" : "no",
-      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} ticks` : "",
-      (a.rev_need ? `Arms once the score has turned ${turn} on <b>${lvEntryNum(a.rev_need, 0)}</b> ticks ` +
-                    `(a turn the other way starts the count again): <b>${lvEntryNum(a.rev, 0)}</b> so far. ` : "") +
+      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} s` : "",
+      (a.rev_need ? `Arms once the score has kept turning ${turn} for <b>${lvEntryNum(a.rev_need, 0)}</b> seconds ` +
+                    `(a turn the other way starts the clock again): <b>${lvEntryNum(a.rev, 0)}</b> s so far. ` : "") +
       `Now: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
       `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`) +
     gRow("slope", "Slope gate", slopeWhat) +
-    gRow("htf", "Higher timeframes", "H1/H4/D1 agreeing with the trade.") +
+    gRow("htf", "H1 trend", "The H1 trend agreeing with the trade (V3.1: H4 and D1 moved to the stop).") +
     gRow("health", "Health score", "Size of the score itself.") +
     lvEntryRow(have ? over : null, "Total × session", lvEntryNum(e.total, 4),
       "needs " + lvEntryNum(e.total_min, 4),
       stopAt >= 0 ? "Zero while a gate above is failing." :
-      `Score ${lvEntryNum(e.blend, 4)} = slope, health, MACD ${lvEntryNum(e.macd, 1)} and squeeze ` +
-      `${lvEntryNum(e.volc, 2)} blended, × confluence ${lvEntryNum(e.conf, 2)}.`);
+      (e.candidate === "RANGING"
+        ? `Score ${lvEntryNum(e.blend, 4)} = slope, health, MACD ${lvEntryNum(e.macd, 1)} and squeeze ` +
+          `${lvEntryNum(e.volc, 2)} blended, × confluence ${lvEntryNum(e.conf, 2)}.`
+        /* 2026-10-15 (V3.1.0): the M15 MACD left BULL / BEAR (S25); confluence is applied once, inside the
+           health score (S18). */
+        : `Score ${lvEntryNum(e.blend, 4)} = slope, health (confluence inside it) and squeeze ` +
+          `${lvEntryNum(e.volc, 2)} blended.`));
   el.innerHTML = head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot +
                  `<div class="lv-esteps">${rows}</div>`;
 }
@@ -13803,6 +14079,12 @@ function applySnapshot(d, source){
      publisher; the card then shows only what each beacon carries. */
   /* 2026-09-29 -- the Status page (collect_status). {} on an older publisher. */
   STATUS = (d.status && typeof d.status === "object") ? d.status : {};
+  /* 2026-10-15 -- V3.1 checkpoints + the SWING card (ckCard / swingCard). Absent on an older publisher. */
+  CHECKPOINTS = (d.checkpoints && typeof d.checkpoints === "object") ? d.checkpoints : {buckets: [], answers: []};
+  SWING = (d.swing && typeof d.swing === "object") ? d.swing : null;
+  /* 2026-10-15 -- the regimes the fleet does not run (see REGIMES_OFF); absent = this build's own answer. */
+  REGIMES_OFF = Array.isArray(d.regimes_off) ? d.regimes_off.map(function(r){ return String(r).toUpperCase(); })
+                                             : REGIMES_OFF_DEFAULT.slice();
   MACHINE_SETTINGS = (d.machine_settings && typeof d.machine_settings === "object")
     ? d.machine_settings : {};
   /* 2026-10-01 -- what became of each Operations tap (run_control). */
@@ -14923,7 +15205,7 @@ document.addEventListener("click", e => {
        does today -- every chip cycles. */
     RESULTS_REGIME = value
       ? (RESULTS_REGIME === value ? null : value)
-      : cycle(["BULL", "BEAR", "RANGING"], RESULTS_REGIME);
+      : cycle(onRegimes(["BULL", "BEAR", "RANGING"]), RESULTS_REGIME);
   } else if(what === "bucket"){
     RESULTS_BUCKET = value
       ? (String(RESULTS_BUCKET) === value ? null : value)
@@ -15169,7 +15451,7 @@ document.addEventListener("input", e => {
     const blk = schedDraft().find(function(x){
       return x.id === ti.getAttribute("data-schedtimerin"); });
     const v = Number(ti.value.trim());
-    if(blk && v > 0) blk.pick_timer_min = v;
+    if(blk && ti.value.trim() !== "" && v >= 0) blk.pick_timer_min = v;   /* 0 = Off */
     return;
   }
   const si = e.target.closest("[data-schedvalin]");
