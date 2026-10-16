@@ -672,6 +672,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
    share grey with DEFAULT, which put the two OPPOSITE ends of the lifecycle --
    never touched, and finished forever -- in the same colour. */
 .tst.default{background:rgba(140,160,172,.12);color:#8CA0AC;}
+/* 2026-10-16 -- a swept variable's value before this round -> now (round_values, over the tailnet only). */
+.tst.vals{background:var(--tonal);color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;}
+.applyb.keepb{background:transparent;border:1px solid var(--line);color:var(--text);margin-top:8px;}
 .tst.floating{background:rgba(111,168,212,.16);color:#7FB6DE;}
 .tst.center{background:rgba(95,190,149,.16);color:var(--good);}
 .tst.pinned{background:rgba(224,139,74,.20);color:#F0A05E;}
@@ -1922,7 +1925,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-102617";
+const APP_BUILD = "20261016-105130";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3904,6 +3907,9 @@ function effText(r){
    the leak scan refuse the publish (09-29). The fleet sends one style or none. */
 function passLabel(n, style){
   if(n == null) return null;
+  // 2026-10-16 -- pass -1 = KEEP THE ORIGINAL (run_next_round.KEEP_ORIGINAL): no pass applied. (MT5 numbers real
+  // passes from 0, so 0 is a pass.)
+  if(Number(n) === -1) return "Original (kept)";
   const k = (/(\d)$/.exec(String(style || "")) || [])[1];
   if(k === "2") return `${n} (2nd pass)`;
   if(k === "3") return `${n} (3rd pass)`;
@@ -4074,7 +4080,9 @@ function renderResultsJob(r){
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
     whyBadge(whyTask(tasks), r) +
-    taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style}) +
+    taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style,
+                                  key: {regime: r.regime, bucket_id: r.bucket_id, group_id: r.group_id,
+                                        pass: r.picked_pass}}) +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
        showing as a card that simply stops. The round happened -- its PF moved and
        the ledger recorded it -- but nothing tied its report folder to it, so
@@ -6654,7 +6662,7 @@ function optimizeBadge(t, nth, picked){
     (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
        the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
     statesAtNote(d) +
-    sweepVars(taskRows(d), d.swept) +
+    sweepVars(taskRows(d), d.swept, two ? null : roundVals(picked && picked.key)) +
     /* THE PICKER IS BEHIND A CHIP. Closed, the badge says what was searched and
        which pass carries the round -- all you want most of the time. */
     `<div class="mgrp"><button type="button" class="gch${
@@ -8161,7 +8169,49 @@ function sweepCurve(all, swept){
       ${chosen.length > 1 ? "Each line is scaled to its own range." : ""}</div>`;
 }
 
-function sweepVars(all, swept){
+/* 2026-10-16 -- WHAT THE VARIABLES WERE, AND WHAT THEY MOVED TO. Trevor: *"I also want this block to show what the
+   variables were, and what they moved to."* PARAMETER VALUES ARE THE METHOD (memory transparency-boundary) and the
+   snapshot also goes to a gist anyone with the link can read, so they never ride it: fleet_api serves them over the
+   tailnet behind its token (/round_values, round_values.py) and this fetches them when the card opens. */
+const ROUND_VALS = {};
+function roundVals(k){
+  if(!k || !k.regime || k.bucket_id == null || !k.group_id) return null;
+  const key = [k.regime, k.bucket_id, k.group_id, k.pass].join("|");
+  const hit = ROUND_VALS[key];
+  if(hit && (hit.loading || Date.now() - hit.at < 300000)) return hit;
+  const base = apiBase();
+  if(!base){
+    ROUND_VALS[key] = {at: Date.now(), vars: [],
+                       why: "Values come from the Laptop over Tailscale -- add the Laptop link in Settings to see them."};
+    return ROUND_VALS[key];
+  }
+  ROUND_VALS[key] = {at: Date.now(), loading: true, vars: []};
+  const url = base + "/round_values/" + [k.regime, k.bucket_id, k.group_id].map(encodeURIComponent).join("/")
+            + (k.pass != null ? "/" + encodeURIComponent(k.pass) : "");
+  fetch(url, {cache: "no-store"})
+    .then(r => r.json().catch(() => ({})).then(j => ({ok: r.ok, status: r.status, j: j})))
+    .then(x => {
+      ROUND_VALS[key] = {at: Date.now(), vars: (x.ok && x.j.vars) || [],
+        why: x.ok ? (x.j.why || "")
+           : x.status === 404 ? "The Laptop hasn't loaded this update yet -- it does at its next job boundary."
+           : (x.j.error || "The Laptop answered with HTTP " + x.status + ".")};
+      roundValsRepaint();
+    })
+    .catch(() => {
+      ROUND_VALS[key] = {at: Date.now(), vars: [], why: "No answer from the Laptop -- is Tailscale on?"};
+      roundValsRepaint();
+    });
+  return ROUND_VALS[key];
+}
+function roundValsRepaint(){
+  const el = document.getElementById("page-results");
+  if(el && RESULTS_JOB != null) el.innerHTML = renderResults();
+}
+const valText = v => (typeof v === "number" ? num(v) : (v == null ? "–" : String(v)));
+
+function sweepVars(all, swept, vals){
+  const vmap = {};
+  ((vals && vals.vars) || []).forEach(x => { if(x && x.name) vmap[x.name] = x; });
   const grid = {};
   (swept || []).forEach(v => { if(v && v.name) grid[v.name] = v; });
   /* Anything swept that the group list does not carry is still shown -- a sweep
@@ -8170,11 +8220,14 @@ function sweepVars(all, swept){
   const names = (all || []).map(v => v.name);
   (swept || []).forEach(v => { if(v && names.indexOf(v.name) < 0) names.push(v.name); });
   if(!names.length) return "";
+  const valsNote = vals && !(vals.vars || []).length
+    ? `<div class="vhcap" style="margin:2px 0 6px">${esc(vals.loading ? "Loading the values from the Laptop…"
+                                                                      : (vals.why || ""))}</div>` : "";
 
   const by = {};
   (all || []).forEach(v => { if(v && v.name) by[v.name] = v; });
 
-  return names.map(name => {
+  return valsNote + names.map(name => {
     const v = by[name] || {name: name};
     const g = grid[name];
     const hasGrid = g && g.min != null && g.max != null;
@@ -8201,8 +8254,11 @@ function sweepVars(all, swept){
     const mem = rider ? ["rider", "RIDER"]
               : stray ? ["stray", "NOT IN GROUP"]
               : g ? ["in", "✓ SWEPT"] : ["held", "HELD"];
+    const mv = vmap[name];
     return `<div class="tvar swept${g || rider ? "" : " isheld"}">
-        <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>
+        <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>` +
+      (mv ? `<span class="tst vals" title="Before this round -> now">${esc(valText(mv.before))} → <b>${
+               esc(valText(mv.after))}</b></span>` : "") + `
         <span class="tmem ${mem[0]}"${g || rider ? "" : ` title="Not swept by this task — held where the task before left it."`}>${mem[1]}</span>` +
       stateChip(v) +
       (range ? `<span class="tst grid">${range}</span>` : "") +
@@ -9445,10 +9501,44 @@ function sendForm(o){
         data-send="${esc(key)}" data-mode="${over ? "override" : "confirm"}"
         data-round="${esc(o.round || "")}" data-applied="${esc(o.applied_pass ?? "")}"
         data-applied-style="${esc(o.applied_pass_style || "")}"
-        ${off ? "disabled" : ""}>${esc(label)}</button>
+        ${off ? "disabled" : ""}>${esc(label)}</button>` +
+      /* 2026-10-16 -- KEEP THE ORIGINAL. Trevor: *"I want an option to keep the original numbers"* ... *"Next time I
+         should be able to do it in the app."* Pass -1: the round's variables go back to the values it found, both
+         backtests re-run (owed, the backtest machine takes them), and the checkpoints the revoked pass started are
+         started again on the original. Two taps, like a change of pass. Only on an applied pass that is not already
+         the original. */
+      (over && o.applied_pass != null && Number(o.applied_pass) !== -1
+        ? `<button type="button" class="applyb keepb${KEEP.arm === key ? " armed" : ""}"
+             data-keeporig="${esc(key)}" data-mode="override" data-round="${esc(o.round || "")}"
+             data-applied="${esc(o.applied_pass ?? "")}" data-applied-style="${esc(o.applied_pass_style || "")}"
+             ${SEND.busy === key ? "disabled" : ""}>${esc(KEEP.arm === key
+               ? `Tap again: undo pass ${passLabel(o.applied_pass, o.applied_pass_style)} and keep the original values`
+               : "Keep the original values")}</button>
+           <div class="opsnote" style="margin-top:4px">Undoes this round's pass: its variables go back to what they
+             were before the round, both backtests run again, and the checkpoints it started re-run on the
+             original values.</div>`
+        : "") + `
       ${sendStatusLine(key, o)}
     </div>`;
 }
+
+const KEEP = {arm: null};
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-keeporig]");
+  if(!btn || btn.disabled) return;
+  const key = btn.dataset.keeporig;
+  if(KEEP.arm !== key){
+    KEEP.arm = key;
+    repaintCards();
+    setTimeout(() => { if(KEEP.arm === key){ KEEP.arm = null; repaintCards(); } }, 8000);
+    return;
+  }
+  KEEP.arm = null;
+  const p = key.split("|");
+  sendPick({regime: p[0], bucket_id: Number(p[1]), group_id: p.slice(2).join("|"), mode: "override",
+            round: btn.dataset.round || "", applied_pass: btn.dataset.applied === "" ? null : Number(btn.dataset.applied),
+            applied_pass_style: btn.dataset.appliedStyle || null}, -1);
+});
 
 function sendOpts(btn){
   const p = btn.dataset.send.split("|");
@@ -9596,7 +9686,8 @@ function renderInProgressJob(key){
   return back + chips + ipCard(it, true) +
     (open >= 0
       ? whyBadge(whyTask(tasks), it) + taskBadges(tasks, open, rep,
-          {pass: it.applied_pass, style: it.applied_pass_style})
+          {pass: it.applied_pass, style: it.applied_pass_style,
+           key: {regime: it.regime, bucket_id: it.bucket_id, group_id: it.group_id, pass: it.applied_pass}})
       : `<div class="card"><div class="card-in"><div class="soon">No task of this job
           has finished yet — each one opens here as soon as it does.</div></div></div>`);
 }
