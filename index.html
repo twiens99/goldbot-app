@@ -1925,7 +1925,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-105130";
+const APP_BUILD = "20261016-133218";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4290,8 +4290,13 @@ function fleetAgents(){
      Efficiency page and its history use. Below is the older agents rule, for a
      snapshot from a publisher that predates it. */
   const c = EFF && EFF.now && EFF.now.Combined;
+  /* 2026-10-16 -- PLUS THE BACKTESTS NO BEACON COUNTS: a slot's test or a pool part ("0 of 12 working" while the
+     Laptop ran three). One core each -- a single test runs on one. */
+  const extra = leaseTasks().length
+    + SEEDS.filter(sd => executingSeed(sd) && String(sd.claimed_by || "").includes("~")).length;
   if(c) return (c.cores || (c.unmeasured || []).length)
-    ? {busy: c.busy || 0, avail: c.cores || 0, unmeasured: c.unmeasured || []} : null;
+    ? {busy: Math.min((c.busy || 0) + extra, c.cores || Infinity), avail: c.cores || 0,
+       unmeasured: c.unmeasured || []} : null;
   let busy = 0, avail = 0;
   const unmeasured = [];
   for(const f of FLEET){
@@ -4701,6 +4706,31 @@ function taskJob(f){
     cls: RC[rg] || "",
   };
 }
+/* 2026-10-16 -- AN OWED TEST RUNNING ANYWHERE, from its lease. Trevor: *"Laptop is running 2 mt5 backtests and t79 is
+   still doing a optimization. It's telling me that no machines are running"* -- a post-round bucket or full test is a
+   pool part (owed__REGIME__BUCKET__GROUP__PART), taken by a backtest slot ("Laptop~Twin1") or a machine's own MT5, and
+   neither writes a job beacon, so nothing drew it. The lease is the record that says who is measuring it. */
+const OWED_LEASE_RE = /^owed__([A-Z]+)__(\d+)__(.+)__([A-Z]+)$/;   // the part's name comes from the data
+const LEASE_FRESH_H = 0.75;   // an owed part's lease beats while its test runs; older reads as gone (OWED_STALE_S)
+function leaseTasks(){
+  return (LEASES || []).map(l => {
+    const m = OWED_LEASE_RE.exec(String(l.key || ""));
+    if(!m || !(Number(l.age_hours) < LEASE_FRESH_H)) return null;
+    return {regime: m[1], bucket_id: Number(m[2]), group_id: m[3], part: m[4], by: String(l.machine_id || "")};
+  }).filter(Boolean);
+}
+function leaseJob(t){
+  const parts = t.by.split("~");
+  return {
+    id: "o:" + [t.regime, t.bucket_id, t.group_id, t.part].join("|"), section: "Running now",
+    title: humanize(t.group_id) || t.group_id, regime: t.regime, cls: RC[t.regime] || "",
+    chip: t.part, copy: null,
+    line: [bktName(t.regime, t.bucket_id), "owed reading",
+           `1 core: ${parts[0]}${parts[1] ? " (" + parts[1] + ")" : ""}`].join(" · "),
+    eta: "no ETA yet",
+  };
+}
+
 /* A seed a backtest SLOT is running (claimed_by "<copy>~<slot>"), as a Running now task. */
 function slotJob(sd){
   const parts = String(sd.claimed_by || "").split("~");
@@ -4794,6 +4824,13 @@ function jobsModel(){
      seed it claimed -- recorded as "<copy>~<slot>" -- is the only record of it: one block each, one core on its box. */
   SEEDS.filter(sd => executingSeed(sd) && String(sd.claimed_by || "").includes("~"))
        .forEach(sd => jobs.push(slotJob(sd)));
+  /* 2026-10-16 -- owed readings being measured, from their leases (leaseTasks). One already drawn from a machine's
+     own beacon (same group, that phase) is not drawn twice. */
+  leaseTasks().forEach(t => {
+    const dup = jobs.some(j => j.section === "Running now" && j.fleet && j.fleet.group_id === t.group_id
+                               && String(j.fleet.phase || "").toUpperCase() === t.part);
+    if(!dup) jobs.push(leaseJob(t));
+  });
   /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
   const tail = [];
   const rest = FLEET.filter(f => !busyNow(f) && !lent.has(f.machine));
@@ -4895,6 +4932,11 @@ function queueSwept(q){
    seeds? What happened to the exit G1 rounds that are supposed to be there?"*). Title: the checkpoint and what it
    decides (CHECKPOINTS carries the switch's title); the setting and the year go on the line. null when not one. */
 function ckSeed(label){
+  /* 2026-10-16 -- THE ORIGINAL VALUES' TEST: one bucket test of the bucket as its round froze it, queued at round
+     start and scored like a pass -- at least as good, and the round keeps the original. */
+  const o = /^ORIG_[A-Z]{2}\d+_(.+)_\d{14}$/i.exec(String(label || ""));
+  if(o) return {title: "Original values · " + (humanize(o[1]) || o[1]),
+                detail: "scored like a pass · the round keeps it if it ties or wins"};
   const m = /^CK_[A-Z]{2}\d+_(D\d+)_\d+_(.+)_(Y\d)$/i.exec(String(label || ""));
   if(!m) return null;
   let title = "";
