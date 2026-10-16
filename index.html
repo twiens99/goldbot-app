@@ -1920,7 +1920,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261015-191510";
+const APP_BUILD = "20261015-194221";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2279,7 +2279,7 @@ function bktTone(t){
 /* The whole element, so the two call sites cannot disagree about it. A
    non-numeric id renders plain rather than being dropped: an id this cannot
    place is still an id worth showing. */
-function bktEl(id, trail, filterId){
+function bktEl(id, trail, filterId, regime){
   if(id == null) return "";
   const tail = trail ? " " : "";
   /* On a results row the bucket is a control as well as a label -- see the
@@ -2287,13 +2287,62 @@ function bktEl(id, trail, filterId){
   const fil = filterId != null ? ` data-rfilter="bucket:${esc(filterId)}"` : "";
   const n = Number(id);
   if(!isFinite(n)) return `<span class="bkt"${fil}>${esc(id)}</span>` + tail;
+  /* 2026-10-15 -- beside its regime's chip, a named bucket shows its NAME ("BULL" + "High"); the colour stays the
+     id's, so the gradient still says where it sits in the tree. */
+  const label = (regime && bktTier(regime, n)) || id;
   const t = Math.max(-1, Math.min(1, (n - BKT_ROOT) / BKT_REACH));
   const tone = bktTone(t);
   const lift = bktMix(tone, [255, 255, 255], .34);
   return `<span class="bkt"${fil} style="background:${bktRgb(tone, .15)}">` +
          `<i style="color:${bktRgb(lift)};background-image:linear-gradient(` +
-         `120deg,${bktRgb(lift)},${bktRgb(tone)})">${esc(id)}</i></span>` + tail;
+         `120deg,${bktRgb(lift)},${bktRgb(tone)})">${esc(label)}</i></span>` + tail;
 }
+
+/* 2026-10-15 -- BUCKET NAMES. Trevor: *"Let's change the bucket numbers. Let's go with Bull High, Bull mid, bull
+   low. And bear high and bear low. High is Strong slope. Low is closest to 0."* A regime's LEAF buckets, named by
+   slope strength. Ids run in slope order (a split's lower child is parent - gap), so BULL's highest id is its High
+   and BEAR's LOWEST id is its High -- its steepest fall. Built from the snapshot's bucket list each time it lands,
+   so a split renames itself. One bucket in a regime, a split parent, or an id the tree does not hold: the number,
+   as before. */
+let BKT_NAMES = {};
+function bktNamesFrom(list){
+  const by = {}, out = {};
+  (list || []).forEach(b => {
+    const r = String(b.regime || "").toUpperCase(), id = Number(b.bucket_id);
+    if(b.leaf === false || (r !== "BULL" && r !== "BEAR") || b.bucket_id == null || !isFinite(id)) return;
+    (by[r] = by[r] || []).push(id);
+  });
+  Object.keys(by).forEach(r => {
+    const ids = by[r].sort((a, b) => a - b);
+    if(r === "BEAR") ids.reverse();                       // weakest (closest to 0) first
+    const n = ids.length;
+    if(n < 2) return;
+    const tiers = n === 2 ? ["Low", "High"] : n === 3 ? ["Low", "Mid", "High"]
+      : n === 4 ? ["Low", "Mid-low", "Mid-high", "High"]
+      : ids.map((_, i) => i === 0 ? "Low" : i === n - 1 ? "High" : "Mid " + i);
+    ids.forEach((id, i) => { out[r + "|" + id] = {tier: tiers[i], rank: n - 1 - i}; });   // rank 0 = High
+  });
+  BKT_NAMES = out;
+}
+const bktKey = (regime, id) => String(regime || "").toUpperCase() + "|" + id;
+const bktTier = (regime, id) => (BKT_NAMES[bktKey(regime, Number(id))] || {}).tier || "";
+/* "Bull High" -- or "BULL 1600" where the bucket has no name. */
+function bktName(regime, id){
+  const t = bktTier(regime, id), r = String(regime || "");
+  if(t) return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() + " " + t;
+  return (r ? r.toUpperCase() + " " : "") + (id == null ? "" : String(id));
+}
+/* Strongest first within a regime, BULL before BEAR -- the order Trevor listed them in. */
+function bktOrder(ra, ia, rb, ib){
+  const reg = r => ({BULL: 0, BEAR: 1}[String(r || "").toUpperCase()] ?? 2);
+  if(reg(ra) !== reg(rb)) return reg(ra) - reg(rb);
+  const na = BKT_NAMES[bktKey(ra, Number(ia))], nb = BKT_NAMES[bktKey(rb, Number(ib))];
+  if(na && nb) return na.rank - nb.rank;
+  return Number(ia) - Number(ib);
+}
+/* A sentence from the machines ("... BULL/800: PF ...") with its bucket named. Display only. */
+const bktText = s => String(s == null ? "" : s).replace(/\b(BULL|BEAR)([\/ ])(\d{3,4})\b/g,
+  (m, r, sep, id) => bktTier(r, id) ? bktName(r, id) : m);
 
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
 /* 2026-10-06 -- A SEED IS A RUNNING JOB, GROUP OR NOT. A blended A/B sweep
@@ -3611,7 +3660,7 @@ function machineCard(f){
                 *"add that bucket id on the job tab to the right of BULL."* It
                 used to appear only inside the title sentence this card no
                 longer has. */
-            bktEl(f.bucket_id)}
+            bktEl(f.bucket_id, false, null, f.regime)}
           ${copyTag(f.copy)}<span class="chip gold">${esc(f.machine)}</span>
           ${f.halt ? `<span class="chip warn">HALTED</span>`
             : waitingCores(f) ? `<span class="chip">WAITING</span>`
@@ -3887,7 +3936,7 @@ function jobCard(r, rep, condensed, hint, cadence){
         <div class="top">
           ${r.failed ? `<span class="chip warn">FAILED</span>`
             : r.regime ? `<span class="chip ${esc(rc)}">${esc(r.regime)}</span>` : ""}
-          ${bktEl(r.bucket_id)}
+          ${bktEl(r.bucket_id, false, null, r.regime)}
           <span class="chip gold">${esc(r.machine)}</span>
           ${r.seeded ? `<span class="chip gold">SEED</span>` : ""}
           <span class="sp"></span>
@@ -4151,7 +4200,7 @@ function renderResultsList(){
     (buckets.length > 1 || RESULTS_BUCKET != null
       ? `<button type="button" class="cchip${RESULTS_BUCKET != null ? " on" : ""}"
            data-rfilter="bucket">${RESULTS_BUCKET != null
-             ? "Bucket " + esc(RESULTS_BUCKET) : "All buckets"}</button>`
+             ? esc(bktName(...String(RESULTS_BUCKET).split("|"))) : "All buckets"}</button>`
       /* ONE BUCKET IS NOT A CHOICE. Hiding the control until a split gives it
          something to cycle through keeps a dead button off the screen. */
       : "") +
@@ -4391,9 +4440,13 @@ function resultsTasks(){
 function resultsBuckets(){
   const seen = [];
   LEDGER.forEach(r => {
-    if(r.bucket_id != null && !seen.includes(r.bucket_id)) seen.push(r.bucket_id);
+    /* 2026-10-15 -- by REGIME and bucket: BULL 800 (Bull Low) and BEAR 800 (Bear High) are different buckets. */
+    if(r.bucket_id == null || (RESULTS_REGIME && r.regime !== RESULTS_REGIME)) return;
+    const k = bktKey(r.regime, r.bucket_id);
+    if(!seen.includes(k)) seen.push(k);
   });
-  return seen.sort((a, b) => a - b);
+  const part = k => k.split("|");
+  return seen.sort((a, b) => bktOrder(part(a)[0], part(a)[1], part(b)[0], part(b)[1]));
 }
 
 /* Next value in a cycle that always contains null. */
@@ -4407,7 +4460,7 @@ function resultsRows(){
   let rows = LEDGER.slice();
   if(RESULTS_REGIME) rows = rows.filter(r => r.regime === RESULTS_REGIME);
   if(RESULTS_BUCKET != null)
-    rows = rows.filter(r => String(r.bucket_id) === String(RESULTS_BUCKET));
+    rows = rows.filter(r => bktKey(r.regime, r.bucket_id) === String(RESULTS_BUCKET));
   if(RESULTS_MACHINE) rows = rows.filter(r => r.machine === RESULTS_MACHINE);
   /* A JOB THAT RAN THIS TASK, not a job OF this kind -- a job is not of a
      kind. Filtering by the opening task alone would hide every job that also
@@ -4749,7 +4802,7 @@ function queueCard(q){
           ${queueChips(q).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">${
             esc(c)}</span>`).join("")}
           <span class="sp"></span>
-          <span class="when">${esc(String(q.bucket_id != null ? q.bucket_id : ""))}</span>
+          <span class="when">${esc(q.bucket_id != null ? (bktTier(q.regime, q.bucket_id) || String(q.bucket_id)) : "")}</span>
         </div>
         <div>
           <div class="title">${esc(q.label || humanize(q.group_id) || "Queued work")}</div>
@@ -6054,7 +6107,7 @@ function whyBadge(t, r){
     (sd.finding ? row("What it proved", esc(sd.finding)) : "") +
     /* Only when there IS one. A blank machine outcome is the normal, healthy
        case, and a row saying so would sit on every card forever. */
-    (sd.outcome ? row("What happened", esc(sd.outcome)) : "") +
+    (sd.outcome ? row("What happened", esc(bktText(sd.outcome))) : "") +
     (sd.created_by ? `<div class="tby">seeded by ${esc(sd.created_by)}</div>` : "") +
     `</div></div>`;
 }
@@ -6555,10 +6608,11 @@ let STATUS = {};
 let ST_NAV = {bucket: null, group: null, variable: null};
 
 function statusSummary(){
-  const bs = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
+  const bs = (STATUS.buckets || []).filter(b => !regimeOff(b.regime))
+    .sort((a, b) => bktOrder(a.regime, a.bucket_id, b.regime, b.bucket_id));
   if(!bs.length) return "Arrives with the publisher update";
-  // 2026-10-15 (V3.1.0) -- with the bucket: three children read "BULL · BULL · BULL" without it.
-  return bs.map(b => `${esc(b.regime)} ${esc(b.bucket_id)} <span class="hcount">${esc(b.left)}</span> left`)
+  // 2026-10-15 (V3.1.0) -- each bucket by NAME ("Bull High"): three children read "BULL · BULL · BULL" before.
+  return bs.map(b => `${esc(bktName(b.regime, b.bucket_id))} <span class="hcount">${esc(b.left)}</span> left`)
     .join(" · ") + " this epoch";
 }
 
@@ -6714,7 +6768,7 @@ function ckOverview(){
     }).join(" · ");
     h += (known ? '<button type="button" class="strow" data-stb="' + esc(b.key) + '">' : '<div class="strow">')
       + '<div class="lrow"><span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
-      + '<span class="stname">Bucket ' + esc(b.bucket_id) + '</span>'
+      + '<span class="stname">' + esc(bktTier(b.regime, b.bucket_id) || "Bucket " + b.bucket_id) + '</span>'
       + (wait ? '<span class="chip gold">' + wait + ' waiting on you</span>' : "")
       + (run ? '<span class="chip">' + run + ' running</span>' : "")
       + (known ? '<span class="sp"></span><span class="hcar">›</span>' : "") + '</div>'
@@ -6823,13 +6877,13 @@ function stOverview(home){
   const bs = STATUS.buckets || [];
   const regimes = onRegimes(["BULL", "BEAR", "RANGING"]).filter(r => bs.some(b => b.regime === r));
   const cards = regimes.map(r => {
-    const mine = bs.filter(b => b.regime === r);
+    const mine = bs.filter(b => b.regime === r).sort((a, b) => bktOrder(a.regime, a.bucket_id, b.regime, b.bucket_id));
     const left = mine.reduce((a, b) => a + b.left, 0), tot = mine.reduce((a, b) => a + b.total, 0);
     return '<div class="card"><div class="card-in">'
       + `<div class="trow lrow"><span class="tname">${esc(r)}</span>`
       + `<span class="chip">${esc(left)} of ${esc(tot)} groups left</span></div>`
       + mine.map(b => `<button type="button" class="strow" data-stb="${esc(b.key)}">`
-          + `<div class="lrow"><span class="stname">Bucket ${esc(b.bucket_id)}</span>`
+          + `<div class="lrow"><span class="stname">${esc(bktTier(b.regime, b.bucket_id) || "Bucket " + b.bucket_id)}</span>`
           + `<span class="stmeta">${esc(b.done)} run · ${esc(b.left)} left</span>`
           + `<span class="hcar">›</span></div>${stBar(b)}${stLegend(b)}</button>`).join("")
       + '</div></div>';
@@ -6945,7 +6999,8 @@ function stBucketPage(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-stback="overview">‹ Status</button>'
     + '<div class="card"><div class="card-in">'
-    + `<div class="trow lrow"><span class="tname">${esc(b.regime)} · bucket ${esc(b.bucket_id)}</span></div>`
+    + `<div class="trow lrow"><span class="tname">${esc(bktTier(b.regime, b.bucket_id) ? bktName(b.regime, b.bucket_id)
+      : b.regime + " · bucket " + b.bucket_id)}</span></div>`
     + `<div class="tnote">${esc(b.done)} of ${esc(b.total)} groups have run epoch ${esc(b.epoch)}; `
     + `${esc(b.left)} left.${b.epochs_done ? " " + esc(b.epochs_done) + " epoch"
         + (b.epochs_done === 1 ? "" : "s") + " finished before this one." : ""}${
@@ -8120,7 +8175,7 @@ function taskSeed(sd){
       <div class="tlab">Seeded — ${esc(sd.reason || "")}</div>` +
     (sd.reason_text ? `<div class="tnote">${esc(sd.reason_text)}</div>` : "") +
     (sd.note ? `<div class="tnote">“${esc(sd.note)}”</div>` : "") +
-    (sd.outcome ? `<div class="tnote">${esc(sd.outcome)}</div>` : "") +
+    (sd.outcome ? `<div class="tnote">${esc(bktText(sd.outcome))}</div>` : "") +
     (sd.created_by ? `<div class="tby">by ${esc(sd.created_by)}</div>` : "") +
     `</div>`;
 }
@@ -8274,7 +8329,7 @@ function renderJobDetail(job){
     + (job.seed && job.seed.outcome
         ? '<div class="section-label">Outcome</div>' +
           '<div class="notebody" style="border-left-color:var(--gold)">' +
-          esc(job.seed.outcome) + '</div>' : "")
+          esc(bktText(job.seed.outcome)) + '</div>' : "")
     + (fails.length ? '<div class="section-label">Failure history</div>' +
          fails.map(f => `<article class="card"><div class="stripe warn"></div>` +
            `<div class="card-in"><div class="title">` +
@@ -9379,7 +9434,7 @@ function ipCard(it, inView){
       <div class="card-in">
         <div class="top">
           ${it.regime ? `<span class="chip ${esc(rc)}">${esc(it.regime)}</span>` : ""}
-          ${bktEl(it.bucket_id)}
+          ${bktEl(it.bucket_id, false, null, it.regime)}
           ${it.machine ? `<span class="chip gold">${esc(it.machine)}</span>` : ""}
           <span class="chip">NOT FINISHED</span>
         </div>
@@ -9396,7 +9451,7 @@ function ipCard(it, inView){
 function inProgressSection(){
   const items = IN_PROGRESS.filter(it =>
     (!RESULTS_REGIME || it.regime === RESULTS_REGIME) &&
-    (RESULTS_BUCKET == null || String(it.bucket_id) === String(RESULTS_BUCKET)) &&
+    (RESULTS_BUCKET == null || bktKey(it.regime, it.bucket_id) === String(RESULTS_BUCKET)) &&
     (!RESULTS_MACHINE || it.machine === RESULTS_MACHINE));
   if(!items.length) return "";
   return `<div class="section-label">${items.length} not finished yet</div>` +
@@ -9445,7 +9500,7 @@ function recurringCard(){
     const runs = (t.runs || []).filter(function(r){ return r && r.ok; });
     const last = runs.length ? runs[runs.length - 1] : null;
     h += '<div class="recur"><div class="recur-h"><span class="chip ' + (REGIME_CLASS[t.regime] || "") + '">'
-      + esc(t.regime || "") + '</span> <b>' + esc(String(t.bucket_id)) + '</b> · ' + esc(t.cadence || "")
+      + esc(t.regime || "") + '</span> <b>' + esc(bktTier(t.regime, t.bucket_id) || String(t.bucket_id)) + '</b> · ' + esc(t.cadence || "")
       + (t.machine ? ' · ' + esc(t.machine) + ' only' : '')
       + (t.paused ? ' · <b>paused</b>' : ' · next ' + esc(recurWhen(t.next_due))) + '</div>';
     if(last){
@@ -10198,7 +10253,7 @@ function renderSeedBuilder(){
   if(f.regime){
     const list = (cat.buckets || []).filter(function(x){ return x.regime === f.regime; });
     card += seedSection("Bucket", '<div class="chips">'
-      + list.map(function(x){ return seedChip("seedbkt", x.key, f.bucket === x.key, String(x.bucket_id)); }).join("") + '</div>');
+      + list.map(function(x){ return seedChip("seedbkt", x.key, f.bucket === x.key, bktTier(f.regime, x.bucket_id) || String(x.bucket_id)); }).join("") + '</div>');
   }
   if(f.task === "optimize" && b){
     const lines = [];
@@ -10369,8 +10424,8 @@ function seedSentence(b){
   const vars = s.variables || [];
   const riders = vars.filter(function(v){ return v && typeof v === "object" && v.min != null; }).length;
   let what;
-  if(s.task === "backtest") what = "Bucket test " + s.regime + " " + s.bucket_id + " at its current values";
-  else what = "Optimize " + s.regime + " " + s.bucket_id + " · " + humanize(s.group_id || "")
+  if(s.task === "backtest") what = "Bucket test " + bktName(s.regime, s.bucket_id) + " at its current values";
+  else what = "Optimize " + bktName(s.regime, s.bucket_id) + " · " + humanize(s.group_id || "")
     + " · " + (vars.length ? vars.length + " variable" + (vars.length === 1 ? "" : "s")
       + (riders ? " (" + riders + " on their own window)" : "") : "the whole group");
   const win = s.from_date && s.to_date ? s.from_date + " → " + s.to_date : "2-year window";
@@ -10606,7 +10661,7 @@ function schedBucketRow(regs, picked, attr, chip){
     + list.map(function(x){
         const key = String(x.regime).toUpperCase() + "|" + x.bucket_id;
         return chip(attr, key, (picked || []).indexOf(key) >= 0,
-                    String(x.regime).toUpperCase() + " " + x.bucket_id); }).join("")
+                    bktName(x.regime, x.bucket_id)); }).join("")
     + '</div>'
     + '<div class="tnote">' + (any
         ? "Only the buckets lit above run in their regime."
@@ -12396,7 +12451,7 @@ function lvBadgeMain(){
   if(!d) return LV.err ? "No answer from the VPS — is Tailscale on?" : "Connecting…";
   const tin = d.trading_in;
   const where = tin && tin.regime
-    ? lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket) : "") + " · "
+    ? lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket, false, null, tin.regime) : "") + " · "
     : "";
   const feed = (d.health && d.health.feed && d.health.feed.status) || "";
   if(feed === "missing") return where + "MT5 feed not started";
@@ -12718,7 +12773,7 @@ function lvPaintTin(){
     line = d ? "The EA has not reported a regime yet." : "Waiting for the VPS.";
   } else {
     const armed = tin.armed === true;
-    head += lvRegTag(tin.regime) + (tin.bucket != null ? bktEl(tin.bucket) : "")
+    head += lvRegTag(tin.regime) + (tin.bucket != null ? bktEl(tin.bucket, false, null, tin.regime) : "")
          + `<span class="lv-pill ${armed ? "on" : "off"}">${armed ? "Armed" : "Not armed"}</span>`;
     const say = armed
       ? `The EA can open ${esc(tin.regime)} trades here.`
@@ -12744,7 +12799,7 @@ function lvPaintTin(){
     const cur = tin && g.regime === tin.regime && String(g.bucket) === String(tin.bucket);
     const pf = g.pf != null ? `PF <b>${Number(g.pf).toFixed(2)}</b> on ${esc(g.trades)}` : "not measured yet";
     const when = g.measured_at ? " · " + esc(fmtWhen(Number(g.measured_at)).slice(0, 5)) : "";
-    return `<div class="lv-grow${cur ? " cur" : ""}">${lvRegTag(g.regime)}${bktEl(g.bucket)}<span></span>` +
+    return `<div class="lv-grow${cur ? " cur" : ""}">${lvRegTag(g.regime)}${bktEl(g.bucket, false, null, g.regime)}<span></span>` +
            `<span class="lv-gst ${g.armed ? "on" : "off"}">${g.armed ? "Armed" : "Off"}</span>` +
            `<span class="lv-gpf">${pf}${when ? " · measured" + when.slice(2) : ""}</span></div>`;
   }).join("");
@@ -12993,7 +13048,7 @@ function lvOpenCard(p){
     : "";
   return `<div class="card lv-otrade">
     <div class="lv-orow">${lvDirTag(p.dir)}<span class="lv-dir">${Number(p.volume).toFixed(2)} lot</span>` +
-      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket) : ""}` +
+      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, p.regime) : ""}` +
       `<span class="lv-oage" id="lvo-${t}-age"></span></div>
     <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
       `<span class="lv-sub" id="lvo-${t}-move"></span></div>
@@ -13108,7 +13163,7 @@ function lvPaintHistory(){
   list.innerHTML = shown.map(t => {
     const id = "t" + t.position;
     return `<button type="button" class="lv-hrow" data-lvfocus="${esc(id)}" aria-current="${LV.sel === id}">
-      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket) : ""}` +
+      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket, false, null, t.regime) : ""}` +
         `<span class="lv-when">${lvWhen(t.entry_time)} · ${lvSpan(Number(t.exit_time) - Number(t.entry_time))}</span></span>
       <span class="lv-hpnl ${lvTone(Number(t.profit))}">${lvMoney(t.profit)}</span>
       <span class="lv-hl2">${lvPx(t.entry_price)} → ${lvPx(t.exit_price)}</span>
@@ -14081,6 +14136,7 @@ function applySnapshot(d, source){
   RECURRING = Array.isArray(d.recurring) ? d.recurring : [];
   FAILURES = Array.isArray(d.failures) ? d.failures : [];
   BUCKETS = Array.isArray(d.buckets) ? d.buckets : [];
+  bktNamesFrom(BUCKETS);
   /* 2026-09-18 -- the Settings badge. Absent on a snapshot from a machine
      whose runtime predates them, which must read as "nothing to show"
      rather than as "nothing is set": the badge says which. */
@@ -15216,6 +15272,7 @@ document.addEventListener("click", e => {
     RESULTS_REGIME = value
       ? (RESULTS_REGIME === value ? null : value)
       : cycle(onRegimes(["BULL", "BEAR", "RANGING"]), RESULTS_REGIME);
+    RESULTS_BUCKET = null;            // a bucket belongs to one regime
   } else if(what === "bucket"){
     RESULTS_BUCKET = value
       ? (String(RESULTS_BUCKET) === value ? null : value)
