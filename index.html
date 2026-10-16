@@ -1920,7 +1920,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-000146";
+const APP_BUILD = "20261016-001451";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4568,6 +4568,77 @@ function lentToHost(host){
        + (act.length ? " (" + busy + " busy)" : "");
 }
 
+/* 2026-10-16 -- A TRAY IS UP when its job beacon is fresh OR its settings report is (machine_settings re-reports at
+   least every 10 min whether or not a job runs). TRAY_REPORT_S leaves room for one missed report and a slow sync. */
+const TRAY_REPORT_S = 1500;
+function trayReportAge(f){
+  const ms = (MACHINE_SETTINGS || {})[f.machine] || {};
+  return ms.reported_at ? Math.max(0, Date.now() / 1000 - Number(ms.reported_at)) : null;
+}
+function trayUp(f){
+  const a = trayReportAge(f);
+  return !stale(f) || (a != null && a < TRAY_REPORT_S);
+}
+function lastHeard(f){
+  const a = trayReportAge(f), b = f.age_seconds;
+  return a == null ? b : (b == null ? a : Math.min(a, b));
+}
+/* Paused by an Operations tap (or the menu): the tray's last handled request was a pause / stop, done. */
+function trayPaused(f){
+  const h = ((RUN_CONTROL || {})[f.machine] || {}).handled || {};
+  return (h.action === "pause" || h.action === "stop") && h.result === "done";
+}
+/* What a running job is getting: its share of the box's agent pool (copy A's broker), then whoever lends to it. */
+function jobHelpers(f){
+  let pool = "";
+  const p = f.pool;
+  if(p && p.fresh && p.by_copy && p.by_copy[f.copy || "A"]){
+    const b = p.by_copy[f.copy || "A"];
+    pool = ` · ${b.busy} of ${b.held} pool agent${b.held === 1 ? "" : "s"} busy`;
+  } else if(f.pool_held != null){
+    pool = ` · ${f.pool_busy} of ${f.pool_held} pool agent${f.pool_held === 1 ? "" : "s"} busy`;
+  }
+  return pool + lentToHost(f.box && f.box !== f.machine ? FLEET.find(h => h.machine === f.box) || f : f);
+}
+/* A machine running a job -- the row "Running now" has always drawn, plus what is helping it. */
+function machineJob(f, section){
+  const sd = seedOnMachine(f.machine);
+  const rg = (sd && sd.regime) || f.regime || null;
+  return {
+    id: "m:" + f.machine, section,
+    helper: false,
+    fleet: fleetWithSeed(f, sd), seed: sd,
+    title: f.machine, copy: f.copy || null,
+    /* A HALT OUTRANKS THE PHASE (2026-09-25, Trevor: *"I want it to say manual MT5 update required."*). */
+    line: f.halt ? f.halt.title
+        : ((sd ? sd.bucket_id : f.bucket_id) != null && rg
+             ? bktName(rg, sd ? sd.bucket_id : f.bucket_id) + " · " : "")   // the bucket first (Bear Low · ...)
+          + (sd ? (sd.label || humanize(sd.group_id) || "seeded work")
+              : running(f) ? humanize(f.group_id) : "working") + jobHelpers(f),
+    chip: f.halt ? "HALTED" : sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
+    regime: rg,
+    cls: f.halt ? "warn" : (RC[rg] || ""),
+  };
+}
+/* Up, no job. WHY, in words: held by the core gate while its box's other copy runs, paused, or simply idle. */
+function standingJob(f){
+  const sibling = FLEET.find(o => o !== f && o.box && o.box === f.box && !isAgent(o) && !stale(o)
+                                  && (running(o) || seedOnMachine(o.machine)));
+  const paused = trayPaused(f);
+  const age = trayReportAge(f);
+  const seen = age != null ? ` · tray reported ${ago(age)}` : "";
+  return {
+    id: "m:" + f.machine, section: "Standing by",
+    helper: false, fleet: f, seed: null, title: f.machine, copy: f.copy || null,
+    line: paused ? "paused" + seen
+        : waitingCores(f) && !stale(f) ? "waiting for free cores" + (waitedFor(f) ? " - " + waitedFor(f) : "")
+        : sibling ? `waiting for free cores — ${sibling.machine} is using them` + seen
+        : "up, no job right now" + seen,
+    chip: paused ? "PAUSED" : (sibling || (waitingCores(f) && !stale(f))) ? "WAITING" : "IDLE",
+    regime: null, cls: "",
+  };
+}
+
 function agentJob(f){
   const a = f.agents || {};
   const host = FLEET.find(h => h.machine === a.agent_for) || null;
@@ -4585,69 +4656,39 @@ function agentJob(f){
 
 function jobsModel(){
   const jobs = [];
-  /* EACH AGENT DIRECTLY UNDER THE MACHINE IT SERVES, the same nesting the
-     machine cards use. An agent whose host is not in the list keeps its own
-     place rather than vanishing. */
-  const hosts = new Set(FLEET.map(f => f.machine));
-  const ordered = [];
-  /* 2026-10-09 -- A BOX'S OTHER COPIES DIRECTLY UNDER THE BOX (copy A's row),
-     ahead of its agents: T7910, T7910-B, then whoever lends to it. A copy whose
-     box is not reporting keeps its own place. */
-  const isCopy = f => f.box && f.box !== f.machine && hosts.has(f.box);
-  FLEET.filter(f => (!isAgent(f) || !hosts.has(f.agents.agent_for)) && !isCopy(f)).forEach(f => {
-    ordered.push(f);
-    FLEET.filter(c => isCopy(c) && c.box === f.machine).forEach(c => ordered.push(c));
-    FLEET.filter(a => isAgent(a) && a.agents.agent_for === f.machine)
-         .forEach(a => ordered.push(a));
+  /* 2026-10-16 -- JOBS FIRST, THEN THE MACHINES BY WHAT THEY ARE ACTUALLY DOING. Trevor: *"Active should really
+     show the job it's running. Then the job can display what machines are currently adding to it. The machines that
+     actually aren't responding can be below the jobs stating their current status."*
+     Before, every machine was a row under "Running now", and a tray that was simply WAITING read "not reporting":
+     only a job writes the beacon, so the T7910's copy B -- up, held by the core gate -- looked dead the night epoch 1
+     started. A tray's settings report (machine_settings, at least every 10 min, job or no job) is its proof of life.
+       Running now    one row per machine running a job; directly under it, whoever lends it cores
+       Standing by    up with no job: waiting for free cores, paused, idle -- or an agent with nobody to serve
+       Not reporting  neither the job beacon nor the tray has reported; when it was last heard from */
+  const busyNow = f => !isAgent(f) && !stale(f) && (running(f) || !!seedOnMachine(f.machine) || !!f.halt);
+  const lent = new Set();
+  FLEET.filter(busyNow).forEach(f => {
+    jobs.push(machineJob(f, "Running now"));
+    // LENDING (state RUN) is enough: its own busy sample can trail the job it serves by minutes.
+    FLEET.filter(a => isAgent(a) && !stale(a) && a.agents.agent_for === (f.box || f.machine) && a.agents.state === "RUN")
+         .forEach(a => {
+           if(lent.has(a.machine)) return;
+           lent.add(a.machine);
+           jobs.push(Object.assign(agentJob(a), {section: "Running now", helper: true}));
+         });
   });
-  ordered.forEach(f => {
-    if(isAgent(f)){ jobs.push(agentJob(f)); if(!helperBusy(f)) return; }
-    const sd = seedOnMachine(f.machine);
-    // THE REGIME, IN WORDS. It used to be carried by the stripe colour alone,
-    // and on 2026-09-14 both machines ran a group called ENTRY_G3_COMPOSITE_
-    // BLEND_SCORE_GATES -- one BULL, one RANGING. Two rows, same title, same
-    // chip, differing only in a 3px band of colour. Same source as the chip on
-    // the detail card, and for the reason `line` gives: a claimed seed outranks
-    // a beacon that is describing a round it is not running.
-    const rg = (sd && sd.regime) || f.regime || null;
-    jobs.push({
-      // A helper agent's own job sits under its lending row with its own id.
-      id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Running now",
-      helper: isAgent(f),
-      fleet: fleetWithSeed(f, sd), seed: sd,
-      title: f.machine, copy: f.copy || null,
-      // A CLAIMED SEED OUTRANKS THE BEACON. The beacon describes a ROUND, and
-      // a sweep is not one -- so a machine part-way through a seeded sweep can
-      // truthfully report the picking phase with no group while it is busy.
-      // Measured 2026-09-14: the Laptop read "choosing a group" for 90 minutes
-      // while it held and ran the TICKS arm of an A/B. The seed record is the
-      // stronger evidence: something claimed it, and nothing else can hold it.
-      /* A HALT OUTRANKS THE PHASE. Every halted tick sets the choosing phase before the
-         halt gate returns, so the phase alone read "choosing a group" while the
-         Desktop sat halted on an MT5 update (2026-09-25). The beacon carries
-         the halt now; say it. Trevor: *"I want it to say manual MT5 update
-         required."* */
-      line: stale(f) ? "not reporting - last seen " + ago(f.age_seconds)
-          : f.halt ? f.halt.title
-          : sd ? (sd.label || humanize(sd.group_id) || "seeded work")
-          : running(f) ? humanize(f.group_id) + (isAgent(f) ? "" : lentToHost(f))
-          /* Held by the core gate while its sibling sweeps (2026-10-11): the
-             phase says picking, the wait is what is true. */
-          : waitingCores(f) ? "waiting for free cores"
-              + (waitedFor(f) ? " - " + waitedFor(f) : "")
-          : picking(f) ? "choosing a group"
-          : "idle - no round",
-      // Same rule as the card's chip: a claimed seed names the work
-      // better than a beacon that is describing a round it is not running.
-      chip: f.halt && !stale(f) ? "HALTED"
-          : sd ? roundType(sd)
-          : waitingCores(f) && !stale(f) ? "WAITING"
-          : (f.phase ? phaseText(f.phase) : null),
-      regime: rg,
-      cls: stale(f) || f.halt ? "warn" : (RC[rg] || ""),
-    });
-  });
-
+  /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
+  const tail = [];
+  const rest = FLEET.filter(f => !busyNow(f) && !lent.has(f.machine));
+  rest.filter(trayUp).forEach(f => tail.push(isAgent(f)
+    ? Object.assign(agentJob(f), {section: "Standing by"})
+    : standingJob(f)));
+  rest.filter(f => !trayUp(f)).forEach(f => tail.push({
+    id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Not reporting",
+    helper: false, fleet: f, seed: null, title: f.machine, copy: f.copy || null,
+    line: "not reporting — last heard from " + ago(lastHeard(f)),
+    chip: null, regime: null, cls: "warn",
+  }));
   /* WAITING ON YOU, FIRST AFTER THE MACHINES. Trevor, 2026-09-25: *"The app
      didn't tell me that I needed to pick a pass. Let's have that be the first
      item on the list in the active tab, after each machine status."* A pending
@@ -4715,7 +4756,7 @@ function jobsModel(){
     chip: needsDecision(sd) ? "DECIDE" : null, regime: sd.regime || null,
     cls: needsDecision(sd) ? "warn" : (RC[sd.regime] || ""),
   }));
-  return jobs;
+  return jobs.concat(tail);
 }
 
 /* ---------- A QUEUED JOB (2026-09-23) ---------- see queue_preview.py */
@@ -4760,7 +4801,9 @@ function queueRiderText(q){
 }
 function queueLine(q){
   const sw = queueSwept(q), all = (q.variables || []).length;
-  return [sw ? "sweeps " + sw.length + " of " + all + (q.rider ? " + rider" : "") : "",
+  // 2026-10-16 -- WHICH BUCKET first: three "Exit G1 Core Stop Trail" rows are three different buckets.
+  return [q.bucket_id != null && q.regime ? bktName(q.regime, q.bucket_id) : "",
+          sw ? "sweeps " + sw.length + " of " + all + (q.rider ? " + rider" : "") : "",
           q.rider && q.rider.passes ? Number(q.rider.passes).toLocaleString() + " passes" : "",
           QUEUE_SOURCE_WORD[q.source] || "",
           q.held ? "waits for the build" : "",
@@ -8362,7 +8405,10 @@ function activeSummary(){
      page does not get to say what a machine is doing, so it says how many have
      gone quiet instead. */
   const busy = FLEET.filter(f => running(f) && !stale(f)).length;
-  const gone = FLEET.filter(stale).length;
+  /* 2026-10-16 -- "not reporting" means SILENT: a tray up with no job (its settings report is fresh) is standing
+     by, not gone -- the Active tab's own rule (trayUp). */
+  const gone = FLEET.filter(f => !trayUp(f)).length;
+  const standing = FLEET.filter(f => !isAgent(f) && stale(f) && trayUp(f)).length;
   const started = SEEDS.filter(startedSeed).length;
   const decide = SEEDS.filter(needsDecision).length + PICKS.length;
   /* Agents run no round, so `busy` never counts them. Their cores are the other
@@ -8375,6 +8421,7 @@ function activeSummary(){
     : `<span class="hcount quiet">no machine</span> is running a round`);
   if(lenders.length) bits.push(`<span class="hcount">${lenders.length}</span> agent` +
     (lenders.length === 1 ? "" : "s") + ` lending ${lent} core${lent === 1 ? "" : "s"}`);
+  if(standing) bits.push(`<span class="hcount quiet">${standing}</span> standing by`);
   if(gone) bits.push(`<span class="hcount warn">${gone}</span> not reporting`);
   /* A HALTED machine is waiting on a person, so it is counted as one. */
   const halted = FLEET.filter(f => f.halt && !stale(f)).length;
