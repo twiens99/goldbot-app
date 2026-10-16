@@ -1922,7 +1922,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-075322";
+const APP_BUILD = "20261016-084407";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4661,7 +4661,7 @@ function taskEta(f){
   }
   const left = f.pct_per_hour && f.percent < 100 ? dur((100 - f.percent) / f.pct_per_hour * 3600) : "";
   const eta = fmtEta(etaAt(f));
-  return [Math.round(f.percent) + "%", left ? "~" + left + " left" : "", eta ? "ETA " + eta : ""]
+  return [Math.round(f.percent) + "%", left ? "~" + left + " left" : "", eta ? "ETA " + eta : "no ETA yet"]
     .filter(Boolean).join(" · ");
 }
 function taskJob(f){
@@ -4681,6 +4681,20 @@ function taskJob(f){
     chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
     regime: rg,
     cls: RC[rg] || "",
+  };
+}
+/* A seed a backtest SLOT is running (claimed_by "<copy>~<slot>"), as a Running now task. */
+function slotJob(sd){
+  const parts = String(sd.claimed_by || "").split("~");
+  const ck = ckSeed(sd.label);
+  const began = Number(sd.claimed_at) || null;
+  return {
+    id: "s:" + sd.seed_id, section: "Running now", seed: sd,
+    title: (ck && ck.title) || sd.label || humanize(sd.group_id) || "Seeded test",
+    line: [sd.bucket_id != null && sd.regime ? bktName(sd.regime, sd.bucket_id) : "", ck && ck.detail,
+           `1 core: ${parts[0]} (${parts[1] || "slot"})`].filter(Boolean).join(" · "),
+    eta: (began ? "running " + dur(Math.max(0, Date.now() / 1000 - began)) + " · " : "") + "no ETA yet",
+    chip: roundType(sd), regime: sd.regime || null, cls: RC[sd.regime] || "",
   };
 }
 /* A machine running a job -- the row "Running now" has always drawn, plus what is helping it. */
@@ -4758,6 +4772,10 @@ function jobsModel(){
     FLEET.filter(a => isAgent(a) && !stale(a) && a.agents.agent_for === (f.box || f.machine) && a.agents.state === "RUN")
          .forEach(a => lent.add(a.machine));
   });
+  /* 2026-10-16 -- A BACKTEST SLOT'S TEST. A slot (a spare MT5 beside a copy, backtest_slots) writes no beacon, so the
+     seed it claimed -- recorded as "<copy>~<slot>" -- is the only record of it: one block each, one core on its box. */
+  SEEDS.filter(sd => executingSeed(sd) && String(sd.claimed_by || "").includes("~"))
+       .forEach(sd => jobs.push(slotJob(sd)));
   /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
   const tail = [];
   const rest = FLEET.filter(f => !busyNow(f) && !lent.has(f.machine));
@@ -4785,7 +4803,9 @@ function jobsModel(){
 
   // Seeds not already shown as a machine's job, so nothing appears twice.
   const shown = new Set(FLEET.map(f => seedOnMachine(f.machine))
-                             .filter(Boolean).map(sd => sd.seed_id));
+                             .filter(Boolean).map(sd => sd.seed_id)
+                             .concat(SEEDS.filter(sd => executingSeed(sd) && String(sd.claimed_by || "").includes("~"))
+                                          .map(sd => sd.seed_id)));
   const loose = SEEDS.filter(sd => !shown.has(sd.seed_id));
   // LOWER RUNS SOONER: 1 inserted, 2 unfinished, 3 new. Mirrors
   // seeds.normalize_priority so a record from an older machine -- the old
