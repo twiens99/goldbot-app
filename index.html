@@ -382,6 +382,8 @@ button.chip.on::before{content:"\2713\00a0";}
   overflow-wrap:anywhere;min-width:0;
 }
 .hsubline{font-size:.79rem;color:var(--dim);line-height:1.35;}
+/* 2026-10-16 -- a running task's progress + ETA, under its cores. */
+.hsubline.heta{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums;}
 .hcar{color:var(--faint);font-size:1.1rem;flex:none;}
 .hbtn:active{transform:translateY(1px);}
 .hbtn:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
@@ -1920,7 +1922,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-003950";
+const APP_BUILD = "20261016-075322";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4603,6 +4605,84 @@ function jobHelpers(f){
   }
   return pool + lentToHost(f.box && f.box !== f.machine ? FLEET.find(h => h.machine === f.box) || f : f);
 }
+/* 2026-10-16 ~07:45 -- RUNNING NOW IS THE TASKS, NOT THE MACHINES. Trevor (phone): *"This shouldn't be showing each
+   machine anymore. We need to sort this out on the task level. So we're running 2 backtests and 1 optimization. So
+   there should be 3 active blocks. It should look more like the job block under it. Title is the group and its task
+   chip. It should then tell me how many cores its using, and from which machine. I want our eta up there also."*
+   One block per running task, shaped like a queued job's: the group is the title, the regime and the task are the
+   chips, then the bucket and its cores BY MACHINE, then the progress and the ETA. A lender's cores count on the sweep
+   its box is running -- MT5 runs a single backtest on the host's own terminal while the farm waits (agentHostUse) --
+   so a backtest is one core on its own machine. An agent machine running a pool backtest (Kylee, 10-16) is a task
+   too (helperBusy); the machine-first list never drew it. */
+const sweeping = f => /^OPTIM/.test(String(f.phase || "").toUpperCase())
+                   || String(f.phase || "").toUpperCase() === "SWEEP";
+/* [machine, cores, shared] -- what this task is using right now. */
+function taskCores(f){
+  const host = f.box || f.machine;
+  const out = [];
+  const add = (m, n, shared) => {
+    n = Number(n) || 0;
+    if(n <= 0) return;
+    const row = out.find(x => x[0] === m && x[2] === !!shared);
+    if(row) row[1] += n; else out.push([m, n, !!shared]);
+  };
+  if(!sweeping(f)){ add(host, 1); return out; }                       // a backtest: one core, its own terminal
+  const a = f.agents_local || {};
+  add(host, a.source === "cpu" ? a.busy : 0);                       // its terminal's own agent
+  const p = f.pool;
+  const b = p && p.fresh && p.by_copy ? p.by_copy[f.copy || "A"] : null;
+  add(host, b ? b.busy : f.pool_busy);                              // its share of the box's pool
+  /* Lenders serve the box's sweep. Two copies sweeping at once share them, and nothing published says which copy
+     holds which lent agent -- so they are named on both as shared and counted in neither total. */
+  const sweepers = FLEET.filter(o => (o.box || o.machine) === host && !stale(o) && running(o) && sweeping(o));
+  FLEET.filter(l => isAgent(l) && !stale(l) && l.agents.agent_for === host && l.agents.state === "RUN")
+       .forEach(l => {
+         const act = l.agents.activity;
+         add(l.machine, act ? act.busy : l.agents.running, sweepers.length > 1);
+       });
+  return out;
+}
+function taskCoresText(f){
+  const rows = taskCores(f);
+  if(!rows.length) return sweeping(f) ? "no cores busy right now" : "";
+  const n = rows.filter(r => !r[2]).reduce((t, r) => t + r[1], 0);
+  return `${n} core${n === 1 ? "" : "s"}: `
+       + rows.map(r => `${r[0]} ${r[1]}${r[2] ? " shared" : ""}`).join(" + ");
+}
+/* "68% · ~6m left · ETA 07:42" -- etaAt is anchored to the beacon and gives a stale one no ETA. */
+function taskEta(f){
+  if(stale(f)) return "last reported " + ago(f.age_seconds);
+  if(f.percent == null){
+    /* No live percentage yet (MT5's genetic run reports one only after its first passes; a post-round test's MT5
+       bar is not published -- app_snapshot._live_progress). Say how long it has run instead of guessing. */
+    const began = new Date(f.phase_since || "");
+    const secs = isNaN(began.getTime()) ? null : (Date.now() - (f.age_seconds || 0) * 1000 - began.getTime()) / 1000;
+    return (secs != null && secs >= 0 ? "running " + dur(secs) + " · " : "") + "no ETA yet";
+  }
+  const left = f.pct_per_hour && f.percent < 100 ? dur((100 - f.percent) / f.pct_per_hour * 3600) : "";
+  const eta = fmtEta(etaAt(f));
+  return [Math.round(f.percent) + "%", left ? "~" + left + " left" : "", eta ? "ETA " + eta : ""]
+    .filter(Boolean).join(" · ");
+}
+function taskJob(f){
+  if(f.halt) return machineJob(f, "Running now");                   // a halt waits on a person: the machine, named
+  const sd = seedOnMachine(f.machine);
+  const ff = fleetWithSeed(f, sd);
+  const rg = ff.regime || null;
+  return {
+    id: "m:" + f.machine, section: "Running now",
+    helper: isAgent(f),               // an agent machine's task opens its job card, not its lending card
+    fleet: ff, seed: sd,
+    title: (ckSeed(sd && sd.label) || {}).title || (sd && sd.label) || humanize(ff.group_id) || "Working",
+    copy: null,
+    line: [ff.bucket_id != null && rg ? bktName(rg, ff.bucket_id) : "", (ckSeed(sd && sd.label) || {}).detail,
+           taskCoresText(f)].filter(Boolean).join(" · "),
+    eta: taskEta(f),
+    chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
+    regime: rg,
+    cls: RC[rg] || "",
+  };
+}
 /* A machine running a job -- the row "Running now" has always drawn, plus what is helping it. */
 function machineJob(f, section){
   const sd = seedOnMachine(f.machine);
@@ -4668,17 +4748,15 @@ function jobsModel(){
        Running now    one row per machine running a job; directly under it, whoever lends it cores
        Standing by    up with no job: waiting for free cores, paused, idle -- or an agent with nobody to serve
        Not reporting  neither the job beacon nor the tray has reported; when it was last heard from */
-  const busyNow = f => !isAgent(f) && !stale(f) && (running(f) || !!seedOnMachine(f.machine) || !!f.halt);
+  /* 2026-10-16 ~07:45 -- one block per TASK (taskJob); a lender is named inside the task it serves, not as a row. */
+  const busyNow = f => !stale(f) && (isAgent(f) ? helperBusy(f)
+                                                : (running(f) || !!seedOnMachine(f.machine) || !!f.halt));
   const lent = new Set();
   FLEET.filter(busyNow).forEach(f => {
-    jobs.push(machineJob(f, "Running now"));
+    jobs.push(taskJob(f));
     // LENDING (state RUN) is enough: its own busy sample can trail the job it serves by minutes.
     FLEET.filter(a => isAgent(a) && !stale(a) && a.agents.agent_for === (f.box || f.machine) && a.agents.state === "RUN")
-         .forEach(a => {
-           if(lent.has(a.machine)) return;
-           lent.add(a.machine);
-           jobs.push(Object.assign(agentJob(a), {section: "Running now", helper: true}));
-         });
+         .forEach(a => lent.add(a.machine));
   });
   /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
   const tail = [];
@@ -4736,8 +4814,10 @@ function jobsModel(){
                : "q:" + [q.regime, q.bucket_id, q.group_id].join("|"),
         section: i === 0 ? "Queued up next" : "Queued after that",
         seed: sd, queue: q,
-        title: (sd && sd.label) || q.label || humanize(q.group_id) || "Queued work",
-        line: queueLine(q), chip: null, chips: queueChips(q),
+        title: (ckSeed((sd && sd.label) || q.label) || {}).title
+               || (sd && sd.label) || q.label || humanize(q.group_id) || "Queued work",
+        line: [queueLine(q), (ckSeed((sd && sd.label) || q.label) || {}).detail].filter(Boolean).join(" · "),
+        chip: null, chips: queueChips(q),
         regime: q.regime || null, cls: RC[q.regime] || "",
       });
     });
@@ -4771,6 +4851,22 @@ function queueSwept(q){
   const rows = (q || {}).variables || [];
   if(!rows.some(v => v && v.swept != null)) return null;
   return rows.filter(v => v && v.swept);
+}
+/* 2026-10-16 -- A CHECKPOINT SEED BY ITS NAME. Its label is an id (CK_BE2400_D3_20261016144615_current_Y2), and four
+   of them filling the queue read as the Exit G1 rounds having gone missing (Trevor: *"And now our qued tests are
+   seeds? What happened to the exit G1 rounds that are supposed to be there?"*). Title: the checkpoint and what it
+   decides (CHECKPOINTS carries the switch's title); the setting and the year go on the line. null when not one. */
+function ckSeed(label){
+  const m = /^CK_[A-Z]{2}\d+_(D\d+)_\d+_(.+)_(Y\d)$/i.exec(String(label || ""));
+  if(!m) return null;
+  let title = "";
+  ((CHECKPOINTS || {}).buckets || []).forEach(b => (b.checkpoints || []).forEach(c => {
+    if(!title && c.switch === m[1].toUpperCase()) title = c.title || "";
+  }));
+  const tag = m[2].toLowerCase() === "current" ? "the current setting"
+            : m[2].replace(/_/g, " ").replace(/(\d)p(\d)/g, "$1.$2");
+  return {title: "Checkpoint " + m[1].toUpperCase() + (title ? " · " + title : ""),
+          detail: "testing " + tag + " · year " + m[3].slice(1)};
 }
 function queueChips(q){
   const out = [];
@@ -4971,7 +5067,8 @@ function jobRow(j){
           (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
           (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
             `${esc(c)}</span>`).join("") + `</span>
-          <span class="hsubline">${esc(j.line)}</span></span>
+          <span class="hsubline">${esc(j.line)}</span>` +
+          (j.eta ? `<span class="hsubline heta">${esc(j.eta)}</span>` : "") + `</span>
         <span class="hcar">›</span>
       </div>
     </button>`;
@@ -6535,7 +6632,9 @@ function optimizeBadge(t, nth, picked){
         /* TABLE. Trevor, 2026-09-17 -- and it is the better name: what the chip
            opens is the optimize sheet, which you read as often as you pick from.
            "Pick a different pass" named one of the two things it is for. */
-        OPTSTATE.open ? "Hide table" : "Table"}</button></div>` +
+        /* 2026-10-16 -- WITH ITS COUNT. Trevor: *"I need a link to see our passes as we had them before"* -- a bare
+           "Table" chip under the variable list did not read as the way in to the passes. */
+        OPTSTATE.open ? "Hide table" : `Table · all ${(d.passes || []).length} passes ›`}</button></div>` +
     (!OPTSTATE.open ? "" :
       slices + heldNote + colChips + head + body +
       (assigned && !assignedHeld && !rows.some(p => String(p.pass) === assigned)
@@ -8633,13 +8732,17 @@ function noScheduleReason(){
   }
   return status === "finished" ? "the schedule finished" : "the schedule is stopped";
 }
+/* 2026-10-16 -- IN THE SCHEDULE TAB, NOT THE HEADER. Trevor: *"Let's also take that red no schedule block out. That
+   can go into the schedule tab"* -- epoch 1 runs on the rotation by design, so the header alarm on every page was
+   noise. The header element stays hidden; renderSchedule draws the same words at the top of its page. */
+function noScheduleText(){
+  const why = noScheduleReason();
+  return why ? "\u{1F6A8} NO SCHEDULE \u2014 " + why.charAt(0).toUpperCase() + why.slice(1)
+               + ". The fleet is on the regular rotation." : "";
+}
 function paintNoSchedule(){
   const el = document.getElementById("nosched");
-  if(!el) return;
-  const why = noScheduleReason();
-  el.hidden = !why;
-  if(why) el.textContent = "\u{1F6A8} NO SCHEDULE \u2014 " + why.charAt(0).toUpperCase()
-    + why.slice(1) + ". The fleet is on the regular rotation. Tap to open Schedule.";
+  if(el) el.hidden = true;
 }
 
 function scheduleSummary(){
@@ -9516,6 +9619,8 @@ function renderSchedule(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-go="home">\u2039 Home</button>'
     + '<div class="section-label">Schedule</div>'
+    + (noScheduleText() ? '<div class="nosched" style="cursor:default;margin:0 0 10px">'
+                          + esc(noScheduleText()) + '</div>' : "")
     + scheduleBadge()
     + '<div class="section-label" style="margin-top:14px">Flow</div>'
     + scheduleFlowchart()
