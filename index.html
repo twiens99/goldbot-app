@@ -1920,7 +1920,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-001451";
+const APP_BUILD = "20261016-003950";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2559,11 +2559,14 @@ const executingSeed = sd =>
 /* `held` (2026-09-27) is queued too: work waiting for a build, not a person --
    seeds.HELD. A machine takes it the moment it is on the build that can run it. */
 /* `inserted` (2026-10-05): queued by an "Insert seed" block in the schedule. */
-const queuedSeed = sd => ["pending", "held", "inserted"].includes(String(sd.status || "").toLowerCase());
+/* 2026-10-16 -- a CHECKPOINT seed (V3.1's bench tests, checkpoints.py) is queued work too (Trevor: "When we get to
+   doing the bench tests again. That will show up as seeds in the app right?"). It used to fall to "Unfinished". */
+const queuedSeed = sd => ["pending", "held", "inserted", "checkpoint"].includes(String(sd.status || "").toLowerCase());
 const seedStatusText = sd => {
   const st = String(sd.status || "").toLowerCase();
   return st === "held" ? "held · waits for the build"
-    : st === "inserted" ? "queued by the schedule · next in line" : String(sd.status || "");
+    : st === "inserted" ? "queued by the schedule · next in line"
+    : st === "checkpoint" ? "bench test (checkpoint) · seeds go first" : String(sd.status || "");
 };
 const needsDecision = sd => String(sd.status || "").toLowerCase() === "consult";
 
