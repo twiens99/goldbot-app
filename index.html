@@ -1920,7 +1920,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261015-161223";
+const APP_BUILD = "20261015-191510";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4263,6 +4263,13 @@ function fleetAgentBars(){
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
    asking -- it counts attempts at groups, and a group is re-run on purpose. */
 function campaignProgress(){
+  /* 2026-10-15 (V3.1.0) -- THE STATUS PAGE'S COUNT when it is here: the leaves only, each with the groups IT
+     carries, by the picker's own epoch rule. BUCKETS gives every bucket its regime's whole list -- the roots and
+     the BULL 2400 node included -- so V3.1's first night read "0 of 179" over the 104 groups the five children
+     actually have. */
+  const st = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
+  const stTotal = st.reduce((a, b) => a + (b.total || 0), 0);
+  if(stTotal) return `${st.reduce((a, b) => a + (b.done || 0), 0)} of ${stTotal} groups this epoch`;
   const on = BUCKETS.filter(b => !regimeOff(b.regime));     // an off regime is not owed work (V3.1)
   const done = on.reduce((a, b) => a + (b.groups_done || 0), 0);
   const total = on.reduce((a, b) => a + (b.groups_total || 0), 0);
@@ -6550,7 +6557,8 @@ let ST_NAV = {bucket: null, group: null, variable: null};
 function statusSummary(){
   const bs = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
   if(!bs.length) return "Arrives with the publisher update";
-  return bs.map(b => `${esc(b.regime)} <span class="hcount">${esc(b.left)}</span> left`)
+  // 2026-10-15 (V3.1.0) -- with the bucket: three children read "BULL · BULL · BULL" without it.
+  return bs.map(b => `${esc(b.regime)} ${esc(b.bucket_id)} <span class="hcount">${esc(b.left)}</span> left`)
     .join(" · ") + " this epoch";
 }
 
@@ -13889,8 +13897,10 @@ function paint(stamp){
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
   document.getElementById("stamp").textContent = stamp + " · app " + APP_BUILD;
+  /* 2026-10-15 -- "6 running" was every machine on the list; four of them had been silent for hours. A machine past
+     the staleness window is not running (activeSummary's rule). */
   document.getElementById("hsub").textContent =
-    FLEET.length + " running · " + campaignProgress();
+    FLEET.filter(f => !stale(f)).length + " of " + FLEET.length + " running · " + campaignProgress();
   const fa = fleetAgents(), hag = document.getElementById("hagents");
   hag.hidden = !fa;
   if(fa) hag.innerHTML = (fa.avail ? `Cores: <b>${fa.busy}</b> of ${fa.avail} working (${
