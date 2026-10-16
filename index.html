@@ -1922,7 +1922,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-084407";
+const APP_BUILD = "20261016-102617";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4192,7 +4192,7 @@ function renderResultsList(){
   /* "newest first" WAS TEXT AND IS NOW A CONTROL. Trevor: *"Where it currently
      says NEWEST FIRST, i want that to be a button chip also."* Same words, same
      place -- it simply does something now. */
-  return inProgressSection() +
+  return resultsReviewSection() + inProgressSection() +
     `<div class="section-label">${shown.filter(completed).length} completed` +
     (nf ? ` · ${nf} failed` : "") + `</div>
     <div class="rctl">
@@ -4219,6 +4219,16 @@ function renderResultsList(){
                                               : "All tasks"}</button>`
       : "") + `
     </div>` + rows;
+}
+
+/* 2026-10-16 -- TO REVIEW ON THE RESULTS TAB TOO. Trevor: *"In the results tab. I want a "To Review" section. If I
+   haven't opened up a recent job that has just finished running. I want it in "To Review"."* The home screen's list
+   (toReview -- this phone's finished jobs it has not opened), at the top of Results. */
+function resultsReviewSection(){
+  const news = toReview();
+  return news.length
+    ? `<div class="section-label">To review · ${news.length}</div>` + news.map(reviewBadge).join("")
+    : "";
 }
 
 /* The tab itself: the list, or the one job that is open. */
@@ -15789,6 +15799,8 @@ document.addEventListener("click", e => {
   RESULTS_TASK_OPEN = 0;           // a newly opened job starts at its first task
   RESULTS_FROM = null;             // opened the ordinary way: Back is "All jobs"
   RESULTS_JOB = j.dataset.rjob || null;
+  // 2026-10-16 -- OPENED IS REVIEWED, from any list (the Results list's own rows too, not only the badge).
+  if(RESULTS_JOB != null) markReviewed(RESULTS_JOB);
   document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
 });
