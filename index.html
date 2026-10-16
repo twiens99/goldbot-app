@@ -1920,7 +1920,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261015-194221";
+const APP_BUILD = "20261016-000146";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12450,8 +12450,12 @@ function lvBadgeMain(){
   const d = LV.data;
   if(!d) return LV.err ? "No answer from the VPS — is Tailscale on?" : "Connecting…";
   const tin = d.trading_in;
+  /* 2026-10-16 -- a slope in an OFF regime's zone (RANGING in V3.1) is not "trading in RANGING 1600": the EA waits
+     for BULL or BEAR there (Trevor: "it still says ranging 1600. Flat."). */
   const where = tin && tin.regime
-    ? lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket, false, null, tin.regime) : "") + " · "
+    ? (regimeOff(tin.regime)
+        ? lvRegTag(tin.regime) + " zone, not traded in V3.1 · "
+        : lvRegTag(tin.regime) + (tin.bucket != null ? " " + bktEl(tin.bucket, false, null, tin.regime) : "") + " · ")
     : "";
   const feed = (d.health && d.health.feed && d.health.feed.status) || "";
   if(feed === "missing") return where + "MT5 feed not started";
@@ -12771,13 +12775,21 @@ function lvPaintTin(){
   let line = "";
   if(!tin || !tin.regime){
     line = d ? "The EA has not reported a regime yet." : "Waiting for the VPS.";
+  } else if(regimeOff(tin.regime)){
+    /* 2026-10-16 -- the slope is in an OFF regime's zone (RANGING in V3.1): nothing to arm, nothing in a bucket.
+       Say what the EA is actually doing -- waiting for BULL or BEAR -- instead of naming RANGING's old root. */
+    head += lvRegTag(tin.regime) + `<span class="lv-pill off">Off in V3.1</span>`;
+    const axis = (tin.axis || "D1") + " slope";
+    line = `The ${esc(axis)} is ${tin.slope != null ? "<b>" + lvSigned(tin.slope, 4) + "</b>, " : ""}`
+         + `in the ${esc(tin.regime)} zone. V3.1 does not trade ${esc(tin.regime)}, so the EA waits for the slope `
+         + `to reach BULL or BEAR. The SWING trades on its own rules.`;
   } else {
     const armed = tin.armed === true;
     head += lvRegTag(tin.regime) + (tin.bucket != null ? bktEl(tin.bucket, false, null, tin.regime) : "")
          + `<span class="lv-pill ${armed ? "on" : "off"}">${armed ? "Armed" : "Not armed"}</span>`;
     const say = armed
       ? `The EA can open ${esc(tin.regime)} trades here.`
-      : `${esc(tin.regime)} is not armed, so the EA opens nothing until it passes the gate (PF 1.50).`;
+      : `${esc(tin.regime)} is not armed, so the EA opens nothing until it passes the gate (PF 1.50 on 60+ trades).`;
     const axis = (tin.axis || "D1") + " slope";
     const slope = tin.slope != null ? ` ${axis} <b>${lvSigned(tin.slope, 4)}</b>,` : "";
     let where = "";
@@ -12795,7 +12807,8 @@ function lvPaintTin(){
     line = slope ? say + slope + where : say + " " + w.charAt(0).toUpperCase() + w.slice(1);
   }
   head += "</div>";
-  const rows = gates.map(g => {
+  // 2026-10-16 -- the armed list is the buckets that CAN trade: an off regime's old rows (RANGING 1600) stay out.
+  const rows = gates.filter(g => !regimeOff(g.regime)).map(g => {
     const cur = tin && g.regime === tin.regime && String(g.bucket) === String(tin.bucket);
     const pf = g.pf != null ? `PF <b>${Number(g.pf).toFixed(2)}</b> on ${esc(g.trades)}` : "not measured yet";
     const when = g.measured_at ? " · " + esc(fmtWhen(Number(g.measured_at)).slice(0, 5)) : "";
