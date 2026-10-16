@@ -1925,7 +1925,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-133218";
+const APP_BUILD = "20261016-143519";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3557,20 +3557,43 @@ function poolStrip(p){
              : '<span class="agsq"></span>';
   }).join("") + '</div>';
 }
+/* 2026-10-16 -- WHAT THIS COPY'S JOB IS USING, FIRST. Trevor: *"one of the cards aren't getting all the info. One of
+   them seems to be correct. but the other is not"* -- the box's "33 of 72 cores busy" sat under copy A's badge and
+   read as A's, and B's card led with "own agents: 1 of 1", its terminal's single local agent, beside B's real 18
+   from the pool. Each copy's card now opens with ITS job: the pool agents it holds plus its own; the box's total
+   says whose it is (the copies it adds up). */
+function copyLine(f){
+  const a = f.agents_local || {};
+  const ownBusy = a.source === "cpu" ? (a.busy || 0) : 0;
+  if(f.pool_held == null)
+    return `<div class="agline box">${copyTag(f.copy)}<span>`
+      + (a.total ? `own agent${a.total === 1 ? "" : "s"}: <b>${a.busy}</b> of ${a.used || a.total} busy`
+                 : "no reading of its own agent") + `</span></div>`;
+  const working = (f.pool_busy || 0) + ownBusy;
+  return `<div class="agline box">${copyTag(f.copy)}<span>This job: <b>${working}</b> agent${working === 1 ? "" : "s"} working`
+    + ` · ${f.pool_held} from the pool${a.total ? ` + ${ownBusy} of its own` : ""}</span></div>`;
+}
+function boxLetters(f, n){
+  const ids = (n && n.copies) || [];
+  const box = f.box || f.machine;
+  const ls = ids.map(id => id === box ? "A" : String(id).slice(String(box).length + 1)).filter(Boolean);
+  return ls.length > 1 ? " (" + ls.join(" + ") + ")" : "";
+}
 function boxPanel(f){
   const p = f.pool || {};
   const n = (EFF && EFF.now && EFF.now[f.machine]) || {};
   const cores = n.cores || f.cores, plan = n.planned || null, denom = plan || cores;
+  const boxName = "Box" + boxLetters(f, n);
   let head;
   if(!p.fresh){
-    head = "Box: not measured — its agent pool has not reported"
+    head = boxName + ": not measured — its agent pool has not reported"
          + (p.at ? " since " + esc(fmtStarted(p.at)) : "");
   } else if(n.measured){
-    head = `Box: <b>${n.busy}</b> of ${cores} cores busy (${effPct(n.busy, denom)}%`
+    head = `${boxName}: <b>${n.busy}</b> of ${cores} cores busy (${effPct(n.busy, denom)}%`
          + `${plan ? ` of a planned ${plan}` : ""})`
          + (n.usable && n.usable < denom ? ` · ${n.usable} usable · best ${effPct(n.usable, denom)}%` : "");
   } else {
-    head = "Box: " + esc(n.why || "not measured");
+    head = boxName + ": " + esc(n.why || "not measured");
   }
   let pool = "";
   if(p.fresh){
@@ -3591,19 +3614,14 @@ function boxPanel(f){
     + `</div>`
     + (p.needs_grant ? `<div class="agnote warn">The broker cannot restart agents on this box — `
                        + `its one-time service grant is missing.</div>` : "");
-  return `<div><div class="agline box">${copyTag(f.copy)}<span>${head}</span></div>`
+  /* this copy's job first (copyLine), then the box -- no copy badge on the box's line: it is all of them */
+  return `<div>${f.copy ? copyLine(f) : ""}<div class="agline box"><span>${head}</span></div>`
     + (p.fresh ? poolStrip(p) : "") + pool + broker + lendersPanel(f) + `</div>`;
 }
-/* A copy that is not its box: its own agent, and what it holds of the pool.
-   The box is measured once, on the box's card. */
+/* A copy that is not its box: what ITS job is using (copyLine). The box is measured once, on the box's card. */
 function copyPanel(f){
-  const a = f.agents_local || {};
-  const own = a.total ? `own agent${a.total === 1 ? "" : "s"}: <b>${a.busy}</b> of ${a.used || a.total} busy`
-                      : "no reading of its own agent";
-  const held = f.pool_held != null
-    ? ` · holds <b>${f.pool_held}</b> pool agent${f.pool_held === 1 ? "" : "s"} (${f.pool_busy} busy)` : "";
-  return `<div><div class="agline box">${copyTag(f.copy)}<span>${own}${held}</span></div>`
-    + `<div class="agnote">Measured with its box, on the ${esc(f.box)} card.</div></div>`;
+  return `<div>${copyLine(f)}`
+    + `<div class="agnote">The whole box's total is on the ${esc(f.box)} card.</div></div>`;
 }
 function agentsPanel(f){
   if(f && f.pool) return boxPanel(f);
@@ -14575,7 +14593,9 @@ async function fromLaptop(first){
      The download then gets its own, longer, allowance. */
   let timer = ctl ? setTimeout(() => ctl.abort(), first ? 3000 : 8000) : null;
   try{
-    const r = await fetch(base + "/snapshot", {cache: "no-store",
+    /* "no-cache" = revalidate every time: the browser sends the snapshot's ETag and the Laptop answers 304 when it
+       has not rebuilt since (2026-10-16), so only a NEW snapshot crosses the network. */
+    const r = await fetch(base + "/snapshot", {cache: "no-cache",
                                                signal: ctl ? ctl.signal : undefined});
     if(timer){ clearTimeout(timer); timer = setTimeout(() => ctl.abort(), 30000); }
     if(!r.ok){ LAPTOP_DOWN_UNTIL = Date.now() + LAPTOP_RETRY_MS; return null; }
@@ -14737,9 +14757,10 @@ async function askFleetRefresh(){
   }
 }
 
-/* 20s, matching the publisher's own wake interval -- polling faster than the
-   fleet can publish only spends battery. */
-const POLL_MS = 20000;
+/* 10s (was 20s), matching the publisher's own wake interval (2026-10-16, Trevor: *"these need to update faster"*
+   -- the T7910's broker moves agents between its copies every minute or two). The Laptop answers an unchanged
+   snapshot with 304 (fleet_api ETag), so the faster poll costs a few hundred bytes, not the whole ~250 KB. */
+const POLL_MS = 10000;
 
 (async () => {
   showState("Loading…");
