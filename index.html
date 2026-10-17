@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-222311";
+const APP_BUILD = "20261016-224421";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4154,6 +4154,7 @@ function renderResultsJob(r){
        seed explains why the whole job exists, so it does NOT change with the
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
+    roundWarnings(rep.warnings) +
     whyBadge(whyTask(tasks), r) +
     taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style,
                                   key: {regime: r.regime, bucket_id: r.bucket_id, group_id: r.group_id,
@@ -4223,6 +4224,12 @@ function taskPanel(t, relDir, lift){
    the results tab has."* One function, so the two cannot drift. */
 function hasJobCard(r){
   return !!(r && r.reports && (r.reports.tasks || []).length);
+}
+
+/* 2026-10-17 -- THE ROUND'S OWN WARNINGS (round_notes, via the snapshot): "only 3 passes survived the cadence band
+   (expected 20+)" -- shown on the job, not only in the Telegram alert. */
+function roundWarnings(ws){
+  return (ws || []).map(w => `<div class="inexact">\u26a0\ufe0f ${esc(w)}</div>`).join("");
 }
 
 /* 2026-10-17 -- WHAT THIS ROUND'S CHECKPOINTS FOUND, IN A FEW WORDS. Trevor: *"the checkpoint runs should have thier
@@ -9936,7 +9943,7 @@ function renderInProgressJob(key){
           esc(TASK_MARK.passed)} ${esc(phaseText(t.kind))}</button>`
       : `<span class="cchip wait">${esc(TASK_MARK[t.status] || "·")} ${
           esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
-  return back + chips + ipCard(it, true) +
+  return back + chips + ipCard(it, true) + roundWarnings(tl.warnings) +
     (open >= 0
       ? whyBadge(whyTask(tasks), it) + taskBadges(tasks, open, rep,
           {pass: it.applied_pass, style: it.applied_pass_style,
