@@ -291,8 +291,11 @@ button.chip.on::before{content:"\2713\00a0";}
 /* 2026-10-09 -- A BOX'S MT5 COPIES (T7910 = A, T7910-B = B): each copy's letter
    in its tray icon's colour; copy B listed right under its box. A pool square
    filled = busy for that copy, ringed = held idle. */
-.copytag{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
-  padding:0 3px;border-radius:5px;font-size:.68rem;font-weight:800;color:#fff;vertical-align:middle;}
+/* 2026-10-17 -- THE TRAY ICON ITSELF (Trevor: "just the same tray Icon added basically"): tray_app._make_icon_image
+   draws a FILLED CIRCLE in the copy's colour with its letter in bold white, ~72 % of the circle's height. */
+.copytag{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;
+  border-radius:50%;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;
+  color:#fff;vertical-align:middle;}
 .agline.box{cursor:default;}
 .agnote.warn{color:var(--warn);opacity:1;}
 /* 2026-10-06 -- THE EFFICIENCY PAGE. See renderEfficiency. */
@@ -384,6 +387,10 @@ button.chip.on::before{content:"\2713\00a0";}
 .hsubline{font-size:.79rem;color:var(--dim);line-height:1.35;}
 /* 2026-10-16 -- a running task's progress + ETA, under its cores. */
 .hsubline.heta{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums;}
+/* 2026-10-17 -- a round's own test running inside its block (jobsModel nests it), and a checkpoint's line in Results. */
+.hsubline.jtask{display:block;margin-top:4px;padding-left:8px;border-left:2px solid var(--line);}
+.ck-line{padding:8px 0;border-top:1px solid var(--line);font-size:.82rem;line-height:1.45;}
+.ck-line:first-of-type{border-top:0;}
 .hcar{color:var(--faint);font-size:1.1rem;flex:none;}
 .hbtn:active{transform:translateY(1px);}
 .hbtn:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
@@ -1925,7 +1932,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-182229";
+const APP_BUILD = "20261016-190000";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4111,6 +4118,7 @@ function renderResultsJob(r){
     taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style,
                                   key: {regime: r.regime, bucket_id: r.bucket_id, group_id: r.group_id,
                                         pass: r.picked_pass}}) +
+    jobCheckpoints(r) +
     /* NOTHING BEHIND THE HEADER IS A REAL STATE, and it needs saying rather than
        showing as a card that simply stops. The round happened -- its PF moved and
        the ledger recorded it -- but nothing tied its report folder to it, so
@@ -4175,6 +4183,48 @@ function taskPanel(t, relDir, lift){
    the results tab has."* One function, so the two cannot drift. */
 function hasJobCard(r){
   return !!(r && r.reports && (r.reports.tasks || []).length);
+}
+
+/* 2026-10-17 -- WHAT THIS ROUND'S CHECKPOINTS FOUND, IN A FEW WORDS. Trevor: *"the checkpoint runs should have thier
+   results in some way when it comes to opening up that job in the results tab. I don't think i need EVERY result. I
+   just need a general explanation as to what the results were and what was changed if it did."* A checkpoint names
+   the group whose round started it (`trigger`) and when; this round's are the ones on its bucket, triggered by its
+   group, started from its ledger row on (less ten minutes) until the group's next row. One line each: the verdict,
+   what changed, and -- for the latest of each switch -- the plain explanation. The full table stays on Status. */
+function ckWhen(at){ const t = Date.parse(String(at || "")); return isNaN(t) ? null : t / 1000; }
+function jobCheckpoints(r){
+  const b = ((CHECKPOINTS || {}).buckets || []).find(x => x.key === String(r.regime || "").toUpperCase() + "|" + r.bucket_id);
+  const t0 = ckWhen(r.recorded_at);
+  if(!b || t0 == null) return "";
+  const next = (LEDGER || []).filter(x => x !== r && x.regime === r.regime && String(x.bucket_id) === String(r.bucket_id)
+                                         && x.group_id === r.group_id && (ckWhen(x.recorded_at) || 0) > t0)
+    .map(x => ckWhen(x.recorded_at)).sort((a, z) => a - z)[0] || Infinity;
+  const all = [];
+  (b.checkpoints || []).forEach(c => {
+    all.push(c);
+    (c.history || []).forEach(h => all.push(Object.assign({switch: c.switch, title: c.title}, h)));
+  });
+  const mine = all.filter(c => {
+    const t = ckWhen(c.at);
+    return c.trigger === r.group_id && t != null && t >= t0 - 600 && t < next;
+  });
+  if(!mine.length) return "";
+  const what = c => {
+    if(c.decision) return c.decision.choice === "accept"
+      ? "accepted " + ckArm(c.decision.pick) + " \u2014 the bucket now runs it"
+      : "rejected \u2014 the current setting stays";
+    if(c.status === "running") return "still testing";
+    if(c.status === "failed") return "did not finish";
+    if(c.verdict === "HOLDS") return "the current setting holds \u2014 nothing changed";
+    if(c.verdict === "FLIP SUGGESTED") return "suggests " + ckArm(c.pick) + " \u2014 waiting on you (Status)";
+    if(c.verdict === "MIXED") return "mixed \u2014 pick one on Status";
+    return String(c.verdict || c.status || "").toLowerCase();
+  };
+  return `<div class="card"><div class="card-in"><div class="tlab">Checkpoints this round started</div>` +
+    mine.map(c => `<div class="ck-line"><b>${esc(ckCap(c.title))}</b> <span class="tby">${esc(c.switch)}</span> ` +
+      ckVerdictChip(c) + ` ${esc(what(c))}` +
+      (c.explanation ? `<div class="tnote">${esc(ckText(c.explanation))}</div>` : "") + `</div>`).join("") +
+    `</div></div>`;
 }
 
 function renderResultsList(){
@@ -4670,9 +4720,9 @@ const sweeping = f => /^OPTIM/.test(String(f.phase || "").toUpperCase())
 /* [machine, cores, shared] -- what this task is using right now. */
 function taskCores(f){
   const host = f.box || f.machine;
-  /* 2026-10-17 -- a copy of a box names its letter ("T7910 C"), the letter the box reports (copyLine's badge):
-     three copies on the T7910 all read "T7910" before. */
-  const self = f.box && f.copy ? f.box + " " + f.copy : host;
+  /* 2026-10-17 -- a copy's own cores carry no name: the job's copy chip (copyTag) already says which copy it is.
+     A machine that is not a box copy still names itself ("1 core: Laptop"). */
+  const self = f.box && f.copy ? "" : host;
   const out = [];
   const add = (m, n, shared) => {
     n = Number(n) || 0;
@@ -4700,8 +4750,9 @@ function taskCoresText(f){
   const rows = taskCores(f);
   if(!rows.length) return sweeping(f) ? "no cores busy right now" : "";
   const n = rows.filter(r => !r[2]).reduce((t, r) => t + r[1], 0);
-  return `${n} core${n === 1 ? "" : "s"}: `
-       + rows.map(r => `${r[0]} ${r[1]}${r[2] ? " shared" : ""}`).join(" + ");
+  const head = `${n} core${n === 1 ? "" : "s"}`;
+  if(!rows.some(r => r[0])) return head;                              // all its own: the copy chip names them
+  return head + ": " + rows.map(r => r[0] ? `${r[0]} ${r[1]}${r[2] ? " shared" : ""}` : `${r[1]} own`).join(" + ");
 }
 /* "68% · ~6m left · ETA 07:42" -- etaAt is anchored to the beacon and gives a stale one no ETA. */
 function taskEta(f){
@@ -4728,7 +4779,9 @@ function taskJob(f){
     helper: isAgent(f),               // an agent machine's task opens its job card, not its lending card
     fleet: ff, seed: sd,
     title: (ckSeed(sd && sd.label) || {}).title || (sd && sd.label) || humanize(ff.group_id) || "Working",
-    copy: null,
+    /* 2026-10-17 -- ONE CHIP, THE COPY'S LETTER (Trevor: "The Job's can have one Machine Id chip that goes with it. A
+       or B. I'll know if the laptop is runing on A or B because it'll be a different type of test"). */
+    copy: (f.box && f.copy) ? f.copy : null,
     line: [ff.bucket_id != null && rg ? bktName(rg, ff.bucket_id) : "", (ckSeed(sd && sd.label) || {}).detail,
            taskCoresText(f)].filter(Boolean).join(" · "),
     eta: taskEta(f),
@@ -4862,6 +4915,26 @@ function jobsModel(){
                                && String(j.fleet.phase || "").toUpperCase() === t.part);
     if(!dup) jobs.push(leaseJob(t));
   });
+  /* 2026-10-17 -- A ROUND'S OWN TESTS RIDE INSIDE IT. Trevor: *"The laptop pretests would count as a job. An those
+     pretests should follow as a task inside of the job it was meant for."* The original values' test (a seed labelled
+     ORIG_<re><bucket>_<group>_..., queued at round start or as a pretest) moves into the block of the round running
+     that group on that bucket, as one of its tasks. One with no live round -- a pretest for a round still queued --
+     stays its own block; so do owed post-round tests and checkpoint runs, whose round has already finished. */
+  jobs.slice().forEach(j => {
+    const g = origGroup(j.seed && j.seed.label);
+    if(!g) return;
+    const p = jobs.find(o => o !== j && o.section === "Running now" && o.fleet && o.fleet.group_id === g
+                             && String(o.fleet.regime || "").toUpperCase() === String(j.seed.regime || "").toUpperCase()
+                             && Number(o.fleet.bucket_id) === Number(j.seed.bucket_id)
+                             && !origGroup(o.seed && o.seed.label));
+    if(!p) return;
+    const bk = bktName(j.seed.regime, j.seed.bucket_id);              // its round's block already names the bucket
+    /* ...and no machine: the test's own kind tells Trevor what it is ("I'll know ... because it'll be a different
+       type of test") */
+    j.line = String(j.line || "").split(" · ").filter(x => x !== bk && !/^1 core\b/.test(x)).join(" · ");
+    (p.tasks = p.tasks || []).push(j);
+    jobs.splice(jobs.indexOf(j), 1);
+  });
   /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
   const tail = [];
   const rest = FLEET.filter(f => !busyNow(f) && !lent.has(f.machine));
@@ -4962,6 +5035,11 @@ function queueSwept(q){
    of them filling the queue read as the Exit G1 rounds having gone missing (Trevor: *"And now our qued tests are
    seeds? What happened to the exit G1 rounds that are supposed to be there?"*). Title: the checkpoint and what it
    decides (CHECKPOINTS carries the switch's title); the setting and the year go on the line. null when not one. */
+/* The group an original values' test was made for (its label), or null. */
+function origGroup(label){
+  const o = /^ORIG_[A-Z]{2}\d+_(.+)_\d{14}$/i.exec(String(label || ""));
+  return o ? o[1] : null;
+}
 function ckSeed(label){
   /* 2026-10-16 -- THE ORIGINAL VALUES' TEST: one bucket test of the bucket as its round froze it, queued at round
      start and scored like a pass -- at least as good, and the round keeps the original. */
@@ -5179,7 +5257,11 @@ function jobRow(j){
           (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
             `${esc(c)}</span>`).join("") + `</span>
           <span class="hsubline">${esc(j.line)}</span>` +
-          (j.eta ? `<span class="hsubline heta">${esc(j.eta)}</span>` : "") + `</span>
+          (j.eta ? `<span class="hsubline heta">${esc(j.eta)}</span>` : "") +
+          /* 2026-10-17 -- its own tests running now (jobsModel nests them): one line each */
+          (j.tasks || []).map(t => `<span class="hsubline jtask">\u21b3 ${esc(t.title)}` +
+            (t.chip ? ` <span class="chip">${esc(t.chip)}</span>` : "") +
+            ` \u00b7 ${esc(t.line)}${t.eta ? " \u00b7 " + esc(t.eta) : ""}</span>`).join("") + `</span>
         <span class="hcar">›</span>
       </div>
     </button>`;
@@ -8677,9 +8759,13 @@ function activeSummary(){
   const lenders = FLEET.filter(f => isAgent(f) && !stale(f) && f.agents.state === "RUN");
   const lent = lenders.reduce((s, f) => s + (Number(f.agents.running) || 0), 0);
   const bits = [];
-  bits.push(busy
-    ? `<span class="hcount">${busy}</span> machine${busy === 1 ? "" : "s"} working`
-    : `<span class="hcount quiet">no machine</span> is running a round`);
+  /* 2026-10-17 -- JOBS, NOT MACHINES. Trevor: *"The Active Tab. Instead of saying 3 machines working. Lets go with
+     Job's How many jobs are running"* -- every running round and test, the ones nested inside a round included
+     (*"The laptop pretests would count as a job"*). One box runs several copies; the Laptop runs tests in slots. */
+  const nJobs = runningJobCount();
+  bits.push(nJobs
+    ? `<span class="hcount">${nJobs}</span> job${nJobs === 1 ? "" : "s"} running`
+    : `<span class="hcount quiet">no job</span> is running`);
   if(lenders.length) bits.push(`<span class="hcount">${lenders.length}</span> agent` +
     (lenders.length === 1 ? "" : "s") + ` lending ${lent} core${lent === 1 ? "" : "s"}`);
   if(standing) bits.push(`<span class="hcount quiet">${standing}</span> standing by`);
@@ -8693,6 +8779,13 @@ function activeSummary(){
   if(FAILURES.length) bits.push(
     `<span class="hcount warn">${FAILURES.length}</span> failing`);
   return bits.join(" · ");
+}
+
+/* Every running round and test: the Active tab's "Running now" blocks and the tasks nested inside them. A halted
+   machine is waiting on a person, not running a job. */
+function runningJobCount(){
+  return jobsModel().filter(j => j.section === "Running now" && !(j.fleet && j.fleet.halt))
+    .reduce((n, j) => n + 1 + (j.tasks || []).length, 0);
 }
 
 function homeButton(page, icon, name, subline, stripe){
