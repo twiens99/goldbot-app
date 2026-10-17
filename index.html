@@ -293,6 +293,11 @@ button.chip.on::before{content:"\2713\00a0";}
    filled = busy for that copy, ringed = held idle. */
 /* 2026-10-17 -- THE TRAY ICON ITSELF (Trevor: "just the same tray Icon added basically"): tray_app._make_icon_image
    draws a FILLED CIRCLE in the copy's colour with its letter in bold white, ~72 % of the circle's height. */
+.card.iplive{cursor:pointer;}
+.card.iplive:active{transform:translateY(1px);}
+.slottag{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;
+  border-radius:4px;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;
+  color:#fff;vertical-align:middle;}
 .copytag{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;
   border-radius:50%;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;
   color:#fff;vertical-align:middle;}
@@ -1932,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-190000";
+const APP_BUILD = "20261016-194731";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2376,6 +2381,28 @@ const picking = f => f.phase && !f.group_id && !f.seed;
    and its phase still says it is picking -- the tick sets that before the gate says
    no. `f.waiting` ({for, reason, since}) is the gate's own record of the wait. */
 const waitingCores = f => !!(picking(f) && f.waiting);
+/* 2026-10-17 -- WHY A COPY IS WAITING, in plain words, off the core gate's own record (core_gate.note_wait: kind +
+   reason, and for RAM the GB it needs). Before, every wait read "waiting for free cores". */
+function waitWhy(f){
+  const w = (f && f.waiting) || {};
+  const r = String(w.reason || "");
+  if(w.kind === "ram"){
+    const m = /RAM: ([\d.]+) GB free/.exec(r);
+    return "waiting for RAM" + (w.ram_need_gb ? ` (needs ${w.ram_need_gb} GB${m ? ", " + m[1] + " free" : ""})` : "");
+  }
+  if(w.kind === "order"){
+    const m = /^copy (\w+) goes first/.exec(r);
+    return "waiting \u2014 " + (m ? `copy ${m[1]} goes first` : "a lower copy goes first");
+  }
+  if(w.kind === "priority"){
+    const m = /^(\S+)'s round can take more agents/.exec(r);
+    const who = m ? ((FLEET.find(o => o.machine === m[1]) || {}).copy || m[1]) : null;
+    return "waiting \u2014 " + (who ? `${who}'s round takes the agents first` : "a running round takes the agents first");
+  }
+  if(w.kind === "settle") return "waiting \u2014 another copy just started";
+  const c = /CPU (\d+)%/.exec(r);
+  return "waiting for free cores" + (c ? ` (CPU ${c[1]}%)` : "");
+}
 function waitedFor(f){
   const began = new Date((f && f.waiting && f.waiting.since) || "");
   if(isNaN(began.getTime())) return null;
@@ -3565,6 +3592,16 @@ function lendersPanel(f){
    (tray_app.COPY_COLORS), so the phone and the taskbar agree. */
 const COPY_COLORS = {A: "#1E90FF", B: "#FF8C00", C: "#2EA043", D: "#A020F0", E: "#DC143C"};
 const copyTag = c => c ? `<span class="copytag" style="background:${COPY_COLORS[c] || "var(--dim)"}">${esc(c)}</span>` : "";
+/* 2026-10-17 -- THE LAPTOP'S OWN LETTERS (Trevor: "Also the laptop needs its own A B C. Labels Also."). Its test
+   slots Twin1-4 are A-D, in the order they start; a test on its own MT5 is L. Same colours as the tray letters, but a
+   SQUARE, so a Laptop test never reads as a T7910 copy (round). */
+function slotLetter(by){
+  const parts = String(by || "").split("~");
+  const m = /(\d+)$/.exec(parts[1] || "");
+  if(parts[1] && m) return "ABCDEFGH".charAt(Number(m[1]) - 1) || "?";
+  return parts[0] ? parts[0].charAt(0).toUpperCase() : "";
+}
+const slotTag = l => l ? `<span class="slottag" style="background:${COPY_COLORS[l] || "#6b7686"}">${esc(l)}</span>` : "";
 function poolStrip(p){
   return '<div class="agstrip">' + (p.agents || []).map(a => {
     const c = a[2] ? (COPY_COLORS[a[2]] || "var(--dim)") : "";
@@ -4752,6 +4789,7 @@ function taskCoresText(f){
   const n = rows.filter(r => !r[2]).reduce((t, r) => t + r[1], 0);
   const head = `${n} core${n === 1 ? "" : "s"}`;
   if(!rows.some(r => r[0])) return head;                              // all its own: the copy chip names them
+  if(rows.length === 1 && !rows[0][2]) return head + ": " + rows[0][0];  // one machine: "1 core: Laptop"
   return head + ": " + rows.map(r => r[0] ? `${r[0]} ${r[1]}${r[2] ? " shared" : ""}` : `${r[1]} own`).join(" + ");
 }
 /* "68% · ~6m left · ETA 07:42" -- etaAt is anchored to the beacon and gives a stale one no ETA. */
@@ -4782,6 +4820,7 @@ function taskJob(f){
     /* 2026-10-17 -- ONE CHIP, THE COPY'S LETTER (Trevor: "The Job's can have one Machine Id chip that goes with it. A
        or B. I'll know if the laptop is runing on A or B because it'll be a different type of test"). */
     copy: (f.box && f.copy) ? f.copy : null,
+    slot: (!f.box && sd && !sweeping(f)) ? slotLetter(f.machine) : null,
     line: [ff.bucket_id != null && rg ? bktName(rg, ff.bucket_id) : "", (ckSeed(sd && sd.label) || {}).detail,
            taskCoresText(f)].filter(Boolean).join(" · "),
     eta: taskEta(f),
@@ -4808,9 +4847,8 @@ function leaseJob(t){
   return {
     id: "o:" + [t.regime, t.bucket_id, t.group_id, t.part].join("|"), section: "Running now",
     title: humanize(t.group_id) || t.group_id, regime: t.regime, cls: RC[t.regime] || "",
-    chip: t.part, copy: null,
-    line: [bktName(t.regime, t.bucket_id), "owed reading",
-           `1 core: ${parts[0]}${parts[1] ? " (" + parts[1] + ")" : ""}`].join(" · "),
+    chip: t.part, copy: null, slot: slotLetter(t.by),
+    line: [bktName(t.regime, t.bucket_id), "owed reading", `1 core: ${parts[0]}`].join(" · "),
     eta: "no ETA yet",
   };
 }
@@ -4823,8 +4861,9 @@ function slotJob(sd){
   return {
     id: "s:" + sd.seed_id, section: "Running now", seed: sd,
     title: (ck && ck.title) || sd.label || humanize(sd.group_id) || "Seeded test",
+    slot: slotLetter(sd.claimed_by),
     line: [sd.bucket_id != null && sd.regime ? bktName(sd.regime, sd.bucket_id) : "", ck && ck.detail,
-           `1 core: ${parts[0]} (${parts[1] || "slot"})`].filter(Boolean).join(" · "),
+           `1 core: ${parts[0]}`].filter(Boolean).join(" · "),
     eta: (began ? "running " + dur(Math.max(0, Date.now() / 1000 - began)) + " · " : "") + "no ETA yet",
     chip: roundType(sd), regime: sd.regime || null, cls: RC[sd.regime] || "",
   };
@@ -4860,7 +4899,7 @@ function standingJob(f){
     id: "m:" + f.machine, section: "Standing by",
     helper: false, fleet: f, seed: null, title: f.machine, copy: f.copy || null,
     line: paused ? "paused" + seen
-        : waitingCores(f) && !stale(f) ? "waiting for free cores" + (waitedFor(f) ? " - " + waitedFor(f) : "")
+        : waitingCores(f) && !stale(f) ? waitWhy(f) + (waitedFor(f) ? " - " + waitedFor(f) : "")
         : sibling ? `waiting for free cores — ${sibling.machine} is using them` + seen
         : "up, no job right now" + seen,
     chip: paused ? "PAUSED" : (sibling || (waitingCores(f) && !stale(f))) ? "WAITING" : "IDLE",
@@ -4935,12 +4974,20 @@ function jobsModel(){
     (p.tasks = p.tasks || []).push(j);
     jobs.splice(jobs.indexOf(j), 1);
   });
+  /* 2026-10-17 -- OPTIMIZATIONS FIRST, TESTS BELOW, ALWAYS (Trevor: "They will also always be Below the
+     Optimizations on the active tab"). FLEET order put the Laptop's own-MT5 test above the T7910's rounds. */
+  const isTest = j => !(j.fleet && sweeping(j.fleet));
+  const order = jobs.map((j, i) => [isTest(j) ? 1 : 0, i, j]).sort((a, z) => a[0] - z[0] || a[1] - z[1]);
+  jobs.length = 0;
+  order.forEach(x => jobs.push(x[2]));
+  jobs.forEach(j => { j.lane = isTest(j) ? "test" : "opt"; });
   /* The machines' state goes at the BOTTOM, under the jobs and the queue (Trevor: "below the jobs"). */
   const tail = [];
   const rest = FLEET.filter(f => !busyNow(f) && !lent.has(f.machine));
-  rest.filter(trayUp).forEach(f => tail.push(isAgent(f)
-    ? Object.assign(agentJob(f), {section: "Standing by"})
-    : standingJob(f)));
+  /* 2026-10-17 -- STANDING BY IS ONLY THE BOX COPIES THAT ARE NOT RUNNING A ROUND (Trevor: "The standing by. The
+     laptop doesn't need to be there. Just the Optimization trays that aren't working can be here."). An agent /
+     backtest machine has its tests under its own heading; one that stops reporting still shows below. */
+  rest.filter(f => trayUp(f) && !isAgent(f)).forEach(f => tail.push(standingJob(f)));
   rest.filter(f => !trayUp(f)).forEach(f => tail.push({
     id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Not reporting",
     helper: false, fleet: f, seed: null, title: f.machine, copy: f.copy || null,
@@ -4985,13 +5032,19 @@ function jobsModel(){
      own order -- owed readings, seeds, the block file, the schedule's ranking.
      A snapshot from before it has no `queue`, and gets the seeds-only list it
      always had, now with its SEEDED chip. */
+  /* 2026-10-17 -- TWO QUEUES (Trevor: "Let's also do a qued up next for Laptop. And queued up next for t79"): a
+     round to the optimizers' list, a test (owed readings, a backtest seed -- pretests, checkpoint runs) to the
+     backtest machine's. Each list has its own "Queued up next". */
+  const testQ = q => q.source === "backtest" || !sweeping({phase: q.kind});
+  const nth = {opt: 0, test: 0};
   if(QUEUE){
-    QUEUE.forEach((q, i) => {
+    QUEUE.forEach((q) => {
       const sd = q.seed_id ? SEEDS.find(x => x.seed_id === q.seed_id) : null;
+      const lane = testQ(q) ? "test" : "opt";
       jobs.push({
         id: sd ? "s:" + sd.seed_id
                : "q:" + [q.regime, q.bucket_id, q.group_id].join("|"),
-        section: i === 0 ? "Queued up next" : "Queued after that",
+        section: nth[lane]++ === 0 ? "Queued up next" : "Queued after that", lane,
         seed: sd, queue: q,
         title: (ckSeed((sd && sd.label) || q.label) || {}).title
                || (sd && sd.label) || q.label || humanize(q.group_id) || "Queued work",
@@ -5001,15 +5054,15 @@ function jobsModel(){
       });
     });
   } else {
-    queued.forEach((sd, i) => jobs.push({
-      id: "s:" + sd.seed_id,
-      section: i === 0 ? "Queued up next" : "Queued after that",
+    queued.forEach((sd) => { const lane = sd.kind === "backtest" ? "test" : "opt"; jobs.push({
+      id: "s:" + sd.seed_id, lane,
+      section: nth[lane]++ === 0 ? "Queued up next" : "Queued after that",
       seed: sd, title: sd.label || humanize(sd.group_id) || "Seeded work",
       line: roundType(sd) + (sd.only_machine ? " · " + sd.only_machine
                                                 + " only" : ""),
       chip: null, chips: ["SEEDED"], regime: sd.regime || null,
       cls: RC[sd.regime] || "",
-    }));
+    }); });
   }
   owed.forEach(sd => jobs.push({
     id: "s:" + sd.seed_id, section: "Unfinished",
@@ -5018,7 +5071,33 @@ function jobsModel(){
     chip: needsDecision(sd) ? "DECIDE" : null, regime: sd.regime || null,
     cls: needsDecision(sd) ? "warn" : (RC[sd.regime] || ""),
   }));
-  return jobs.concat(tail);
+  /* 2026-10-17 -- the optimizers' rounds running, a pick waiting on you, their queue; THEN the backtest machine's
+     tests running and its queue (Trevor: tests "always Below the Optimizations"). Stable within each part. */
+  const rank = j => {
+    const t = j.lane === "test";
+    if(j.section === "Running now") return t ? 3 : 0;
+    if(j.section === "Waiting on you") return 1;
+    if(j.section === "Queued up next" || j.section === "Queued after that") return t ? 4 : 2;
+    return 5;
+  };
+  const sorted = jobs.map((j, i) => [rank(j), i, j]).sort((a, z) => a[0] - z[0] || a[1] - z[1]).map(x => x[2]);
+  return sorted.concat(tail);
+}
+
+/* 2026-10-17 -- which machines a lane is: the optimizers (each box once) and the backtest machine(s). */
+function laneName(lane){
+  const names = lane === "test"
+    ? FLEET.filter(f => isAgent(f)).map(f => f.machine)
+    : FLEET.filter(f => !isAgent(f)).map(f => f.box || f.machine);
+  const u = [...new Set(names.filter(Boolean))];
+  return u.length ? u.join(" + ") : (lane === "test" ? "Tests" : "Optimizations");
+}
+/* Why the backtest machine is not starting another test right now (its slot service's own words). */
+function slotsWaitNote(){
+  const bits = Object.entries(BTSLOTS || {}).filter(([m, st]) => st && st.why && !/no backtest slots/.test(st.why))
+    .map(([m, st]) => `<b>${esc(m)}</b> runs ${st.running} test${st.running === 1 ? "" : "s"} \u2014 ${
+      esc(String(st.why).replace(/ -- /g, " \u2014 "))}`);
+  return bits.length ? `<div class="notebody">${bits.join("<br>")}</div>` : "";
 }
 
 /* ---------- A QUEUED JOB (2026-09-23) ---------- see queue_preview.py */
@@ -5250,7 +5329,7 @@ function jobRow(j){
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
         <span class="hb">
-          <span class="jtop">${copyTag(j.copy)}<span class="hname">${esc(j.title)}</span>` +
+          <span class="jtop">${copyTag(j.copy)}${slotTag(j.slot)}<span class="hname">${esc(j.title)}</span>` +
           (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
             `${esc(j.regime)}</span>` : "") +
           (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
@@ -5282,10 +5361,14 @@ function renderJobList(){
   const note = queueNote(jobs.filter(isQ).length) + moreSeedsNote();
   let out = "", section = null;
   if(at < 0) out += note;
+  const laned = sec => sec === "Running now" || sec === "Queued up next" || sec === "Queued after that";
   jobs.forEach((j, i) => {
-    if(j.section !== section){
-      section = j.section;
-      out += '<div class="section-label">' + esc(section) + '</div>';
+    const key = j.section + (laned(j.section) ? "|" + (j.lane || "opt") : "");
+    if(key !== section){
+      section = key;
+      out += '<div class="section-label">' + esc(j.section) +
+        (laned(j.section) ? " \u2014 " + esc(laneName(j.lane || "opt")) : "") + '</div>';
+      if(j.lane === "test" && j.section === "Queued up next") out += slotsWaitNote();
     }
     out += jobRow(j);
     if(i === at) out += note;
@@ -8964,6 +9047,7 @@ let SETTINGS_STATE = {bucket_priority: {mode: "off",
                                         focus_pct: 80, top_n: 3},
                       lease_extensions: {}};
 let LEASES = [];
+let BTSLOTS = {};
 let BUCKET_SHARES = [];
 
 /* 2026-10-05 -- NO SCHEDULE IS LOUD. Trevor: *"If the schedule ends, fall back to
@@ -9858,8 +9942,20 @@ function renderInProgressJob(key){
           has finished yet — each one opens here as soon as it does.</div></div></div>`);
 }
 
+/* 2026-10-17 -- THE RUNNING JOB BEHIND A "NOT FINISHED" CARD (Trevor: "If I click on the job in the results tab. When
+   it's labeled not finished. I want to click it and it opens the same job tab that the active tab opens."): the
+   Active tab's job for the machine running this round, when one is (its id), else null -- an owed reading or a pick
+   waiting on you has no running job, and its card keeps opening what it always did. */
+function ipActiveJob(it){
+  if(!it || !it.machine) return null;
+  const id = "m:" + it.machine;
+  return jobsModel().some(j => j.id === id && j.section === "Running now"
+                               && j.fleet && j.fleet.group_id === it.group_id) ? id : null;
+}
+
 function ipCard(it, inView){
   const rc = REGIME_CLASS[it.regime] || "";
+  const live = inView ? null : ipActiveJob(it);
   /* A FINISHED task's chip opens the job at that task; the rest are labels.
      In the job's own view the chips above the card do that, so none here. */
   const tasks = inView ? "" : (it.tasks || []).map((t, i) => ipDone(t)
@@ -9869,7 +9965,7 @@ function ipCard(it, inView){
       esc(TASK_MARK[t.status] || "·")} ${esc(phaseText(t.kind))}</span>`).join("");
   const form = it.awaiting_pick ? sendForm(Object.assign({}, it, {mode: "confirm"}))
     : it.changeable ? sendForm(Object.assign({}, it, {mode: "override"})) : "";
-  return `<article class="card">
+  return `<article class="card${live ? " iplive" : ""}"${live ? ` data-ipactive="${esc(live)}"` : ""}>
       <div class="stripe ${esc(rc)}"></div>
       <div class="card-in">
         <div class="top">
@@ -9877,6 +9973,7 @@ function ipCard(it, inView){
           ${bktEl(it.bucket_id, false, null, it.regime)}
           ${it.machine ? `<span class="chip gold">${esc(it.machine)}</span>` : ""}
           <span class="chip">NOT FINISHED</span>
+          ${live ? '<span class="sp"></span><span class="hcar">\u203a</span>' : ""}
         </div>
         <div>
           <div class="title">${esc(humanize(it.group_id))}</div>
@@ -14630,6 +14727,8 @@ function applySnapshot(d, source){
      snapshot from an older publisher, which leaves the badge saying so. */
   CURVES = Array.isArray(d.curves) ? d.curves : [];
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
+  /* 2026-10-17 -- each backtest machine's slot service: tests running, and why it did not start another. */
+  BTSLOTS = (d.backtest_slots && typeof d.backtest_slots === "object") ? d.backtest_slots : {};
   QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
   PICKS = Array.isArray(d.pending_picks) ? d.pending_picks : [];
   APP_PICKS = Array.isArray(d.app_picks) ? d.app_picks : [];
@@ -16023,6 +16122,17 @@ function repaintCards(){
      graph under your thumb. */
   syncStuck();
 }
+
+/* 2026-10-17 -- a "not finished" card whose round is running: the whole card opens that job on the Active tab, the
+   view the Active tab itself opens. Its own buttons (a finished task's chip, the pass form) keep their jobs. */
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-ipactive]");
+  if(!c || e.target.closest("button, a, input, select, textarea, form, label")) return;
+  ACTIVE_JOB = c.dataset.ipactive;
+  go("active");
+  paintActive();
+  window.scrollTo(0, 0);
+});
 
 /* 2026-10-01 -- a running job's finished task, from its "not finished" card. */
 document.addEventListener("click", e => {
