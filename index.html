@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-232809";
+const APP_BUILD = "20261017-101719";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4160,7 +4160,7 @@ function renderResultsJob(r){
        seed explains why the whole job exists, so it does NOT change with the
        chip, the same rule the Information badge above it follows. Read off the
        first task for that reason, not off `tasks[open]`. */
-    roundWarnings(rep.warnings) +
+    roundWarnings(rep.warnings) + roundVerdicts(rep.verdicts) + roundPoints(tasks) +
     whyBadge(whyTask(tasks), r) +
     taskBadges(tasks, open, rep, {pass: r.picked_pass, style: r.picked_pass_style,
                                   key: {regime: r.regime, bucket_id: r.bucket_id, group_id: r.group_id,
@@ -4230,6 +4230,41 @@ function taskPanel(t, relDir, lift){
    the results tab has."* One function, so the two cannot drift. */
 function hasJobCard(r){
   return !!(r && r.reports && (r.reports.tasks || []).length);
+}
+
+/* 2026-10-17 -- VALUES PER SETTING, on every job. Trevor: "I didn't know G1 got switched to 2 variables each...
+   That definitely was an issue." The sweep's settings and how many values each was searched over; a GENETIC round
+   (over 400 combinations) with any setting under 11 is flagged, so a silent collapse like EXIT_G1's cannot hide. */
+function roundPoints(tasks){
+  const t = (tasks || []).find(x => x && !isBacktest(x) && x.detail && (x.detail.swept || []).some(s => s.points));
+  if(!t) return "";
+  const sw = t.detail.swept.filter(s => s && s.points);
+  const by = {};
+  sw.forEach(s => { by[s.points] = (by[s.points] || 0) + 1; });
+  const grid = sw.reduce((g, s) => g * s.points, 1);
+  const parts = Object.keys(by).map(Number).sort((a, b) => b - a)
+    .map(p => `${p} values \u00d7 ${by[p]} setting${by[p] === 1 ? "" : "s"}`);
+  const thin = grid > 400 ? sw.filter(s => s.points < 11) : [];
+  return `<div class="trk-note" style="margin:6px 0 2px">Values per setting: ${parts.join(" \u00b7 ")}</div>`
+    + (thin.length ? `<div class="inexact">\u26a0\ufe0f ${thin.length} setting${thin.length === 1 ? "" : "s"} searched on `
+      + `under 11 values in a genetic round: ${thin.map(s => esc(verdictName(s.name)) + " (" + s.points + ")").join(", ")}`
+      + ` \u2014 too few to search.</div>` : "");
+}
+
+/* 2026-10-17 -- WHAT THE ROUND'S TOP PASSES SAID ABOUT EACH VARIABLE (pass_cluster, via round_notes). Trevor: "we're
+   still taking variables out after finding a floating variable, and adding them back if we find a pinned one right?"
+   Pinned = the top passes piled against one end (the next round is centred there); floating = no preference (locked
+   now); clustered = they agree on a region (the next round is centred on it). */
+const VERDICT_WORDS = [["pinned_high", "pinned high (next round starts there)"],
+                       ["pinned_low", "pinned low (next round starts there)"],
+                       ["floating", "floating (locked now)"], ["clustered", "clustered"]];
+function verdictName(n){ return String(n).replace(/_(Bull|Bear|Range|Ranging)$/, "").replace(/_/g, " "); }
+function roundVerdicts(v){
+  const by = {};
+  Object.entries(v || {}).forEach(([n, d]) => { const k = (d || {}).verdict; if(k) (by[k] = by[k] || []).push(n); });
+  const parts = VERDICT_WORDS.filter(([k]) => by[k]).map(([k, w]) => k === "clustered"
+    ? `${w}: ${by[k].length}` : `${w}: ${by[k].map(verdictName).map(esc).join(", ")}`);
+  return parts.length ? `<div class="trk-note" style="margin:6px 0 2px">Top passes \u2014 ${parts.join(" \u00b7 ")}</div>` : "";
 }
 
 /* 2026-10-17 -- THE ROUND'S OWN WARNINGS (round_notes, via the snapshot): "only 3 passes survived the cadence band
@@ -9948,7 +9983,7 @@ function renderInProgressJob(key){
           esc(TASK_MARK.passed)} ${esc(phaseText(t.kind))}</button>`
       : `<span class="cchip wait">${esc(TASK_MARK[t.status] || "·")} ${
           esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
-  return back + chips + ipCard(it, true) + roundWarnings(tl.warnings) +
+  return back + chips + ipCard(it, true) + roundWarnings(tl.warnings) + roundVerdicts(tl.verdicts) + roundPoints(tasks) +
     (open >= 0
       ? whyBadge(whyTask(tasks), it) + taskBadges(tasks, open, rep,
           {pass: it.applied_pass, style: it.applied_pass_style,
