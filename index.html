@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-224421";
+const APP_BUILD = "20261016-231332";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1952,6 +1952,7 @@ let PICKS = [];
 let AGENTEFF = {};
 let FAHIST = null;   // 2026-10-06 -- fleet_agents_history, see fleetAgentBars
 let EFF = null;      // 2026-10-06 -- efficiency, see renderEfficiency
+let EFFMODEL = null; // 2026-10-17 -- d.efficiency_model, see effModelCard
 let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
 /* 2026-09-30 -- GOLDbot's books, from the Laptop (fleet_api /finance). MEMORY
    ONLY: never localStorage, never the snapshot. See renderFinance. */
@@ -4415,17 +4416,16 @@ function fleetAgents(){
      Efficiency page and its history use. Below is the older agents rule, for a
      snapshot from a publisher that predates it. */
   const c = EFF && EFF.now && EFF.now.Combined;
-  /* 2026-10-16 -- PLUS THE BACKTESTS NO BEACON COUNTS: a slot's test or a pool part ("0 of 12 working" while the
-     Laptop ran three). One core each -- a single test runs on one. */
-  const extra = leaseTasks().length
-    + SEEDS.filter(sd => executingSeed(sd) && String(sd.claimed_by || "").includes("~")).length;
+  /* 2026-10-17 -- THE OPTIMIZATION BOX ONLY. The backtests this once added in (10-16: "0 of 12 working" while the
+     Laptop ran three) are their own line now (backtestLines) -- Trevor: "We actually should take Laptop's core's out
+     of the efficiency setup. It's only doing backtests." */
   if(c) return (c.cores || (c.unmeasured || []).length)
-    ? {busy: Math.min((c.busy || 0) + extra, c.cores || Infinity), avail: c.cores || 0,
+    ? {busy: Math.min(c.busy || 0, c.cores || Infinity), avail: c.cores || 0,
        unmeasured: c.unmeasured || []} : null;
   let busy = 0, avail = 0;
   const unmeasured = [];
   for(const f of FLEET){
-    if(stale(f)) continue;
+    if(stale(f) || isAgent(f)) continue;
     const a = f.agents_local;
     if(a && a.used && a.source === "cpu"){ busy += a.busy || 0; avail += a.used; }
     else if(f.phase) unmeasured.push(f.machine);
@@ -12840,16 +12840,139 @@ document.addEventListener("contextmenu", e => {
   if(e.target.closest && e.target.closest("svg[data-effsvg]")) e.preventDefault();
 });
 
+/* 2026-10-17 -- THE TESTS MACHINE'S LINE, APART FROM EFFICIENCY. Trevor: *"We actually should take Laptop's core's
+   out of the efficiency setup. It's only doing backtests. its the optimizations that are the time consumer and it
+   needs to be efficient."* Efficiency counts the optimization box only (app_snapshot.serves_another_box); a machine
+   that serves another box shows its running tests here instead (its beacon's own count: its job's test + its slots). */
+function backtestLines(){
+  const bt = (EFF && EFF.backtests_running) || {};
+  return Object.keys(bt).sort().map(m => `${esc(m)} backtests: <b>${esc(String(bt[m]))}</b> running`);
+}
+function effLeftOutNote(){
+  const out = (EFF && EFF.left_out) || [];
+  const bt = backtestLines();
+  if(!out.length && !bt.length) return "";
+  const one = out.length === 1;
+  return '<div class="trk-note" style="margin:4px 2px 0">'
+    + (out.length ? `Optimization cores only: ${esc(out.join(", "))} ${one ? "runs" : "run"} backtests and ${
+        one ? "is" : "are"} left out of every figure here. ` : "")
+    + bt.join(" · ") + '</div>';
+}
+
+/* 2026-10-17 -- THE EFFICIENCY MODEL (app_snapshot.collect_efficiency_model: efficiency_model + efficiency_planner,
+   the box's own). The last 24 h scored the way Trevor steers -- cores doing work, minutes over 5 idle agents, starts a
+   rule held back while agents sat idle, minutes held for RAM -- each running round's predicted length and what it
+   stands on, how the past predictions did, how many rounds at once keep the pool busy, and the planner's advice.
+   Advice only: nothing on these cards changes a setting. */
+const effSigned = x => x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(1);
+const effCopyOf = m => { const t = String(m || "").split("-").pop(); return /^[A-Z]$/.test(t) ? t : "A"; };
+function effModelCard(){
+  const M = EFFMODEL;
+  if(!M) return "";
+  const s = M.score || {};
+  let out = `<div class="section-label" style="margin-top:12px">${esc(M.box || "")} · what the model sees</div>`
+    + '<div class="card"><div class="card-in">';
+  out += s.minutes
+    ? trkKv([["Cores doing work, 24 h", trkPct(s.core_use)],
+             [`Over ${M.idle_limit} idle agents`, `${s.minutes_over_idle_limit} min · ${trkPct(s.share_over_idle_limit)}`],
+             ["Missed starts", `${s.missed_start_minutes} min`],
+             ["Held for RAM", `${s.ram_bound_minutes} min`],
+             ["Idle agents, average", s.idle_agents_avg]])
+      + `<div class="trk-note">Over ${s.minutes} minutes recorded. Missed starts = minutes a rule held a copy back `
+      + `while more than ${M.idle_limit} agents sat idle; held for RAM = a copy waiting on RAM while cores sat idle.</div>`
+    : '<div class="trk-note">No minutes recorded yet — the box broker writes one a minute once copy A runs the '
+      + 'recorder.</div>';
+  const t = M.trays_needed || {};
+  out += trkKv([[`Rounds at once for ${M.pool_ceiling} agents`, t.rounds != null ? t.rounds : "—"]])
+    + (t.basis ? `<div class="trk-note">${esc(t.basis)}</div>` : "");
+  const f = M.forecast;
+  if(f)
+    out += trkKv([[`Agents free in ${Math.round((f.horizon_s || 600) / 60)} min`,
+                   `~${Math.round(f.free_in)} (now ${f.free_now})`]])
+      + `<div class="trk-note">${esc((f.basis || []).join(", "))}</div>`;
+  const run = M.running || [];
+  if(run.length)
+    out += '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Copy</th><th>Done</th><th>Predicted</th>'
+      + '<th>Ends</th><th>Calibration</th></tr>' + run.map(r =>
+        `<tr><td>${copyTag(r.copy)}</td><td>${r.pct != null ? Math.round(r.pct) + "%" : "—"}</td>`
+        + `<td>${r.wall_s ? esc(hm(r.wall_s)) + (r.low_s && r.high_s
+            ? ` <span class="dim">(${esc(hm(r.low_s))}–${esc(hm(r.high_s))})</span>` : "") : "—"}</td>`
+        + `<td class="dim">${r.since && r.wall_s ? esc(fmtWhen(r.since + r.wall_s)) : "—"}</td>`
+        + `<td class="dim">${r.calibrated_from ? "×" + esc(String(r.calibration)) + " from " + r.calibrated_from
+            : "not yet"}</td></tr>`
+        + (r.basis ? `<tr><td></td><td colspan="4" class="dim" style="white-space:normal;font-size:11px">${
+            esc(r.basis)}</td></tr>` : "")).join("")
+      + '</table></div>';
+  else if(s.minutes)
+    out += `<div class="trk-note">${M.fresh ? "No round running right now." : "The box's last row is old — "
+      + "no round is read as running."}</div>`;
+  out += '</div></div>';
+
+  const tr = M.track_record || [];
+  out += '<div class="section-label" style="margin-top:12px">How its predictions did</div>'
+    + '<div class="card"><div class="card-in">' + (tr.length
+      ? '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Copy</th><th>Finished</th><th>Predicted</th>'
+        + '<th>Took</th><th>vs</th></tr>' + tr.map(r => {
+          const off = r.vs != null && (r.vs < 0.8 || r.vs > 1.25);
+          return `<tr><td>${copyTag(r.copy)}</td><td class="dim">${esc(fmtWhen(r.at))}</td>`
+            + `<td>${r.wall_s ? esc(hm(r.wall_s)) : "—"}</td><td>${r.actual_s ? esc(hm(r.actual_s)) : "—"}</td>`
+            + `<td class="${off ? "bad" : ""}">${r.vs != null ? r.vs.toFixed(2) + "×" : esc(r.outcome || "—")}`
+            + `${r.late ? ' <span class="dim">late</span>' : ""}</td></tr>`;
+        }).join("") + '</table></div>'
+        + '<div class="trk-note">Each round is predicted when it starts and closed when it ends; a class that keeps '
+        + 'missing corrects itself (its calibration). "late" = first predicted over 10 min into its round, so it '
+        + 'does not count toward calibration.</div>'
+      : '<div class="trk-note">No round has finished under the model yet.</div>') + '</div></div>';
+
+  const P = M.planner;
+  out += '<div class="section-label" style="margin-top:12px">Planner advice</div><div class="card"><div class="card-in">';
+  if(!P){
+    out += '<div class="trk-note">No plan yet — the planner runs every 10 minutes once the box broker calls it.</div>';
+  } else {
+    out += trkKv([[`Best for the next ${hm(P.horizon_s || 7200)}`, P.best_label || P.best || "—"],
+                  ["Gain over today's rules", P.gain_best_vs_rules != null
+                    ? effSigned(P.gain_best_vs_rules) + " core-hours" : "—"],
+                  ["Planned", fmtWhen(P.at)]]);
+    const ranked = P.ranked || [];
+    out += ranked.length
+      ? '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Policy</th><th>Core-hours</th><th>vs rules</th>'
+        + '<th>Starts</th></tr>' + ranked.map(x =>
+          `<tr><td style="white-space:normal">${esc(x.label || x.policy)}</td><td>${x.core_hours != null ? esc(Number(x.core_hours).toFixed(1)) : "—"}</td>`
+          + `<td>${esc(effSigned(x.vs_rules))}</td><td class="dim">${esc((x.starts || []).map(st =>
+              effCopyOf(st.copy) + (st.at_s != null && P.at ? " +" + dur(Math.max(0, st.at_s - P.at)) : "")).join(", ")
+              || "none")}</td></tr>`).join("") + '</table></div>'
+      : '<div class="trk-note">This plan was recorded before the planner kept its full ranking.</div>';
+    const ph = P.physics || {}, b = ph.basis || {};
+    out += `<div class="trk-note">Stands on: spin-up ${ph.spin_up_s != null ? esc(hm(ph.spin_up_s)) : "—"} `
+      + `(${esc(b.spin_up || "not recorded")}) · hand-over ${ph.reload_s != null ? esc(hm(ph.reload_s)) : "—"} `
+      + `(${esc(b.reload || "not recorded")}) · bias ×${esc(String(P.bias))} `
+      + `(${P.bias_n ? P.bias_n + " settled plan" + (P.bias_n === 1 ? "" : "s") : "none settled yet"}).</div>`;
+    const st = P.settled || [];
+    if(st.length)
+      out += '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Planned</th><th>Expected</th><th>Measured</th>'
+        + '<th>Ratio</th></tr>' + st.map(r =>
+          `<tr><td class="dim">${esc(fmtWhen(r.at))}</td><td>${r.expected != null ? esc(Number(r.expected).toFixed(1)) : "—"}</td>`
+          + `<td>${r.measured != null ? esc(Number(r.measured).toFixed(1)) : "—"}</td>`
+          + `<td>${r.ratio != null ? esc(Number(r.ratio).toFixed(2)) + "×" : "—"}</td></tr>`).join("") + '</table></div>'
+        + '<div class="trk-note">Expected = what today\'s rules were predicted to do over the plan\'s horizon; '
+        + 'measured = what the cores really did.</div>';
+    out += '<div class="trk-note">Advice only — nothing here changes a setting.</div>';
+  }
+  return out + '</div></div>';
+}
+
 function renderEfficiency(){
   const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
   if(!EFF || !EFF.now)
     return '<div class="home">' + back + '<div class="card"><div class="card-in">' +
       '<div class="trk-note">This snapshot has no efficiency data yet — it arrives with the ' +
-      'publisher that records it.</div></div></div></div>';
+      'publisher that records it.</div></div></div>' + effModelCard() + '</div>';
   const names = [EFF_COMBINED, ...effMachines()];
   return '<div class="home">' + back
     + '<div class="section-label">Machines</div>'
     + names.map(effRow).join("")
+    + effLeftOutNote()
+    + effModelCard()
     + '<div class="section-label" style="margin-top:12px">History</div>'
     + '<div class="card"><div class="card-in">'
     + `<div class="effseg"><button type="button" data-effmetric="pct" aria-pressed="${EFF_METRIC === "pct"}">Efficiency</button>`
@@ -14536,7 +14659,8 @@ function paint(stamp){
   hag.hidden = !fa;
   if(fa) hag.innerHTML = (fa.avail ? `Cores: <b>${fa.busy}</b> of ${fa.avail} working (${
     Math.round(100 * fa.busy / fa.avail)}%)` : "Agents: none measured")
-    + (fa.unmeasured.length ? ` · not measured yet: ${esc(fa.unmeasured.join(", "))}` : "");
+    + (fa.unmeasured.length ? ` · not measured yet: ${esc(fa.unmeasured.join(", "))}` : "")
+    + backtestLines().map(l => " · " + l).join("");
   document.getElementById("hagbars").innerHTML = fleetAgentBars();
   document.getElementById("banner").hidden = true;
   paintNoSchedule();
@@ -14706,6 +14830,7 @@ function applySnapshot(d, source){
   AGENTEFF = d.agent_efficiency || {};
   FAHIST = d.fleet_agents_history || null;
   EFF = d.efficiency || null;
+  EFFMODEL = (d.efficiency_model && typeof d.efficiency_model === "object") ? d.efficiency_model : null;
   TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
