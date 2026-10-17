@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-231332";
+const APP_BUILD = "20261016-232809";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3637,7 +3637,7 @@ function boxLetters(f, n){
   const ls = ids.map(id => id === box ? "A" : String(id).slice(String(box).length + 1)).filter(Boolean);
   return ls.length > 1 ? " (" + ls.join(" + ") + ")" : "";
 }
-function boxPanel(f){
+function boxPanel(f, own = f){
   const p = f.pool || {};
   const n = (EFF && EFF.now && EFF.now[f.machine]) || {};
   const cores = n.cores || f.cores, plan = n.planned || null, denom = plan || cores;
@@ -3673,13 +3673,18 @@ function boxPanel(f){
     + (p.needs_grant ? `<div class="agnote warn">The broker cannot restart agents on this box — `
                        + `its one-time service grant is missing.</div>` : "");
   /* this copy's job first (copyLine), then the box -- no copy badge on the box's line: it is all of them */
-  return `<div>${f.copy ? copyLine(f) : ""}<div class="agline box"><span>${head}</span></div>`
+  return `<div>${own.copy ? copyLine(own) : ""}<div class="agline box"><span>${head}</span></div>`
     + (p.fresh ? poolStrip(p) : "") + pool + broker + lendersPanel(f) + `</div>`;
 }
-/* A copy that is not its box: what ITS job is using (copyLine). The box is measured once, on the box's card. */
+/* A copy that is not its box: what ITS job is using (copyLine), then the box's cores, pool and broker -- the same
+   block copy A's job shows. 2026-10-17, Trevor: "Why is the first job the only one that gives me the core info? They
+   all need that core info with them. even if only 1 core is working for it." The box's pool rides on copy A's entry,
+   so the block is read from there; a box not reporting falls back to the copy's own line. */
 function copyPanel(f){
+  const box = FLEET.find(o => o.machine === f.box && o.pool);
+  if(box) return boxPanel(box, f);
   return `<div>${copyLine(f)}`
-    + `<div class="agnote">The whole box's total is on the ${esc(f.box)} card.</div></div>`;
+    + `<div class="agnote">The box's total is not reporting right now.</div></div>`;
 }
 function agentsPanel(f){
   if(f && f.pool) return boxPanel(f);
@@ -12840,6 +12845,39 @@ document.addEventListener("contextmenu", e => {
   if(e.target.closest && e.target.closest("svg[data-effsvg]")) e.preventDefault();
 });
 
+/* 2026-10-17 -- THE EFFICIENCY MACHINE'S CHOICES (app_snapshot._tuner_state; efficiency_planner.Decisions). Trevor:
+   *"Both of these questions should be an answer from the efficiency machine ... Figure it out"* -- *"Act now"*. What it
+   has chosen over the box's own settings (A-first, the idle cores that start a round, the RAM a start needs), its last
+   change and why. A setting it has not chosen is the box's own. */
+const TUNER_NAMES = {letter_priority: "A-first", start_cores: "Start a round at", start_ram_gb: "RAM a start needs"};
+function tunerValue(k, v){
+  if(k === "letter_priority") return v ? "on" : "off";
+  if(k === "start_cores") return `${v} idle cores`;
+  if(k === "start_ram_gb") return `${v} GB`;
+  return String(v);
+}
+function tunerCard(T){
+  if(!T) return "";
+  let out = '<div class="section-label" style="margin-top:12px">The efficiency machine\'s choices</div>'
+    + '<div class="card"><div class="card-in">';
+  if(!T.on){
+    out += '<div class="trk-note">Off — the box config says efficiency_autotune: false, so the box runs its own '
+      + 'settings.</div>';
+  } else {
+    out += trkKv(Object.keys(TUNER_NAMES).map(k => [TUNER_NAMES[k],
+      (T.active || {})[k] != null ? tunerValue(k, T.active[k]) + " (its choice)" : "the box's own setting"]));
+    const L = T.last;
+    out += L
+      ? `<div class="trk-note">Last change ${esc(fmtWhen(L.at))}: ${esc(Object.entries(L.change || {}).map(([k, v]) =>
+          `${TUNER_NAMES[k] || k}: ${(L.from || {})[k] == null ? "the box's own" : tunerValue(k, L.from[k])} → ${
+            tunerValue(k, v)}`).join(", "))} — `
+        + `${esc(L.why || "")}. ${T.changes} change${T.changes === 1 ? "" : "s"} so far.</div>`
+      : '<div class="trk-note">No change yet. It moves one setting at a time, only when 5 of its last 6 plans agree '
+        + 'the change gains at least 2% core-hours, then holds it 4 h.</div>';
+  }
+  return out + '</div></div>';
+}
+
 /* 2026-10-17 -- THE TESTS MACHINE'S LINE, APART FROM EFFICIENCY. Trevor: *"We actually should take Laptop's core's
    out of the efficiency setup. It's only doing backtests. its the optimizations that are the time consumer and it
    needs to be efficient."* Efficiency counts the optimization box only (app_snapshot.serves_another_box); a machine
@@ -12956,9 +12994,9 @@ function effModelCard(){
           + `<td>${r.ratio != null ? esc(Number(r.ratio).toFixed(2)) + "×" : "—"}</td></tr>`).join("") + '</table></div>'
         + '<div class="trk-note">Expected = what today\'s rules were predicted to do over the plan\'s horizon; '
         + 'measured = what the cores really did.</div>';
-    out += '<div class="trk-note">Advice only — nothing here changes a setting.</div>';
+    out += '<div class="trk-note">Advice only — what the box acts on is the efficiency machine\'s choices, below.</div>';
   }
-  return out + '</div></div>';
+  return out + '</div></div>' + tunerCard(M.tuner);
 }
 
 function renderEfficiency(){
