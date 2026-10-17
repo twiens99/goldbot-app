@@ -1925,7 +1925,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-143519";
+const APP_BUILD = "20261016-182229";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3107,11 +3107,21 @@ let RUN_CONTROL = {};
 
 /* The engine's ladders, not this card's -- machine_capabilities.TIERS and
    compute_mode.MODE_LABELS, shown whole with the current rung marked. */
+/* 2026-10-17 -- the engine's four rungs (machine_capabilities.TIERS / TIER_LABELS). This list predated the 10-15
+   Unlimited rung, so every T7910 copy read "has not reported a tier"; ohlc_only became agent_only on 09-21. */
 const OPS_TIERS = [
+  ["realtick_unlimited", "Unlimited", "real ticks, no pass limit (takes every group)"],
   ["realtick_20000", "Heavy", "real ticks, up to 20,000 passes"],
   ["realtick_8000", "Regular", "real ticks, up to 8,000 passes"],
-  ["ohlc_only", "No real ticks", "takes no real-tick work at all"],
+  ["agent_only", "Agent only", "lends its cores, runs no rounds of its own"],
 ];
+/* 2026-10-17 -- a setting the machine reports: its beacon row first, else what its tray last reported in
+   machine_settings (the beacon carries the tier, never the compute mode -- every card said "not reporting"). */
+function opsSetting(f, key){
+  if(f && f[key] != null && f[key] !== "") return f[key];
+  const ms = (MACHINE_SETTINGS || {})[f && f.machine];
+  return ms && ms.settings ? ms.settings[key] : null;
+}
 const OPS_COMPUTE = [
   ["full", "Full", "all cores, normal priority"],
   ["background", "Background", "all cores, idle priority"],
@@ -3353,13 +3363,13 @@ function opsBadge(f){
         own tray within a few seconds, and its answer shows here.</div>
 
       <div class="opsh">This machine</div>
-      ${opsLadder(OPS_TIERS, f.tier, "This machine has not reported a tier.")}
+      ${opsLadder(OPS_TIERS, opsSetting(f, "tier"), "This machine has not reported a tier.")}
       <div class="opsnote">The ceiling on a real-tick sweep. A property of the
         machine, not of the round \u2014 the scheduler reads it when deciding what
         this one may be given.</div>
 
       <div class="opsh">Compute</div>
-      ${opsLadder(OPS_COMPUTE, f.compute_mode,
+      ${opsLadder(OPS_COMPUTE, opsSetting(f, "compute_mode"),
                   "This machine is not reporting its compute mode yet.")}
       <div class="opsnote">Applied to the running processes, never written into
         MT5 \u2014 reversible in one tap, and the round is unaffected either way.</div>
@@ -4660,6 +4670,9 @@ const sweeping = f => /^OPTIM/.test(String(f.phase || "").toUpperCase())
 /* [machine, cores, shared] -- what this task is using right now. */
 function taskCores(f){
   const host = f.box || f.machine;
+  /* 2026-10-17 -- a copy of a box names its letter ("T7910 C"), the letter the box reports (copyLine's badge):
+     three copies on the T7910 all read "T7910" before. */
+  const self = f.box && f.copy ? f.box + " " + f.copy : host;
   const out = [];
   const add = (m, n, shared) => {
     n = Number(n) || 0;
@@ -4667,12 +4680,12 @@ function taskCores(f){
     const row = out.find(x => x[0] === m && x[2] === !!shared);
     if(row) row[1] += n; else out.push([m, n, !!shared]);
   };
-  if(!sweeping(f)){ add(host, 1); return out; }                       // a backtest: one core, its own terminal
+  if(!sweeping(f)){ add(self, 1); return out; }                       // a backtest: one core, its own terminal
   const a = f.agents_local || {};
-  add(host, a.source === "cpu" ? a.busy : 0);                       // its terminal's own agent
+  add(self, a.source === "cpu" ? a.busy : 0);                       // its terminal's own agent
   const p = f.pool;
   const b = p && p.fresh && p.by_copy ? p.by_copy[f.copy || "A"] : null;
-  add(host, b ? b.busy : f.pool_busy);                              // its share of the box's pool
+  add(self, b ? b.busy : f.pool_busy);                              // its share of the box's pool
   /* Lenders serve the box's sweep. Two copies sweeping at once share them, and nothing published says which copy
      holds which lent agent -- so they are named on both as shared and counted in neither total. */
   const sweepers = FLEET.filter(o => (o.box || o.machine) === host && !stale(o) && running(o) && sweeping(o));
