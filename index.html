@@ -762,6 +762,12 @@ button.chip[disabled]{opacity:.4;cursor:default;}
   min-width:58px;text-align:center;
 }
 .tvr.coarse{color:#C8B78A;border-color:rgba(224,180,87,.30);}
+/* 2026-10-17 -- [15 VALUES]: how many values a round searches a setting over (Trevor: "The variable count can be a
+   chip style"); red when a genetic round leaves it under 11. */
+.tvc{font-size:.58rem;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:4px;white-space:nowrap;
+  font-family:"Archivo","Segoe UI",system-ui,sans-serif;color:#C8B78A;border:1px solid rgba(224,180,87,.30);}
+.tvc.warn{color:var(--bad);border-color:rgba(224,104,90,.55);}
+.tvrange{font-size:.68rem;color:var(--dim);white-space:nowrap;}
 .tvr.full{color:var(--dim);}
 /* 🔴 THE SWEEP'S FINENESS CHIP IS READ, NOT SCANNED. Trevor, 2026-09-17: *"the
    steps and resolutions is hard to read. it's not bright enough. too close to
@@ -1937,7 +1943,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261017-101719";
+const APP_BUILD = "20261017-145414";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5250,10 +5256,11 @@ function queueCard(q){
       ? "A narrow seed: only the ticked variables are swept; the rest of the group "
         + "is held where it is."
       : "Seeded work — it cuts ahead of the schedule.";
-  const rows = sw
+  const qplan = q.plan ? roundPlan({regime: q.regime, bucket_id: q.bucket_id, group_id: q.group_id}) : null;
+  const rows = queuePlanLine(q) + (sw
     ? sweepVars(q.variables, sw.map(v => ({name: v.name, resolution: v.resolution}))
-        .concat(q.rider ? [{name: q.rider.variable, rider: true, points: q.rider.points}] : []))
-    : taskVars(q.variables || []);
+        .concat(q.rider ? [{name: q.rider.variable, rider: true, points: q.rider.points}] : []), null, qplan)
+    : taskVars(q.variables || [], null, qplan));
   return `<article class="card">
       <div class="stripe ${rc}"></div>
       <div class="card-in">
@@ -8193,8 +8200,18 @@ function stateChip(v){
    that predates the record are flagged so stateChip draws "not recorded". */
 function taskRows(d){
   const unrec = (d || {}).states_at === "unrecorded";
-  return ((d || {}).variables || []).map(v =>
-    unrec && v && !v.state && v.swept !== false ? Object.assign({unrec: true}, v) : v);
+  /* 2026-10-17 -- each row carries the values its round searched it over (the task's record), and `thin` when a
+     genetic round (over 400 combinations) left it under 11 -- the [15 VALUES] chip. */
+  const pts = {};
+  ((d || {}).swept || []).forEach(x => { if(x && x.name && x.points) pts[x.name] = x.points; });
+  const grid = Object.values(pts).reduce((g, n) => g * n, 1);
+  const genetic = Object.keys(pts).length > 0 && grid > 400;
+  return ((d || {}).variables || []).map(v => {
+    let row = unrec && v && !v.state && v.swept !== false ? Object.assign({unrec: true}, v) : v;
+    if(row && pts[row.name] && !row.points)
+      row = Object.assign({}, row, {points: pts[row.name], thin: genetic && pts[row.name] < 11});
+    return row;
+  });
 }
 function statesAtNote(d){
   const at = (d || {}).states_at;
@@ -8235,13 +8252,74 @@ function taskStateKey(list){
     `<span class="tkt">${esc(STATE_TEXT[st])}</span></div>`).join("");
 }
 
-function taskVars(list, hist){
+/* 2026-10-17 -- EACH SETTING'S VALUES AND RANGE, on the queued and the live job. Trevor: "Let's add variable count
+   and range to the queued up jobs" -- "The variable count can be a chip style" -- "You can also put that same chip in
+   the live job." The COUNT rides the snapshot (queue_preview's plan, the task's record); the RANGE is values, so it
+   comes over the tailnet like round_values (fleet_api /round_plan, round_values.plan_for): the running round's own
+   .set, or the round a queued job would run if it started now. */
+const ROUND_PLAN = {};
+function roundPlan(k){
+  if(!k || !k.regime || k.bucket_id == null || !k.group_id) return null;
+  const key = [k.regime, k.bucket_id, k.group_id].join("|");
+  const hit = ROUND_PLAN[key];
+  if(hit && (hit.loading || Date.now() - hit.at < 300000)) return hit;
+  const base = apiBase();
+  if(!base) return (ROUND_PLAN[key] = {at: Date.now(), vars: []});
+  ROUND_PLAN[key] = {at: Date.now(), loading: true, vars: []};
+  fetch(base + "/round_plan/" + [k.regime, k.bucket_id, k.group_id].map(encodeURIComponent).join("/"),
+        {cache: "no-store"})
+    .then(r => r.json().catch(() => ({})).then(j => ({ok: r.ok, j: j})))
+    .then(x => { ROUND_PLAN[key] = Object.assign({at: Date.now(), vars: []}, x.ok ? x.j : {}); roundPlanRepaint(); })
+    .catch(() => { ROUND_PLAN[key] = {at: Date.now(), vars: []}; });
+  return ROUND_PLAN[key];
+}
+function roundPlanRepaint(){
+  const a = document.getElementById("page-active");
+  if(a && a.innerHTML) a.innerHTML = renderActive();
+  roundValsRepaint();
+}
+function planMap(plan){
+  const m = {};
+  ((plan && plan.vars) || []).forEach(x => { if(x && x.name) m[x.name] = x; });
+  return m;
+}
+function relKey(relDir){
+  const p = String(relDir || "").split("/").filter(Boolean);
+  return p.length >= 4 ? {regime: p[p.length - 4], bucket_id: p[p.length - 3], group_id: p[p.length - 2]} : null;
+}
+function valuesChip(n, thin){
+  return n ? `<span class="tvc${thin ? " warn" : ""}" title="${thin
+    ? "Under 11 values in a genetic round -- too few to search" : "Values this round searches the setting over"}">${
+    esc(String(n))} VALUES</span>` : "";
+}
+function planRangeText(x){
+  if(!x || x.lo == null || x.hi == null) return "";
+  const step = x.step != null && x.points > 1 ? ` (${num(x.step)} steps)` : "";
+  return `<span class="tvrange">${esc(valText(x.lo))} \u2013 ${esc(valText(x.hi))}${esc(step)}${
+    x.now != null ? " \u00b7 now " + esc(valText(x.now)) : ""}</span>`;
+}
+/* The queued job's header: "10 settings · 15 values each · ~4.7e11 combinations", and the under-11 warning. */
+function queuePlanLine(q){
+  const pl = (q || {}).plan;
+  if(!pl || !pl.settings) return "";
+  const pts = pl.points || [];
+  const each = pts.length === 1 ? `${pts[0]} values each` : `${pts.join(" / ")} values`;
+  const g = pl.grid ? (pl.grid >= 1e6 ? "~" + Number(pl.grid).toExponential(1) : Number(pl.grid).toLocaleString()) : "";
+  const thin = (q.variables || []).filter(v => v && v.thin);
+  return `<div class="trk-note" style="margin:2px 0 6px">${pl.settings} setting${pl.settings === 1 ? "" : "s"} \u00b7 ${
+    esc(each)}${g ? " \u00b7 " + esc(g) + " combinations" : ""}${pl.genetic ? " (genetic)" : ""}</div>`
+    + (thin.length ? `<div class="inexact">\u26a0\ufe0f ${thin.length} setting${thin.length === 1 ? "" : "s"} under 11 `
+      + `values in a genetic round \u2014 too few to search.</div>` : "");
+}
+
+function taskVars(list, hist, plan){
   if(!(list || []).length) return "";
   /* A finished sweep lists its whole group now; when some rows are HELD, the
      swept ones carry the same tick the sweep badge uses. A live list has no
      `swept` field and renders exactly as before. */
   const mark = list.some(x => x && x.swept === false);
-  return list.map(v => `<div class="tvar${mark && v.swept === false ? " isheld" : ""}">` +
+  const pm = planMap(plan);
+  return list.map(v => `<div class="tvar${mark && v.swept === false ? " isheld" : ""}" style="flex-wrap:wrap">` +
       (mark && v.swept ? `<span class="tmem in" style="margin-right:2px">✓</span>` : "") +
       /* WITH a history to draw, the name is a button; without one it is the
          same text it always was. `hist` is absent everywhere except the job
@@ -8253,10 +8331,12 @@ function taskVars(list, hist){
           ` data-vh="${esc(v.name)}">${esc(spaceOut(stripRegime(v.name)))}</button>`
         : `<span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>`) +
       stateChip(v) +
+      valuesChip(v.points || (pm[v.name] || {}).points, v.thin) +
       /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
          otherwise pull the state chip right and break the column. */
       `<span class="tvr ${stateClass(v.resolution)}">${
          v.resolution ? esc(v.resolution) : "—"}</span>` +
+      planRangeText(pm[v.name]) +
       `</div>`).join("");
 }
 
@@ -8497,7 +8577,8 @@ function roundValsRepaint(){
 }
 const valText = v => (typeof v === "number" ? num(v) : (v == null ? "–" : String(v)));
 
-function sweepVars(all, swept, vals){
+function sweepVars(all, swept, vals, plan){
+  const pm = planMap(plan);
   const vmap = {};
   ((vals && vals.vars) || []).forEach(x => { if(x && x.name) vmap[x.name] = x; });
   const grid = {};
@@ -8530,8 +8611,8 @@ function sweepVars(all, swept, vals){
        count."* How many values this task swept the variable over -- a count,
        never a value. A seed's grid row already says it in `fine`; an onboarding
        sweep reads ONBOARD, since it spans the variable's whole range. */
-    const count = g && !hasGrid
-      ? (g.onboard ? "ONBOARD" : g.points ? "RANGE " + g.points : "") : "";
+    const count = g && !hasGrid && g.onboard && !g.points && !(by[name] || {}).points ? "ONBOARD" : "";
+    const nVals = !hasGrid ? ((g && g.points) || (by[name] || {}).points || (pm[name] || {}).points) : null;
     /* Swept, not the group's, and not declared a rider: say so loudly. */
     const stray = !!(g && !rider && !by[name]);
     /* THE TICK IS WHAT THIS TASK SWEPT. Trevor, 2026-09-23: *"Lets still have
@@ -8552,6 +8633,8 @@ function sweepVars(all, swept, vals){
       (range ? `<span class="tst grid">${range}</span>` : "") +
       (count ? `<span class="tvr" title="How many values this task swept it over">${
          esc(count)}</span>` : "") +
+      valuesChip(nVals, (by[name] || {}).thin) +
+      (!hasGrid ? planRangeText(pm[name]) : "") +
       (fine ? `<span class="tvr">${fine}</span>` : "") +
       /* A RIDER CARRIES NO STATE, and that absence is correct rather than
          missing data: DEFAULT/FLOATING/CENTER/PINNED/LOCKED describe a
@@ -8738,7 +8821,8 @@ function taskCard(r, relDir, open, skipGraph, lift){
     (d.variables || []).length && !lift
       ? `<div class="tsec"><div class="tlab">${esc(SWEPT_LABEL[d.swept_source]
             || "Variables")}</div>` + statesAtNote(d) +
-        taskVars(taskRows(d)) + taskStateKey(d.variables) + `</div>`
+        taskVars(taskRows(d), null, String(d.status || "").toLowerCase() === "running" && !isBacktest(r)
+                 ? roundPlan(relKey(relDir)) : null) + taskStateKey(d.variables) + `</div>`
       /* NOT DECIDED YET is a real answer and the only honest one for a queued
          sweep: a second pass takes whatever the first leaves PINNED, so its
          variable list does not exist until the first one finishes. */
