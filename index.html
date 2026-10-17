@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-215345";
+const APP_BUILD = "20261016-222311";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9956,9 +9956,22 @@ function ipActiveJob(it){
                                && j.fleet && j.fleet.group_id === it.group_id) ? id : null;
 }
 
+/* 2026-10-17 -- ITS RESULTS TABLE AS SOON AS THE SWEEP IS DONE (Trevor: "ok can we make it so that i can see that
+   table whether or not the bucket and fulltest is done or not?"). Once the job's optimization has finished, the card
+   opens the job's own results view at that task -- the pass table, the pass applied -- with the bucket and full test
+   marked running / owed above it; the Active view is only for a round still sweeping. Before this, a card whose bucket
+   test ran on the Laptop opened the Laptop's test on Active, and the table was only behind the small chip. */
+function ipSweepDone(it){
+  const ts = (it && it.tasks) || [];
+  const i = ts.findIndex(t => sweeping({phase: t.kind}) && t.status === "passed");
+  return i;
+}
+
 function ipCard(it, inView){
   const rc = REGIME_CLASS[it.regime] || "";
-  const live = inView ? null : ipActiveJob(it);
+  const swept = inView ? -1 : ipSweepDone(it);
+  const live = inView || swept >= 0 ? null : ipActiveJob(it);
+  const res = !inView && swept >= 0;
   /* A FINISHED task's chip opens the job at that task; the rest are labels.
      In the job's own view the chips above the card do that, so none here. */
   const tasks = inView ? "" : (it.tasks || []).map((t, i) => ipDone(t)
@@ -9968,7 +9981,8 @@ function ipCard(it, inView){
       esc(TASK_MARK[t.status] || "·")} ${esc(phaseText(t.kind))}</span>`).join("");
   const form = it.awaiting_pick ? sendForm(Object.assign({}, it, {mode: "confirm"}))
     : it.changeable ? sendForm(Object.assign({}, it, {mode: "override"})) : "";
-  return `<article class="card${live ? " iplive" : ""}"${live ? ` data-ipactive="${esc(live)}"` : ""}>
+  return `<article class="card${live || res ? " iplive" : ""}"${live ? ` data-ipactive="${esc(live)}"` : ""}${
+      res ? ` data-ipresults="${esc(ipKey(it))}" data-ipopen="${swept}"` : ""}>
       <div class="stripe ${esc(rc)}"></div>
       <div class="card-in">
         <div class="top">
@@ -9976,7 +9990,7 @@ function ipCard(it, inView){
           ${bktEl(it.bucket_id, false, null, it.regime)}
           ${it.machine ? `<span class="chip gold">${esc(it.machine)}</span>` : ""}
           <span class="chip">NOT FINISHED</span>
-          ${live ? '<span class="sp"></span><span class="hcar">\u203a</span>' : ""}
+          ${live || res ? '<span class="sp"></span><span class="hcar">\u203a</span>' : ""}
         </div>
         <div>
           <div class="title">${esc(humanize(it.group_id))}</div>
@@ -16134,6 +16148,18 @@ document.addEventListener("click", e => {
   ACTIVE_JOB = c.dataset.ipactive;
   go("active");
   paintActive();
+  window.scrollTo(0, 0);
+});
+
+/* 2026-10-17 -- a "not finished" card whose sweep is done: the whole card opens the job's results view at that
+   task (the pass table). Its own buttons keep their jobs. */
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-ipresults]");
+  if(!c || e.target.closest("button, a, input, select, textarea, form, label")) return;
+  RESULTS_FROM = null;
+  RESULTS_JOB = "ip:" + c.dataset.ipresults;
+  RESULTS_TASK_OPEN = Number(c.dataset.ipopen) || 0;
+  document.getElementById("page-results").innerHTML = renderResults();
   window.scrollTo(0, 0);
 });
 
