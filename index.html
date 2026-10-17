@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-211502";
+const APP_BUILD = "20261016-215345";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2395,8 +2395,11 @@ function waitWhy(f){
     return "waiting \u2014 " + (m ? `copy ${m[1]} goes first` : "a lower copy goes first");
   }
   if(w.kind === "priority"){
-    const m = /^(\S+)'s round can take more agents/.exec(r);
+    /* 2026-10-17 -- the gate's two priority reasons: an EARLIER copy's round, or a later one already near the end
+       (core_gate cut_in_pct): "T7910-C's round is 85% done -- it goes first". */
+    const m = /^(\S+)'s round (?:is (\d+)% done|can take more agents)/.exec(r);
     const who = m ? ((FLEET.find(o => o.machine === m[1]) || {}).copy || m[1]) : null;
+    if(who && m[2]) return `waiting \u2014 ${who}'s round is ${m[2]}% done, it goes first`;
     return "waiting \u2014 " + (who ? `${who}'s round takes the agents first` : "a running round takes the agents first");
   }
   if(w.kind === "settle") return "waiting \u2014 another copy just started";
