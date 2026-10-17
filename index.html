@@ -1943,7 +1943,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261017-145414";
+const APP_BUILD = "20261017-165424";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8186,6 +8186,15 @@ function stateChip(v){
                  : "+2σ or more -- the edge beat the value next to it; a second "
                    + "pass chases it.";
     }
+  }
+  /* 2026-10-17 -- TREVOR'S WIN COUNT ("Just show it"): Center +1, Floating +0,
+     Pinned back to 0. It decides nothing -- the lock is 3 values at the finest
+     step and one more Center -- so it rides on the chip as a number only. */
+  const wins = Number(v.wins);
+  if(st !== "LOCKED" && isFinite(wins) && wins > 0){
+    label += ` · ${esc(String(wins))} win${wins === 1 ? "" : "s"}`;
+    if(!tip) tip = "Win count: +1 for each Center, unchanged by a Floating, "
+                   + "back to 0 on a Pinned. Shown only -- it decides nothing.";
   }
   return `<span class="tst ${stateClass(st)}${weak ? " weak" : ""}"${
     tip ? ` title="${esc(tip)}"` : ""}>${label}</span>` +
