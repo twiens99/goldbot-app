@@ -1937,7 +1937,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261016-194731";
+const APP_BUILD = "20261016-211502";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3590,7 +3590,7 @@ function lendersPanel(f){
    measures the box (its copies' own agents + the pool, over its cores once);
    a copy's card says what it holds. Letters and colours are the trays'
    (tray_app.COPY_COLORS), so the phone and the taskbar agree. */
-const COPY_COLORS = {A: "#1E90FF", B: "#FF8C00", C: "#2EA043", D: "#A020F0", E: "#DC143C"};
+const COPY_COLORS = {A: "#1E90FF", B: "#FF8C00", C: "#2EA043", D: "#A020F0", E: "#DC143C", F: "#00A3A3"};
 const copyTag = c => c ? `<span class="copytag" style="background:${COPY_COLORS[c] || "var(--dim)"}">${esc(c)}</span>` : "";
 /* 2026-10-17 -- THE LAPTOP'S OWN LETTERS (Trevor: "Also the laptop needs its own A B C. Labels Also."). Its test
    slots Twin1-4 are A-D, in the order they start; a test on its own MT5 is L. Same colours as the tray letters, but a
