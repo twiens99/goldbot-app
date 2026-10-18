@@ -1681,6 +1681,10 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
    candles' prices ran down beside them. Only the last one shows the time axis. */
 .lv-sub{height:92px;position:relative;border-top:1px solid var(--line);}
 .lv-sub.last{height:118px;}
+/* 2026-10-18 -- the slope pane's label runs two lines (forming value + where it sits; the value in force), so the
+   pane is taller and the label stops short of the price axis. */
+#lvslopec{height:120px;}
+#lvpslope{right:74px;line-height:1.5;}
 /* Each pane's name and its value, pinned top-left over the pane. */
 .lv-pane{
   position:absolute;left:8px;top:4px;z-index:3;pointer-events:none;
@@ -1943,7 +1947,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261018-142742";
+const APP_BUILD = "20261018-165705";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13398,9 +13402,10 @@ function lvSkeleton(){
     +       '<span class="lv-band" style="background:var(--bear)"></span>'
     +       '<span class="lv-band" style="background:var(--range)"></span>Bottom band: regime</span>'
     +     '<span><span style="color:var(--gold)">━</span>Bucket-slope average · 4H dotted = simulated</span>'
-    +     '<span><span style="color:#5FBE95">━</span><span style="color:#E0685A">━</span>'
-    +       '<span style="color:#6FA8D4">━</span>Slope line: BULL / BEAR / RANGING; '
-    +       'dashes are the cut-offs</span>'
+    +     '<span><span style="color:#A9DEC4">━</span><span style="color:#2E9F6E">━</span>'
+    +       '<span style="color:#F2A79C">━</span><span style="color:#D8463A">━</span>'
+    +       'Slope line, coloured by bucket (light = Low, deep = High), as it would close now; '
+    +       'thin grey step = the value in force today; dashes = bucket edges</span>'
     +     '<span><span class="lv-good">▮</span><span class="lv-bad">▮</span>MACD main, '
     +       'line = signal</span>'
     +   '</div>'
@@ -14150,18 +14155,36 @@ function lvEnsureChart(){
     const sb = document.getElementById("lvslopec"), mb = document.getElementById("lvmacdc");
     if(sb && mb){
       LV.slopeChart = LC.createChart(sb, lvSubOpts(LC, false));
+      /* its label runs two lines, so the plot starts below them */
+      LV.slopeChart.applyOptions({rightPriceScale: {scaleMargins: {top: 0.34, bottom: 0.06}}});
       LV.macdChart = LC.createChart(mb, lvSubOpts(LC, true));
-      LV.slope = LV.slopeChart.addLineSeries({lineWidth: 2, lineType: LC.LineType.WithSteps,
+      /* 2026-10-18 -- THE IN-FORCE VALUE, a thin step: what the EA trades on during each day (it moves once a day,
+         at the D1 close). Drawn under the forming line. */
+      LV.slopeNow = LV.slopeChart.addLineSeries({lineWidth: 1, lineType: LC.LineType.WithSteps,
+        color: LV_C.dim, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        priceFormat: {type: "price", precision: 4, minMove: 0.0001}});
+      /* 2026-10-18 -- THE FORMING SLOPE, smooth, coloured by the bucket it is in. Trevor: "is there a way to not make
+         so square? I was expecting a steeper slope the closer it got to the bucket transition line. The colour of the
+         line can be what actually defines what bucket its in." See lvStudyCalc's `form`. */
+      LV.slope = LV.slopeChart.addLineSeries({lineWidth: 2,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         priceFormat: {type: "price", precision: 4, minMove: 0.0001},
-        /* The cut-offs are always in view, so where the line sits against them
-           reads at a glance even on a quiet stretch. */
+        /* 2026-10-18 -- THE BUCKET THE LINE IS IN, EDGE TO EDGE: the scale reaches the nearest edge below the
+           line and the nearest above it, so how close it runs to either reads at a glance (every edge at once
+           left a day's move inside one bucket looking flat). An open-ended bucket gets room past its one edge. */
         autoscaleInfoProvider: original => {
           const r = original(), a = lvAxis();
-          if(!a) return r;
-          const lo = Math.min(r ? r.priceRange.minValue : 0, a.bear_max * 1.4);
-          const hi = Math.max(r ? r.priceRange.maxValue : 0, a.bull_min * 1.4);
-          return {priceRange: {minValue: lo, maxValue: hi}};
+          if(!a || !r) return r;
+          const edges = lvBucketEdges(a).map(e => e.at).concat([a.bear_max, a.bull_min])
+            .filter((x, i, s) => s.indexOf(x) === i).sort((x, y) => x - y);
+          const vmin = r.priceRange.minValue, vmax = r.priceRange.maxValue;
+          const below = edges.filter(e => e <= vmin), above = edges.filter(e => e >= vmax);
+          let lo = below.length ? below[below.length - 1] : null, hi = above.length ? above[0] : null;
+          const span = Math.max(vmax - vmin, 0.002);
+          if(lo == null) lo = vmin - span * 0.5;
+          if(hi == null) hi = vmax + span * 0.5;
+          const pad = (hi - lo) * 0.08;
+          return {priceRange: {minValue: Math.min(vmin, lo) - pad, maxValue: Math.max(vmax, hi) + pad}};
         }});
       LV.macdH = LV.macdChart.addHistogramSeries({priceLineVisible: false,
         lastValueVisible: false, base: 0});
@@ -14183,7 +14206,7 @@ function lvDestroyChart(){
   if(LV.chart){ try{ LV.chart.remove(); }catch(e){} }
   [LV.slopeChart, LV.macdChart].forEach(c => { if(c){ try{ c.remove(); }catch(e){} } });
   LV.chart = LV.chartP = LV.series = LV.band = LV.path = LV.trail = LV.ma = null;
-  LV.slopeChart = LV.macdChart = LV.slope = LV.macdH = LV.macdS = null;
+  LV.slopeChart = LV.macdChart = LV.slope = LV.slopeNow = LV.macdH = LV.macdS = null;
   LV.slopeLines = []; LV.studyAxis = "";
   LV.lines = []; LV.sig = "";
 }
@@ -14338,7 +14361,8 @@ function lvCrossTarget(chart, t){
   const st = LV.study;
   if(!st) return null;
   if(chart === LV.slopeChart)
-    return st.slope[i] != null ? {series: LV.slope, price: st.slope[i]} : null;
+    return st.form && st.form[i] != null ? {series: LV.slope, price: st.form[i]}
+         : st.slope[i] != null && LV.slopeNow ? {series: LV.slopeNow, price: st.slope[i]} : null;
   if(chart === LV.macdChart)
     return {series: LV.macdS, price: st.sig[i] != null ? st.sig[i] : st.main[i]};
   return null;
@@ -14363,6 +14387,77 @@ function lvAxis(){
 }
 function lvRegimeOf(s, a){
   return s >= a.bull_min ? "BULL" : (s < a.bear_max ? "BEAR" : "RANGING");
+}
+/* 2026-10-18 -- THE BUCKETS ON THE SLOPE PANE. Trevor: "The one that shows the D1 slope, that needs to be updated to
+   show the 5 buckets ... This should be able to tell me if it is close or in the middle of the D1 slope for a
+   particular bucket." Each BULL / BEAR leaf's [slope_min, slope_max) from the snapshot; a leaf's open inner end is
+   closed by its regime's cut-off (a Bull bucket starts at bull_min, a Bear bucket ends at bear_max) and RANGING sits
+   between. Colour by strength inside the regime: the bucket nearest 0 lightest, the steepest deepest. A split
+   renames and recolours itself. With no ranges in the snapshot (an older publisher), one band per regime. */
+const LV_BAND_INK = {BULL: ["#A9DEC4", "#2E9F6E"], BEAR: ["#F2A79C", "#D8463A"], RANGING: ["#6FA8D4", "#6FA8D4"]};
+function lvHexMix(a, b, f){
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const x = p(a), y = p(b);
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * f).toString(16).padStart(2, "0")).join("");
+}
+function lvBucketBands(a){
+  if(!a) return [];
+  let snap = null;
+  try{ snap = LAST_SNAPSHOT; }catch(e){}
+  const leaves = ((snap && snap.buckets) || []).filter(b => b && b.leaf !== false
+    && (b.regime === "BULL" || b.regime === "BEAR") && b.bucket_id != null);
+  const out = [];
+  ["BULL", "BEAR"].forEach(r => {
+    let mine = leaves.filter(b => b.regime === r).map(b => {
+      let lo = b.slope_min == null ? null : Number(b.slope_min), hi = b.slope_max == null ? null : Number(b.slope_max);
+      if(r === "BULL" && (lo == null || lo < a.bull_min)) lo = a.bull_min;
+      if(r === "BEAR" && (hi == null || hi > a.bear_max)) hi = a.bear_max;
+      return {regime: r, id: Number(b.bucket_id), lo, hi};
+    });
+    if(!mine.length || mine.some(b => b.lo == null && b.hi == null))
+      mine = [{regime: r, id: null, lo: r === "BULL" ? a.bull_min : null, hi: r === "BULL" ? null : a.bear_max}];
+    /* weakest (nearest 0) first */
+    mine.sort((x, y) => r === "BULL" ? (x.lo ?? -1e9) - (y.lo ?? -1e9) : (y.hi ?? 1e9) - (x.hi ?? 1e9));
+    mine.forEach((b, i) => {
+      b.ink = lvHexMix(LV_BAND_INK[r][0], LV_BAND_INK[r][1], mine.length > 1 ? i / (mine.length - 1) : 1);
+      b.name = b.id != null && mine.length > 1 ? bktName(r, b.id)
+             : r.charAt(0) + r.slice(1).toLowerCase();
+      out.push(b);
+    });
+    /* the next bucket out from 0, which the position counts toward */
+    mine.forEach((b, i) => { b.toward = mine[i + 1] ? mine[i + 1].name.replace(/^(Bull|Bear) /, "") : null; });
+  });
+  out.push({regime: "RANGING", id: null, lo: a.bear_max, hi: a.bull_min, ink: LV_REGIME_LINE.RANGING, name: "Ranging",
+            toward: "Bull"});
+  return out;
+}
+function lvBandOf(v, a){
+  if(v == null || !a) return null;
+  const bands = LV.bandsKey === JSON.stringify(a) && LV.bands ? LV.bands : lvBucketBands(a);
+  return bands.find(b => (b.lo == null || v >= b.lo) && (b.hi == null || v < b.hi)) || null;
+}
+/* The edges between bands, each named by the band on its far side from 0 (Bull Mid's edge is where Bull Mid
+   starts; Bear High's is where Bear High starts). */
+function lvBucketEdges(a){
+  const out = [];
+  lvBucketBands(a).forEach(b => {
+    if(b.regime === "BULL" && b.lo != null) out.push({at: b.lo, name: b.name});
+    if(b.regime === "BEAR" && b.hi != null) out.push({at: b.hi, name: b.name});
+  });
+  return out;
+}
+/* Where `v` sits in its band: a closed band says how far it is from its edge nearest 0 toward the next bucket out
+   ("79% to Mid": 0% = just in, 100% = at Mid's edge; a Bear bucket counts downward, Ranging counts toward Bull); the
+   open, steepest band says how far past its edge. */
+function lvBandPos(v, b){
+  if(!b || v == null) return "";
+  if(b.lo != null && b.hi != null && b.hi > b.lo){
+    const f = b.regime === "BEAR" ? (b.hi - v) / (b.hi - b.lo) : (v - b.lo) / (b.hi - b.lo);
+    return Math.round(100 * f) + "% " + (b.toward ? "to " + b.toward : "through");
+  }
+  if(b.lo != null) return "+" + (v - b.lo).toFixed(4) + " past its edge";
+  if(b.hi != null) return (b.hi - v).toFixed(4) + " past its edge";
+  return "";
 }
 /* The axis bars, with the forming one from /now when it is newer than the list. */
 function lvAxisBars(a){
@@ -14391,7 +14486,7 @@ function lvAxisSlopes(a){
     const cur = ma[d - 1], prev = d - 1 - a.lookback >= 0 ? ma[d - 1 - a.lookback] : null;
     if(cur != null && prev) out[d] = (cur - prev) / prev;
   }
-  return {bars, out};
+  return {bars, out, ma};
 }
 /* THE AXIS AVERAGE ON THE CANDLES (2026-09-30). Trevor: *"Can I get the actual
    D1 slope SMA on the candlestick chart? The one that determines the bucket
@@ -14458,17 +14553,34 @@ function lvStudyCalc(){
     sum += main[i]; if(i >= LV_MACD.signal) sum -= main[i - LV_MACD.signal];
     sig[i] = i >= LV_MACD.signal - 1 ? sum / LV_MACD.signal : null;
   }
+  /* 2026-10-18 -- THE FORMING SLOPE: the value the axis slope WOULD take if the axis bar this candle belongs to
+     closed at this candle's close -- the earlier bars' closes plus this price, against the average `lookback` closed
+     bars back. It moves with the price through the day and lands, at the day's last candle, on the value the next day
+     holds in force. The in-force value (`slope`) only changes at the axis close, which drew the pane square. */
+  const form = new Array(n).fill(null);
   if(a){
-    const ax = lvAxisSlopes(a), span = LV_TF_SEC[a.tf];
+    const ax = lvAxisSlopes(a), span = LV_TF_SEC[a.tf], k = 2 / (a.period + 1);
     for(let i = 0; i < n; i++){
       const j = lvIdx(ax.bars, bars[i].time);
       if(j < 0) continue;
       const d = bars[i].time >= ax.bars[j].time + span ? j + 1 : j;
       const s = ax.out[Math.min(d, ax.out.length - 1)];
       if(s != null) slope[i] = s;
+      const prev = d - a.lookback >= 0 ? ax.ma[d - a.lookback] : null;
+      let cur = null;
+      if(a.ma === "SMA"){
+        if(d - a.period + 1 >= 0 && d - 1 < ax.bars.length){
+          let sum = bars[i].close;
+          for(let m = d - a.period + 1; m < d; m++) sum += ax.bars[m].close;
+          cur = sum / a.period;
+        }
+      } else if(d >= 1 && d - 1 < ax.ma.length && ax.ma[d - 1] != null){
+        cur = bars[i].close * k + ax.ma[d - 1] * (1 - k);
+      }
+      if(cur != null && prev) form[i] = (cur - prev) / prev;
     }
   }
-  LV.study = {main, sig, slope, axis: a, ma: lvAxisMa(a)};
+  LV.study = {main, sig, slope, form, axis: a, ma: lvAxisMa(a)};
   return LV.study;
 }
 function lvStudyPoint(i){
@@ -14479,28 +14591,36 @@ function lvStudyPoint(i){
       ? {time: t, value: m, color: m >= 0 ? "rgba(95,190,149,.6)" : "rgba(224,104,90,.6)"}
       : {time: t},
     s: i >= LV_MACD.slow + LV_MACD.signal - 2 && s != null ? {time: t, value: s} : {time: t},
-    l: v != null && st.axis ? {time: t, value: v, color: LV_REGIME_LINE[lvRegimeOf(v, st.axis)]}
-                            : {time: t},
+    l: st.form[i] != null && st.axis
+      ? {time: t, value: st.form[i], color: (lvBandOf(st.form[i], st.axis) || {}).ink
+                                          || LV_REGIME_LINE[lvRegimeOf(st.form[i], st.axis)]}
+      : {time: t},
+    n: v != null && st.axis ? {time: t, value: v} : {time: t},
     m: st.ma && st.ma[i] != null ? {time: t, value: st.ma[i]} : {time: t},
   };
 }
 /* The cut-offs as dashed lines, redrawn only when the definition changes. */
 function lvSlopeCutoffs(a){
-  const key = a ? JSON.stringify(a) : "";
+  LV.bands = lvBucketBands(a);
+  LV.bandsKey = a ? JSON.stringify(a) : "";
+  const key = a ? JSON.stringify([a, LV.bands]) : "";
   if(key === LV.studyAxis) return;
   LV.slopeLines.forEach(l => { try{ LV.slope.removePriceLine(l); }catch(e){} });
-  LV.slopeLines = !a ? [] : [a.bull_min, a.bear_max].map(p => LV.slope.createPriceLine({
-    price: p, color: LV_C.faint, lineWidth: 1, lineStyle: LV.LC.LineStyle.Dashed,
-    axisLabelVisible: false}));
+  /* 2026-10-18 -- every bucket edge, named for the bucket it opens (Trevor: "show the 5 buckets"). */
+  LV.slopeLines = !a ? [] : lvBucketEdges(a).map(e => LV.slope.createPriceLine({
+    price: e.at, color: LV_C.faint, lineWidth: 1, lineStyle: LV.LC.LineStyle.Dashed,
+    axisLabelVisible: true, title: e.name.replace(/^(Bull|Bear) /, "")}));
   LV.studyAxis = key;
 }
 function lvStudiesSet(){
   if(!LV.slope) return;
-  const st = lvStudyCalc(), n = lvBars().length, H = [], S = [], L = [], M = [];
+  lvSlopeCutoffs(lvAxis());       // the bands first: the forming line is coloured by them
+  const st = lvStudyCalc(), n = lvBars().length, H = [], S = [], L = [], M = [], N = [];
   for(let i = 0; i < n; i++){
-    const p = lvStudyPoint(i); H.push(p.h); S.push(p.s); L.push(p.l); M.push(p.m);
+    const p = lvStudyPoint(i); H.push(p.h); S.push(p.s); L.push(p.l); M.push(p.m); N.push(p.n);
   }
   LV.macdH.setData(H); LV.macdS.setData(S); LV.slope.setData(L);
+  if(LV.slopeNow) LV.slopeNow.setData(N);
   if(LV.ma){
     LV.ma.applyOptions({lineStyle: st.axis && LV.tf !== st.axis.tf
       ? LV.LC.LineStyle.Dotted : LV.LC.LineStyle.Solid});
@@ -14522,17 +14642,25 @@ function lvAlignAxes(){
     if(c.priceScale("right").width() !== w) c.applyOptions({rightPriceScale: {minimumWidth: w}});
   }catch(e){} });
 }
+/* 2026-10-18 -- a snapshot that lands after the pane drew (the Live tab opened first: the pane stayed on one plain
+   "Bull" band -- found in testing) or that carries a split redraws the pane with its buckets. */
+function lvBandsMaybeChanged(){
+  if(!LV.slope) return;
+  const a = lvAxis();
+  if((a ? JSON.stringify([a, lvBucketBands(a)]) : "") !== LV.studyAxis) lvStudiesSet();
+}
 /* After bars from time `t` on changed: only those points move. A definition that
    arrived since the last full draw redraws the whole line. */
 function lvStudiesFrom(t){
   if(!LV.slope) return;
   const a = lvAxis();
-  if((a ? JSON.stringify(a) : "") !== LV.studyAxis) return lvStudiesSet();
+  if((a ? JSON.stringify([a, lvBucketBands(a)]) : "") !== LV.studyAxis) return lvStudiesSet();
   lvStudyCalc();
   const bars = lvBars();
   for(let i = Math.max(0, lvIdx(bars, t)); i < bars.length; i++){
     const p = lvStudyPoint(i);
     LV.macdH.update(p.h); LV.macdS.update(p.s); LV.slope.update(p.l);
+    if(LV.slopeNow) LV.slopeNow.update(p.n);
     if(LV.ma && LV.study.ma) LV.ma.update(p.m);
   }
 }
@@ -14559,11 +14687,17 @@ function lvPaneLabels(bar){
   if(!ps || !pm || !LV.study) return;
   const bars = lvBars(), i = bar ? lvIdx(bars, bar.time) : bars.length - 1;
   const st = LV.study, a = st.axis;
-  const v = i >= 0 ? st.slope[i] : null;
+  const v = i >= 0 && st.form ? st.form[i] : null, now = i >= 0 ? st.slope[i] : null;
+  const bf = lvBandOf(v, a), bn = lvBandOf(now, a);
+  const fmt = x => (x >= 0 ? "+" : "") + x.toFixed(5);
+  /* 2026-10-18 -- the forming value, its bucket and where it sits in it; the in-force value (the thin grey step,
+     what the EA trades on today) beside it. */
   ps.innerHTML = !a
     ? "Slope <b>waiting for its definition from the fleet</b>"
-    : esc(a.tf) + " slope" + (v == null ? "" : ` <b style="color:${LV_REGIME_LINE[lvRegimeOf(v, a)]}">${
-        (v >= 0 ? "+" : "") + v.toFixed(5)} ${lvRegimeOf(v, a)}</b>`);
+    : esc(a.tf) + " slope" + (v == null ? "" : ` <b style="color:${(bf || {}).ink || LV_C.dim}">${fmt(v)} ${
+        esc((bf || {}).name || lvRegimeOf(v, a))}</b>` + (bf ? "<br>" + esc(lvBandPos(v, bf)) : ""))
+      + (now == null ? "" : `${bf ? " · " : "<br>"}in force <b style="color:${(bn || {}).ink || LV_C.dim}">${fmt(now)}${
+        bn && bf && bn.name !== bf.name ? " " + esc(bn.name) : ""}</b>`);
   const m = i >= LV_MACD.slow - 1 ? st.main[i] : null, s = i >= 0 ? st.sig[i] : null;
   pm.innerHTML = `MACD ${LV_MACD.fast}·${LV_MACD.slow}·${LV_MACD.signal}` + (m == null ? ""
     : ` <b>${m.toFixed(2)}</b>` + (s == null ? "" : ` <b>/ ${s.toFixed(2)}</b>`));
@@ -15091,6 +15225,7 @@ function applySnapshot(d, source){
      nine-minute-old snapshot looking exactly like a live one -- which is what
      it did. Recomputed on every repaint, so the poll below keeps it honest. */
   LAST_SNAPSHOT = d;
+  try{ lvBandsMaybeChanged(); }catch(e){}
   paint(source + (source === "live" && SNAP_SOURCE ? " · " + SNAP_SOURCE : "") +
         " · " + fmtWhen(d.generated_at) + snapAge(d) +
         " · epoch " + EPOCH + (source === "live" ? SNAP_NOTE + REFRESH_NOTE : ""));
