@@ -1943,7 +1943,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261017-213014";
+const APP_BUILD = "20261018-142742";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4863,6 +4863,15 @@ function taskEta(f){
   return [Math.round(f.percent) + "%", left ? "~" + left + " left" : "", eta ? "ETA " + eta : "no ETA yet"]
     .filter(Boolean).join(" · ");
 }
+/* 2026-10-18 -- PASSES DONE, exact. Trevor: *"On a current optimization. Do you have a current passes done count? If so
+   can you add that to the active job block?"* The copy's own per-pass feed (every agent's result -- the pool's
+   included -- reaches the terminal that writes it), counted on its beacon while it sweeps: "1,234 passes". */
+function passesText(f){
+  const p = f && f.passes;
+  const n = p ? Number(p.done) : NaN;
+  if(!(n > 0) || !sweeping(f)) return "";
+  return n.toLocaleString("en-US") + " pass" + (n === 1 ? "" : "es");
+}
 function taskJob(f){
   if(f.halt) return machineJob(f, "Running now");                   // a halt waits on a person: the machine, named
   const sd = seedOnMachine(f.machine);
@@ -4878,7 +4887,7 @@ function taskJob(f){
     copy: (f.box && f.copy) ? f.copy : null,
     slot: (!f.box && sd && !sweeping(f)) ? slotLetter(f.machine) : null,
     line: [ff.bucket_id != null && rg ? bktName(rg, ff.bucket_id) : "", (ckSeed(sd && sd.label) || {}).detail,
-           taskCoresText(f)].filter(Boolean).join(" · "),
+           taskCoresText(f), passesText(f)].filter(Boolean).join(" · "),
     eta: taskEta(f),
     chip: sd ? roundType(sd) : (f.phase ? phaseText(f.phase) : null),
     regime: rg,
