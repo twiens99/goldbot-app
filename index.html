@@ -1943,7 +1943,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261017-165424";
+const APP_BUILD = "20261017-182331";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2110,7 +2110,7 @@ function varList(vars, states, riders){
           (st && st.state
             ? stateChip(st) +
               `<span class="tvr ${stateClass(st.resolution)}">${
-                 st.resolution ? esc(st.resolution) : "—"}</span>`
+                 st.resolution ? esc(resText(st.resolution)) : "—"}</span>`
             : "") + `</div>`;
       }).join("")}
     </div>`;
@@ -7612,7 +7612,7 @@ function stVariablePage(){
       + `<div class="nrc" style="margin-top:4px">${swept.length
           ? `<span class="tmem in">SWEPT · ${esc(swept.map(x => x.kind).join(" + "))}</span>`
           : '<span class="tmem held">NOT SWEPT</span>'}`
-      + (pts ? `<span class="tvr nrrange">RANGE ${esc(pts)}</span>`
+      + (pts ? `<span class="tvr nrrange" title="How many values it is swept over">${esc(pts)}</span>`
           : onboard ? '<span class="tmem rider">ONBOARD</span>' : "")
       + (after ? '<span class="stmeta" style="margin:0 2px">left it</span>' + stateChip(after.v) : "")
       + '</div></div>');
@@ -7686,7 +7686,7 @@ function nrRow(v, attrs){
   const a = NR_ACTION[v.action] || ["held", String(v.action || "")];
   const pts = Number(v.points) || 0, last = Number(v.last) || 0;
   const range = pts
-    ? `<span class="tvr nrrange" title="How many values it is swept over">RANGE ${
+    ? `<span class="tvr nrrange" title="How many values it is swept over">${
         last && last !== pts ? esc(last) + " → " : ""}${esc(pts)}</span>` : "";
   let why = NR_WHY[v.why] || "";
   if(v.action === "SITS_OUT" && v.rounds_to_recheck)
@@ -7697,7 +7697,7 @@ function nrRow(v, attrs){
       <div class="nrc">
         <span class="tmem ${a[0]}">${esc(a[1])}</span>${stateChip(v)}${range}
         <span class="tvr ${esc(String(v.resolution || "").toLowerCase())}">${
-          esc(v.resolution || "—")}</span>
+          esc(v.resolution ? resText(v.resolution) : "—")}</span>
       </div>
       ${why ? `<div class="mdf">${why}</div>` : ""}
     </div>`;
@@ -8147,6 +8147,16 @@ function metricGraph(d, big){
    see task_detail.STATE_TEXT for what each one means. Lower-cased here only to
    pick a CSS class; the label shown is the publisher's own. */
 function stateClass(s){ return String(s || "").toLowerCase(); }
+/* 2026-10-17 -- THE STEP AS A FRACTION. Trevor: "the chips don't need the "Full" or "Half" Just the fraction would be
+   fine." FULL 1, HALF ½, QUARTER ¼, EIGHTH ⅛; a banked Center ("HALF +0.5" from the publisher -- two Centers make a
+   level) keeps its "+0.5". Anything else (an older word) is shown as it came. */
+const RES_FRACTION = {FULL: "1", HALF: "\u00bd", QUARTER: "\u00bc", EIGHTH: "\u215b"};
+function resText(s){
+  if(!s) return "";
+  const parts = String(s).trim().split(/\s+/);
+  const f = RES_FRACTION[parts[0].toUpperCase()];
+  return f ? [f].concat(parts.slice(1)).join(" ") : String(s);
+}
 
 /* THE STATE CHIP, one renderer for every place a variable's state is drawn.
    Trevor, 2026-09-22: *"show the σ on the chip."* A PINNED carries which edge
@@ -8299,7 +8309,7 @@ function relKey(relDir){
 function valuesChip(n, thin){
   return n ? `<span class="tvc${thin ? " warn" : ""}" title="${thin
     ? "Under 11 values in a genetic round -- too few to search" : "Values this round searches the setting over"}">${
-    esc(String(n))} VALUES</span>` : "";
+    esc(String(n))}</span>` : "";       /* 2026-10-17 -- just the number (Trevor: no "Value") */
 }
 function planRangeText(x){
   if(!x || x.lo == null || x.hi == null) return "";
@@ -8344,7 +8354,7 @@ function taskVars(list, hist, plan){
       /* ALWAYS A BOX, even with nothing in it -- an absent resolution would
          otherwise pull the state chip right and break the column. */
       `<span class="tvr ${stateClass(v.resolution)}">${
-         v.resolution ? esc(v.resolution) : "—"}</span>` +
+         v.resolution ? esc(resText(v.resolution)) : "—"}</span>` +
       planRangeText(pm[v.name]) +
       `</div>`).join("");
 }
@@ -8614,7 +8624,7 @@ function sweepVars(all, swept, vals, plan){
       ? (g.points ? `${esc(g.points)}` : "") +
         (g.points && g.step ? " × " : "") +
         (g.step ? `Δ${esc(num(g.step))}` : "")
-      : (g && g.resolution ? esc(g.resolution) : (v.resolution ? esc(v.resolution) : ""));
+      : (g && g.resolution ? esc(resText(g.resolution)) : (v.resolution ? esc(resText(v.resolution)) : ""));
     const rider = !!(g && g.rider);
     /* 2026-09-28 -- THE RANGE COUNT. Trevor: *"The job card should show range
        count."* How many values this task swept the variable over -- a count,
@@ -8700,9 +8710,10 @@ function taskSwept(list, states){
       ? (v.points ? `${esc(v.points)}` : "") +
         (v.points && v.step ? " × " : "") +
         (v.step ? `Δ${esc(num(v.step))}` : "")
-      : (v.resolution ? esc(v.resolution) : "");
+      : (v.resolution ? esc(resText(v.resolution)) : "");
+    /* 2026-10-17 -- the range count is just its number (Trevor: "The Range count chips just need a number"). */
     const count = !hasGrid
-      ? (v.onboard ? "ONBOARD" : v.points ? "RANGE " + v.points : "") : "";
+      ? (v.onboard ? "ONBOARD" : v.points ? String(v.points) : "") : "";
     return `<div class="tvar swept">
         <span class="tvn">${esc(spaceOut(stripRegime(v.name)))}</span>` +
       stateChip(st) +
