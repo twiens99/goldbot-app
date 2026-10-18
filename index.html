@@ -1943,7 +1943,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261017-182331";
+const APP_BUILD = "20261017-213014";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5381,7 +5381,23 @@ function pickCard(pk){
     </article>` + ((pk.passes || []).length ? optimizeBadge(t, 1) : "");
 }
 
+/* 2026-10-17 -- WHICH BUCKET, AS A CHIP. Trevor: *"In the active tab. I want to know what bucket its in. Let's add Low
+   Mid High as chips."* The job's bucket from whichever record carries it (its seed, the machine's beacon, the queue
+   row, the pick; an owed reading's id), drawn by bktEl -- "High" / "Mid" / "Low" beside the regime chip, the number
+   for a bucket with no name. A machine standing by or silent shows none: its beacon's bucket is its LAST job's. */
+function jobBucket(j){
+  if(!j || j.section === "Standing by" || j.section === "Not reporting") return null;
+  for(const o of [j.seed, j.fleet, j.queue, j.pick]){
+    if(o && o.bucket_id != null && o.regime) return {regime: String(o.regime).toUpperCase(), id: o.bucket_id};
+  }
+  const m = /^o:(BULL|BEAR|RANGING)\|(\d+)\|/.exec(String(j.id || ""));
+  return m ? {regime: m[1], id: Number(m[2])} : null;
+}
 function jobRow(j){
+  const bk = jobBucket(j);
+  /* ...and the line stops repeating it ("Bear High · 46 agents" -> "46 agents"). */
+  const line = bk ? String(j.line || "").split(" · ").filter(x => x !== bktName(bk.regime, bk.id)).join(" · ")
+                  : j.line;
   return `<button type="button" class="hbtn jrow" data-job="${esc(j.id)}">
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
@@ -5389,10 +5405,11 @@ function jobRow(j){
           <span class="jtop">${copyTag(j.copy)}${slotTag(j.slot)}<span class="hname">${esc(j.title)}</span>` +
           (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
             `${esc(j.regime)}</span>` : "") +
+          (bk ? bktEl(bk.id, false, null, bk.regime) : "") +
           (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
           (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
             `${esc(c)}</span>`).join("") + `</span>
-          <span class="hsubline">${esc(j.line)}</span>` +
+          <span class="hsubline">${esc(line)}</span>` +
           (j.eta ? `<span class="hsubline heta">${esc(j.eta)}</span>` : "") +
           /* 2026-10-17 -- its own tests running now (jobsModel nests them): one line each */
           (j.tasks || []).map(t => `<span class="hsubline jtask">\u21b3 ${esc(t.title)}` +
