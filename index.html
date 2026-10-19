@@ -1040,6 +1040,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 }
 .opth:active{transform:none;}
 .optp{font-weight:700;}
+/* 2026-10-19 -- a live table's row: nothing to pick mid-round. */
+.optr.ro{cursor:default;}
+.optr.ro:active{transform:none;}
 /* OUT OF BAND, on the pass itself, so it survives whichever columns are shown. */
 .optp.oob{color:var(--warn);}
 .mglgr .nm{flex:1;min-width:0;color:var(--text);overflow-wrap:anywhere;}
@@ -1947,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261018-165705";
+const APP_BUILD = "20261018-174104";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4872,7 +4875,8 @@ function taskEta(f){
    included -- reaches the terminal that writes it), counted on its beacon while it sweeps: "1,234 passes". */
 function passesText(f){
   const p = f && f.passes;
-  const n = p ? Number(p.done) : NaN;
+  let n = p ? Number(p.done) : NaN;
+  if(!(n > 0) && f && f.live_passes) n = Number(f.live_passes.total);   // 2026-10-19 -- live_passes
   if(!(n > 0) || !sweeping(f)) return "";
   return n.toLocaleString("en-US") + " pass" + (n === 1 ? "" : "es");
 }
@@ -5340,7 +5344,7 @@ function pickCard(pk){
   const rc = RC[pk.regime] || "";
   /* No `kind`: the badge reads only the passes, and the phase names are words
      the public repo's leak scan refuses. */
-  const t = {detail: {passes: pk.passes || [], variables: [], swept: []}};
+  const t = {detail: {passes: pk.passes || [], passes_cut: pk.passes_cut || null, variables: [], swept: []}};
   /* NOTHING VALID TO PICK is its own case, and it is not rare: the first real
      one (RANGING_EXIT_G6, 2026-09-13) had all 45 passes refused and held every
      RANGING round for 12 days. "Choose a pass" would point at an empty table,
@@ -6850,13 +6854,32 @@ function optHeldParts(held){
   }).filter(Boolean);
 }
 
-function optPasses(valid, d){
+/* 2026-10-19 -- A CUT SHEET (task_passes.cut). Above 2,000 passes -- and on every live table -- the phone carries only
+   the rows any view can show: each column's top and bottom 20 with their ties, and the 20 nearest the trade band when
+   the band is known. So every slice is still the slice of the WHOLE sheet; its counts travel beside it (passes_cut).
+   Trevor: "fix the 2000 pass limit" -- above it the table used to be empty. */
+function optCounts(d, split){
+  const c = (d || {}).passes_cut || null;
+  if(!c) return {total: split.all.length, held: split.held.length, parts: optHeldParts(split.held), cut: null};
+  const held = OPT_SENTINELS.reduce((s, x) => s + (Number(c[x[1]]) || 0), 0);
+  const parts = OPT_SENTINELS.map(x => {
+    const n = Number(c[x[1]]) || 0;
+    return n ? n.toLocaleString() + " " + x[1] : null;
+  }).filter(Boolean);
+  return {total: Number(c.total) || split.all.length, held, parts, cut: c};
+}
+/* Closest to target ranks on the band, which a cut sheet carries only when the publisher knew it. */
+const optSlices = cnt => OPT_SLICES.filter(([k]) => k !== "target" || !cnt.cut || cnt.cut.band);
+const optState = (st, cnt) => optSlices(cnt).some(([k]) => k === st.slice) ? st : Object.assign({}, st, {slice: "top"});
+
+function optPasses(valid, d, st){
+  st = st || OPTSTATE;      // 2026-10-19 -- the live table has its own (LIVEOPT)
   const rows = valid.slice();
   const cad = d.cadence || {};
   const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
   const mid = (isFinite(lo) && isFinite(hi)) ? (lo + hi) / 2 : null;
 
-  if(OPTSTATE.slice === "target" && mid != null){
+  if(st.slice === "target" && mid != null){
     /* Nearest the middle of the band, and the columns are deliberately not
        consulted -- this slice IS a ranking, and it is the one the cadence gate
        actually cares about. */
@@ -6865,7 +6888,7 @@ function optPasses(valid, d){
   }
   /* MASTER FIRST, THEN THE REST AS TIEBREAKS -- left to right, exactly as they
      are drawn. */
-  const cols = OPTSTATE.cols.map(optColDef);
+  const cols = st.cols.map(optColDef);
   rows.sort((a, b) => {
     for(const c of cols){
       const d2 = c[2] * (Number(b[c[0]]) - Number(a[c[0]]));
@@ -6877,13 +6900,77 @@ function optPasses(valid, d){
      Trevor: *"Bottom 20 would give the bottom 20 of the entire optimize sheet."*
      Worst first, because when you ask for the bottom the very worst is the row
      you came to see. */
-  return OPTSTATE.slice === "bottom" ? rows.slice(-20).reverse() : rows.slice(0, 20);
+  return st.slice === "bottom" ? rows.slice(-20).reverse() : rows.slice(0, 20);
 }
 
 /* The digit a pass style or a sweep's kind ends in -- "2" / "3" for the second
    and third passes, "" for the first. Read off the data, never spelled: this
    repo is public and its leak scan refuses the style names (see isBacktest). */
 const passDigit = s => ((/(\d)$/.exec(String(s || "")) || [])[1]) || "";
+
+/* What a cut sheet is, said once under its counts. */
+function optCutNote(cnt){
+  if(!cnt.cut) return "";
+  return `<div class="vhcap" style="margin:2px 0 6px">The sheet holds <b>${cnt.total.toLocaleString()}</b> passes. The
+    phone carries the ${(Number(cnt.cut.shown) || 0).toLocaleString()} that any view of it can show \u2014 each column's
+    top and bottom 20${cnt.cut.band ? " and the 20 nearest the band" : ""} \u2014 so every slice here is the slice of
+    the whole sheet.</div>`;
+}
+
+/* 2026-10-19 -- THE PASSES SO FAR, on a running sweep's job. Trevor: *"Are you able to see these results mid round? If
+   so, I'd like to be able to open the table up for the ones that have already run. That would be built into the active
+   tab's job. Same top 20 table as the results tab has. Just the ones that show up mid round would give me an idea
+   where we are in the middle of the round."* The copy's own per-pass feed, cut to the rows any view can show
+   (live_passes). READ-ONLY: nothing is picked mid-round. "#" is the order each pass FINISHED in -- the feed carries no
+   MT5 pass number -- and there is no Closest to target: the trade band is measured when the round ends. */
+const LIVEOPT = {slice: "top", cols: ["result", "pf"], open: false};
+function livePassesCard(f){
+  const lp = f && f.live_passes;
+  if(!lp || !sweeping(f)) return "";
+  const d = {passes: Array.isArray(lp.passes) ? lp.passes : [],
+             passes_cut: Object.assign({}, lp, {band: false})};
+  const split = optSplit(d) || {all: [], valid: [], held: []};
+  const cnt = optCounts(d, split);
+  const age = Number(lp.written_at) > 0 ? dur(Math.max(0, Date.now() / 1000 - Number(lp.written_at))) : "";
+  const top = split.valid.slice().sort((a, b) => Number(b.result) - Number(a.result))[0];
+  const best = top ? `Best so far: <b>#${esc(top.pass)}</b> \u00b7 Result ${esc(optFmt(top, "result"))}` +
+    ` \u00b7 PF ${esc(optFmt(top, "pf"))} \u00b7 ${esc(optFmt(top, "trades"))} trades` : "";
+  const shell = body => `<div class="section-label">Passes so far</div><div class="card"><div class="card-in">` +
+    `<div class="tlab">${cnt.total.toLocaleString()} finished${age ? " \u00b7 updated " + esc(age) + " ago" : ""}</div>` +
+    body + `</div></div>`;
+  if(!cnt.total) return shell(`<div class="sub">No pass has finished yet. They appear here as the agents return
+    them.</div>`);
+  if(!split.valid.length) return shell(`<div class="sub"><b>Every pass so far was refused</b> \u2014
+    ${esc(cnt.parts.join(", "))}. Nothing to rank yet.</div>`);
+  const ost = optState(LIVEOPT, cnt);
+  const rows = optPasses(split.valid, {}, ost);
+  const cols = ost.cols;
+  const grid = `grid-template-columns:3.6em repeat(${cols.length},minmax(0,1fr))`;
+  const slices = '<div class="mgrp">' + optSlices(cnt).map(([k, label]) =>
+    `<button type="button" class="gch${ost.slice === k ? " on" : ""}" data-lvslice="${k}">${esc(label)}</button>`)
+    .join("") + '</div>';
+  const colChips = '<div class="mgrp">' + OPT_COLS.map(([k, label]) => {
+    const at = cols.indexOf(k);
+    return `<button type="button" class="gch${at >= 0 ? " on" : ""}" data-lvcol="${k}">${esc(label)}${
+      at >= 0 ? `<span class="n">${at + 1}</span>` : ""}</button>`;
+  }).join("") + '</div>';
+  const head = `<div class="optr opth" style="${grid}"><span>#</span>` +
+    cols.map(k => `<span>${esc(optColDef(k)[1])}</span>`).join("") + `</div>`;
+  const body = rows.map(p => `<div class="optr ro" style="${grid}"><span class="optp">${esc(p.pass)}</span>` +
+    cols.map(k => `<span>${esc(optFmt(p, k))}</span>`).join("") + `</div>`).join("");
+  const heldNote = !cnt.held ? "" : `<div class="optheld"><b>${cnt.held.toLocaleString()} of ${
+    cnt.total.toLocaleString()} withheld</b> \u2014 ${esc(cnt.parts.join(", "))}. ${
+    (cnt.total - cnt.held).toLocaleString()} ranked.</div>`;
+  return shell(
+    (best ? `<div class="sub" style="margin:0 0 6px">${best}</div>` : "") +
+    `<div class="mgrp"><button type="button" class="gch${LIVEOPT.open ? " on" : ""}" data-lvopen>${
+      LIVEOPT.open ? "Hide table" : `Table \u00b7 ${cnt.total.toLocaleString()} passes so far \u203a`}</button></div>` +
+    (!LIVEOPT.open ? "" : slices + heldNote + colChips + head + body +
+      `<div class="vhcap">The passes finished so far in this sweep, ranked across all of them. <b>#</b> is the order
+        each finished in, not MT5's pass number. The genetic search is still choosing what to try next, so the top can
+        still change. Tap a column to add it; the leftmost sorts. <b>Closest to target</b> needs the trade band, which
+        the round measures when it ends.</div>`));
+}
 
 function optimizeBadge(t, nth, picked){
   const two = nth >= 2;
@@ -6896,19 +6983,21 @@ function optimizeBadge(t, nth, picked){
       in the optimization report the round produced. Nothing forwards them to the
       app yet, so there is nothing here to rank or to choose from.`);
   }
-  const heldParts = optHeldParts(split.held);
+  const cnt = optCounts(d, split);
+  const heldParts = cnt.parts;
   /* 🔴 PUBLISHED, AND NONE OF IT RANKABLE IS A REAL OUTCOME, not an error and
      not the same as nothing arriving. A group that cannot reach its band can
      have every cell refused, and an empty table under a full set of chips would
      read as a renderer that broke. */
   if(!split.valid.length){
     return soonBadge(title, `<b>Every pass was refused.</b> All
-      ${split.all.length.toLocaleString()} carry a sentinel result instead of a
+      ${cnt.total.toLocaleString()} carry a sentinel result instead of a
       score \u2014 ${esc(heldParts.join(", "))}. There is nothing to rank or to
       choose from: every cell this sweep tried traded too little, too much, or
       outside its band.`);
   }
-  const rows = optPasses(split.valid, d);
+  const ost = optState(OPTSTATE, cnt);
+  const rows = optPasses(split.valid, d, ost);
 
   const cad = d.cadence || {};
   /* 2026-10-01 -- THE PASS THIS JOB APPLIED WINS, when it came from THIS sweep.
@@ -6939,19 +7028,20 @@ function optimizeBadge(t, nth, picked){
     ? split.held.find(p => String(p.pass) === chosen) : null;
   const assignedHeld = assigned != null
     ? split.held.find(p => String(p.pass) === assigned) : null;
-  const heldNote = !split.held.length ? "" :
-    `<div class="optheld"><b>${split.held.length.toLocaleString()} of ${
-       split.all.length.toLocaleString()} withheld</b> \u2014 ${esc(heldParts.join(", "))}.
-       ${split.valid.length.toLocaleString()} ranked.</div>`;
+  const heldNote = (!cnt.held ? "" :
+    `<div class="optheld"><b>${cnt.held.toLocaleString()} of ${
+       cnt.total.toLocaleString()} withheld</b> \u2014 ${esc(heldParts.join(", "))}.
+       ${(cnt.total - cnt.held).toLocaleString()} ranked.</div>`) + optCutNote(cnt);
   const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
   const inBand = n => isFinite(lo) && isFinite(hi) && n >= lo && n <= hi;
   const cols = OPTSTATE.cols;
-  /* auto for the pass, then an equal share each -- minmax(0,..) so a long number
-     shrinks its own column instead of pushing the row wider than the phone. */
-  const grid = `grid-template-columns:auto repeat(${cols.length},minmax(0,1fr))`;
+  /* a fixed width for the pass, then an equal share each -- minmax(0,..) so a long number
+     shrinks its own column instead of pushing the row wider than the phone. 2026-10-19 -- fixed, not auto: each row
+     is its own grid, so an auto pass column made a 2-digit pass shift its row's numbers off the column. */
+  const grid = `grid-template-columns:3.6em repeat(${cols.length},minmax(0,1fr))`;
 
-  const slices = '<div class="mgrp">' + OPT_SLICES.map(([k, label]) =>
-    `<button type="button" class="gch${OPTSTATE.slice === k ? " on" : ""}" ` +
+  const slices = '<div class="mgrp">' + optSlices(cnt).map(([k, label]) =>
+    `<button type="button" class="gch${ost.slice === k ? " on" : ""}" ` +
     `data-optslice="${k}">${esc(label)}</button>`).join("") + '</div>';
 
   /* The chip shows its POSITION when it is on -- 1 is the master. Without that
@@ -6997,7 +7087,7 @@ function optimizeBadge(t, nth, picked){
            "Pick a different pass" named one of the two things it is for. */
         /* 2026-10-16 -- WITH ITS COUNT. Trevor: *"I need a link to see our passes as we had them before"* -- a bare
            "Table" chip under the variable list did not read as the way in to the passes. */
-        OPTSTATE.open ? "Hide table" : `Table · all ${(d.passes || []).length} passes ›`}</button></div>` +
+        OPTSTATE.open ? "Hide table" : `Table · all ${cnt.total.toLocaleString()} passes ›`}</button></div>` +
     (!OPTSTATE.open ? "" :
       slices + heldNote + colChips + head + body +
       (assigned && !assignedHeld && !rows.some(p => String(p.pass) === assigned)
@@ -8952,6 +9042,7 @@ function renderJobDetail(job){
          /* An agent's own card: cores, why, and its lending meter -- the
             round card would title it "Idle -- no round". */
          (isAgent(job.fleet) && !job.helper ? agentCard(job.fleet) : machineCard(job.fleet)) : "")
+    + (job.fleet ? livePassesCard(job.fleet) : "")      // 2026-10-19 -- a sweep's passes so far
     /* ONE MACHINE, ONE JOB, ONE CARD. This used to print the machine card and
        then the seed card underneath it, which read as two jobs on one box --
        Trevor: *"a machine can't have two jobs on the go in the app page."* They
@@ -16350,6 +16441,17 @@ document.addEventListener("click", e => {
   if(e.target.closest("[data-gopen]")){ GFULL = true; repaintCards(); return; }
   if(e.target.closest("[data-optopen]")){
     OPTSTATE.open = !OPTSTATE.open; repaintCards(); return;
+  }
+  /* 2026-10-19 -- the live table's own chips (livePassesCard): same rules as the Results table's. */
+  if(e.target.closest("[data-lvopen]")){ LIVEOPT.open = !LIVEOPT.open; repaintCards(); return; }
+  const lvs = e.target.closest("[data-lvslice]");
+  if(lvs){ LIVEOPT.slice = lvs.getAttribute("data-lvslice"); repaintCards(); return; }
+  const lvc = e.target.closest("[data-lvcol]");
+  if(lvc){
+    const k = lvc.getAttribute("data-lvcol"), at = LIVEOPT.cols.indexOf(k);
+    if(at >= 0){ if(LIVEOPT.cols.length > 1) LIVEOPT.cols.splice(at, 1); }
+    else LIVEOPT.cols.push(k);
+    repaintCards(); return;
   }
   /* OPENING OR CLOSING A PANEL DISARMS IT. An action armed on one machine must
      not still be armed when you come back to that card later -- the whole point
