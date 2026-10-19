@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261018-174104";
+const APP_BUILD = "20261018-201621";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3473,18 +3473,22 @@ function agentCard(f){
   const a = f.agents || {};
   const on = a.state === "RUN";
   const st = stale(f);
+  /* 2026-10-18 -- THE BACKTEST MACHINE READS STANDBY, NOT IDLE (Trevor: "Show it as Standby, ready to take rounds" /
+     "Laptop gets no optimizations. Just backtests"). Not lending, with test slots of its own: the chip says standby
+     (testing while one runs) and the line is standbyText, in place of the lending line. */
+  const bt = !on && hasTestSlots(f.machine);
   return `
     <article class="card">
       <div class="stripe ${st ? "warn" : "agent"}"></div>
       <div class="card-in">
         <div class="top">
           <span class="chip gold">${esc(f.machine)}</span>
-          <span class="chip">${on ? "lending" : "idle"}</span>
+          <span class="chip">${on ? "lending" : bt ? (testsOn(f.machine) ? "testing" : "standby") : "idle"}</span>
           <span class="sp"></span>
           <span class="when">${f.age_seconds != null
             ? "♥ " + esc(ago(f.age_seconds)) : "never reported"}</span>
         </div>
-        <div class="sub">${esc(String(a.running == null ? "?" : a.running))} of ${esc(String(a.installed == null ? "?" : a.installed))} core(s) · ${esc(a.why || (on ? "running" : "stopped"))}</div>
+        <div class="sub">${bt ? esc(standbyText(f)) : `${esc(String(a.running == null ? "?" : a.running))} of ${esc(String(a.installed == null ? "?" : a.installed))} core(s) · ${esc(a.why || (on ? "running" : "stopped"))}`}</div>
         ${on ? lentPanel(f, "Lent cores") : ""}
         ${agentMeter(f.machine)}
       </div>
@@ -4980,6 +4984,43 @@ function standingJob(f){
   };
 }
 
+/* 2026-10-18 -- THE BACKTEST MACHINE: one whose slot service reports (backtest_slots.d) and has slots. */
+function hasTestSlots(m){
+  const st = (BTSLOTS || {})[m];
+  return !!(st && !/no backtest slots/.test(String(st.why || "")));
+}
+/* ...a test running on it: a slot's seed or its own MT5's, an owed part's lease, or its slot service's count. */
+function testsOn(m){
+  const own = by => String(by || "").split("~")[0] === m;
+  return SEEDS.some(sd => executingSeed(sd) && own(sd.claimed_by))
+      || leaseTasks().some(t => own(t.by))
+      || Number(((BTSLOTS || {})[m] || {}).running) > 0;
+}
+/* ...and its words: running, or ready -- with why its slots are not starting one (the slot service's own words),
+   unless that is simply that nothing is owed. */
+function standbyText(f){
+  const st = (BTSLOTS || {})[f.machine] || {};
+  if(testsOn(f.machine)){
+    const n = Number(st.running) || 0;
+    return n > 1 ? `running ${n} backtests` : "running a backtest";
+  }
+  const why = String(st.why || "").replace(/ -- /g, " \u2014 ");
+  return "ready for backtests" + (!why || why === "nothing owed" ? " · nothing owed" : " · " + why);
+}
+/* The backtest machine with no test running: a Standing by row, after the trays. */
+function standbyJob(f){
+  const paused = trayPaused(f);
+  const age = trayReportAge(f);
+  const seen = age != null ? ` · tray reported ${ago(age)}` : "";
+  return {
+    id: "m:" + f.machine, section: "Standing by",
+    helper: false, fleet: f, seed: null, title: f.machine, copy: null,
+    line: (paused ? "paused" : standbyText(f)) + seen,
+    chip: paused ? "PAUSED" : "STANDBY",
+    regime: null, cls: "",
+  };
+}
+
 function agentJob(f){
   const a = f.agents || {};
   const host = FLEET.find(h => h.machine === a.agent_for) || null;
@@ -5061,6 +5102,12 @@ function jobsModel(){
      laptop doesn't need to be there. Just the Optimization trays that aren't working can be here."). An agent /
      backtest machine has its tests under its own heading; one that stops reporting still shows below. */
   rest.filter(f => trayUp(f) && !isAgent(f)).forEach(f => tail.push(standingJob(f)));
+  /* 2026-10-18 -- THE BACKTEST MACHINE STANDS BY BESIDE THEM. Trevor: "If the laptop isn't working. It should be in
+     standby next to the extra trays that that t79 has" -> "Show it as Standby, ready to take rounds" / "Laptop gets no
+     optimizations. Just backtests." This REVERSES 10-17's "The laptop doesn't need to be there": while no test of its
+     own runs (testsOn), it is one row after the trays -- ready for backtests, or why its slots are not starting one. */
+  rest.filter(f => trayUp(f) && isAgent(f) && hasTestSlots(f.machine) && !testsOn(f.machine))
+      .forEach(f => tail.push(standbyJob(f)));
   rest.filter(f => !trayUp(f)).forEach(f => tail.push({
     id: (isAgent(f) ? "h:" : "m:") + f.machine, section: "Not reporting",
     helper: false, fleet: f, seed: null, title: f.machine, copy: f.copy || null,
