@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261018-201621";
+const APP_BUILD = "20261018-221121";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4409,8 +4409,61 @@ function renderResultsList(){
            data-rfilter="task">${RESULTS_TASK ? esc(phaseText(RESULTS_TASK))
                                               : "All tasks"}</button>`
       : "") + `
-    </div>` + rows;
+    </div>` + rows + baselinesSection();
 }
+
+/* 2026-10-18 -- THE EPOCH-START TESTS, AT THE VERY BOTTOM. Trevor: "The results tab needs at the very bottom, the base line
+   tests that we ran. Bucket tests for all buckets, and a full test." The current version's FIRST run of each kind of
+   the whole bucket (group ALL) in CURVES: its first full test, and every bucket's first bucket test -- the epoch-start
+   baselines (V3.1: 10-15, PASS59-64). CURVES carries their numbers and balance lines; a row opens its line. Scope is
+   the publisher's "all" / "bucket", never the report style's name (the leak scan, see curveHistory). */
+const BASEOPEN = {};      // {curve id: true} -- that baseline's balance line is open
+function baselineRuns(){
+  const byStamp = CURVES.slice().sort((a, b) => String(a.stamp).localeCompare(String(b.stamp)));
+  if(!byStamp.length) return [];
+  const ver = String(byStamp[byStamp.length - 1].id || "").split("/")[0];
+  const firsts = {};
+  byStamp.forEach(c => {
+    if(String(c.id || "").split("/")[0] !== ver || String(c.group) !== "ALL") return;
+    const k = c.scope === "all" ? "all" : c.scope === "bucket" ? c.regime + "|" + c.bucket : null;
+    if(k && !firsts[k]) firsts[k] = c;
+  });
+  const buckets = Object.keys(firsts).filter(k => k !== "all").map(k => firsts[k])
+    .sort((a, b) => bktOrder(a.regime, a.bucket, b.regime, b.bucket));
+  return (firsts.all ? [firsts.all] : []).concat(buckets);
+}
+function baselinesSection(){
+  const runs = baselineRuns();
+  if(!runs.length) return "";
+  const ver = String(runs[0].id || "").split("/")[0].replace(/^GoldBot_/, "");
+  const grid = "grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,1fr))";
+  const num = (v, f) => v == null || !isFinite(Number(v)) ? "\u2014" : f(Number(v));
+  const rows = runs.map(c => {
+    const m = c.m || {};
+    const name = c.scope === "all" ? "Full test" : bktName(c.regime, c.bucket);
+    const open = !!BASEOPEN[c.id];
+    return `<button type="button" class="optr ro" style="${grid};width:100%;background:transparent;border:0;` +
+      `color:inherit;font:inherit;text-align:right;cursor:pointer" data-baseopen="${esc(c.id)}">` +
+      `<span style="text-align:left;white-space:nowrap">${open ? "\u25be" : "\u25b8"} ${esc(name)}<br><span class="tnote">${
+        esc(eqWhen(c))}</span></span>` +
+      `<span>${num(m.pf != null ? m.pf : c.pf, v => v.toFixed(2))}</span>` +
+      `<span>${num(m.trades != null ? m.trades : c.trades, v => v.toLocaleString("en-US"))}</span>` +
+      `<span>${num(m.net, eqMoney)}</span><span>${num(m.dd, eqMoney)}</span></button>` +
+      (open && c.t && c.t.length ? `<div style="margin:4px 0 10px">${equityChart(c, null)}</div>` : "");
+  }).join("");
+  return `<div class="section-label">Baselines \u00b7 ${esc(ver)}</div><div class="card"><div class="card-in">` +
+    `<div class="optr opth" style="${grid}"><span style="text-align:left">Test</span><span>PF</span>` +
+    `<span>Trades</span><span>Net</span><span>Max DD</span></div>` + rows +
+    `<div class="vhcap">The first full test and each bucket's first bucket test of this version, on the whole bucket.
+      Tap one for its balance line.</div></div></div>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-baseopen]");
+  if(!b) return;
+  const id = b.getAttribute("data-baseopen");
+  BASEOPEN[id] = !BASEOPEN[id];
+  repaintCards();
+});
 
 /* 2026-10-16 -- TO REVIEW ON THE RESULTS TAB TOO. Trevor: *"In the results tab. I want a "To Review" section. If I
    haven't opened up a recent job that has just finished running. I want it in "To Review"."* The home screen's list
@@ -6971,6 +7024,36 @@ function optCutNote(cnt){
    (live_passes). READ-ONLY: nothing is picked mid-round. "#" is the order each pass FINISHED in -- the feed carries no
    MT5 pass number -- and there is no Closest to target: the trade band is measured when the round ends. */
 const LIVEOPT = {slice: "top", cols: ["result", "pf"], open: false};
+/* 2026-10-18 -- THE BUCKET TEST BEFORE THIS ROUND, to hold the best pass against. Trevor: "on this tab where it tells
+   me the best pass result. I want the previous bucket test of value to compare." The newest bucket-scope run of this
+   bucket in CURVES, any group, on the 2-year window: a checkpoint's one-year test spans half that (the 10-16 "before"
+   that was a one-year test). The sweep's Result is the fitness and a bucket test reports none, so the two are compared
+   on PF, trades and net. null when the bucket has none. */
+const PRIOR_MIN_DAYS = 450;
+function priorBucketTest(f){
+  if(!f || !f.regime || f.bucket_id == null) return null;
+  const span = c => c.t && c.t.length > 1 ? (c.t[c.t.length - 1] - c.t[0]) / 1440 : 0;
+  const mine = CURVES.filter(c => c.scope === "bucket" && String(c.regime).toUpperCase() === String(f.regime).toUpperCase()
+                                  && String(c.bucket) === String(f.bucket_id) && span(c) >= PRIOR_MIN_DAYS)
+    .sort((a, b) => String(a.stamp).localeCompare(String(b.stamp)));
+  return mine.length ? mine[mine.length - 1] : null;
+}
+function priorCompare(top, f){
+  const c = priorBucketTest(f);
+  if(!top || !c) return "";
+  const m = c.m || {};
+  const grid = "grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr))";
+  const num = (v, fmt) => v == null || !isFinite(Number(v)) ? "\u2014" : fmt(Number(v));
+  const row = (label, pf, tr, net) => `<div class="optr ro" style="${grid}"><span style="text-align:left">${label}</span>` +
+    `<span>${num(pf, v => v.toFixed(2))}</span><span>${num(tr, v => v.toLocaleString("en-US"))}</span>` +
+    `<span>${num(net, eqMoney)}</span></div>`;
+  return `<div style="margin:0 0 8px"><div class="optr opth" style="${grid}"><span></span><span>PF</span>` +
+    `<span>Trades</span><span>Net</span></div>` +
+    row(`Best so far <b>#${esc(top.pass)}</b>`, top.pf, top.trades, top.profit) +
+    row(`Bucket test before<br><span class="tnote">${esc(eqWhen(c))} \u00b7 ${esc(humanize(c.group) || c.group)}</span>`,
+        m.pf != null ? m.pf : c.pf, m.trades != null ? m.trades : c.trades, m.net) + `</div>`;
+}
+
 function livePassesCard(f){
   const lp = f && f.live_passes;
   if(!lp || !sweeping(f)) return "";
@@ -7009,7 +7092,7 @@ function livePassesCard(f){
     cnt.total.toLocaleString()} withheld</b> \u2014 ${esc(cnt.parts.join(", "))}. ${
     (cnt.total - cnt.held).toLocaleString()} ranked.</div>`;
   return shell(
-    (best ? `<div class="sub" style="margin:0 0 6px">${best}</div>` : "") +
+    (best ? `<div class="sub" style="margin:0 0 6px">${best}</div>` : "") + priorCompare(top, f) +
     `<div class="mgrp"><button type="button" class="gch${LIVEOPT.open ? " on" : ""}" data-lvopen>${
       LIVEOPT.open ? "Hide table" : `Table \u00b7 ${cnt.total.toLocaleString()} passes so far \u203a`}</button></div>` +
     (!LIVEOPT.open ? "" : slices + heldNote + colChips + head + body +
