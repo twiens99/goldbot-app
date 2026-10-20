@@ -327,7 +327,7 @@ button.chip.on::before{content:"\2713\00a0";}
 .effchart{position:relative;}
 .effchart svg{display:block;width:100%;height:auto;touch-action:pan-y;
   -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
-.efftip{position:absolute;top:4px;pointer-events:none;background:var(--card-2);border:1px solid var(--line);
+.efftip,.sctip{position:absolute;top:4px;pointer-events:none;background:var(--card-2);border:1px solid var(--line);
   border-radius:8px;padding:6px 8px;font-size:.72rem;line-height:1.45;color:var(--text);
   max-width:calc(100% - 8px);z-index:2;}
 .effworkhd{margin-top:5px;color:var(--dim);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;}
@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261018-221121";
+const APP_BUILD = "20261020-173305";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -1966,6 +1966,7 @@ let AGENTEFF = {};
 let FAHIST = null;   // 2026-10-06 -- fleet_agents_history, see fleetAgentBars
 let EFF = null;      // 2026-10-06 -- efficiency, see renderEfficiency
 let EFFMODEL = null; // 2026-10-17 -- d.efficiency_model, see effModelCard
+let SCHEFF = null;   // 2026-10-20 -- d.schedule_efficiency, see renderSchedule (the Schedule Efficiency page)
 let TRACK = {};   // 2026-09-26 -- d.track_record: what the ETAs stand on
 /* 2026-09-30 -- GOLDbot's books, from the Laptop (fleet_api /finance). MEMORY
    ONLY: never localStorage, never the snapshot. See renderFinance. */
@@ -9509,7 +9510,8 @@ function scheduleSummary(){
    unsaved draft, posts to the fleet). Shown exactly when that chip is. */
 let HOME_SCHED_MSG = "";
 function scheduleHomeCard(){
-  const tile = homeButton("schedule", "\u2637", "Schedule", scheduleSummary(), "var(--range)");
+  /* 2026-10-20 -- the page is the Schedule Efficiency page now (renderSchedule); its line is the model's progress. */
+  const tile = homeButton("schedule", "\u2637", "Schedule Efficiency", scheffSummary(), "var(--range)");
   const sch = schedule();
   const status = sch.status || "idle";
   if(!(sch.blocks || []).length || status === "running") return tile;
@@ -10414,22 +10416,233 @@ function inProgressSection(){
     items.map(it => ipCard(it, false)).join("");
 }
 
+/* 2026-10-20 -- THE SCHEDULE EFFICIENCY PAGE (app_snapshot.collect_schedule_efficiency). Trevor: *"I want to change the
+   Schedule tab into the Schedule efficiency tab. I won't be needing to make my own schedule anymore. That's going
+   Efficiency optimized. But I'd like to see the progress the the efficiency model is making."* The round ledger, rebuilt
+   by the publisher from the fleet's own records: the epoch, every round this epoch with its best against the original
+   and its wasted passes, what runs next with what a round that size has cost, and the cost table itself. Every name
+   comes from the data -- the leak scan refuses internal names in this page's source. */
+let SCHEFF_OPEN = null;      // the round whose best-so-far chart is open: machine|start
+const scNum = v => v == null ? "\u2014" : Number(v).toLocaleString();
+const scHours = h => h == null ? "\u2014" : (h >= 48 ? `${(h / 24).toFixed(1)} d` : `${Number(h).toFixed(1)} h`);
+const scPct = x => x == null ? "\u2014" : Math.round(x * 100) + "%";
+const scRoundKey = r => (r.machine || "") + "|" + Math.round(r.start || 0);
+function scBucket(regime, id){
+  return `<span class="chip ${REGIME_CLASS[regime] || ""}">${esc(regime || "")}</span> `
+    + `<b>${esc(bktTier(regime, id) || String(id))}</b>`;
+}
+function scheffSummary(){
+  const t = (SCHEFF && SCHEFF.totals) || null;
+  if(!t) return esc(campaignProgress());
+  return `${esc(campaignProgress())} \u00b7 <span class="hcount">${t.running} running</span>`
+    + (t.wasted_share != null ? ` \u00b7 ${scPct(t.wasted_share)} of kept passes wasted` : "");
+}
+function scheffEpochCard(){
+  const S = SCHEFF, t = S.totals || {}, ep = S.epoch || {};
+  const locked = {};
+  (S.settings_locked || []).forEach(b => { locked[b.key] = b; });
+  const bs = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
+  let out = '<div class="card"><div class="card-in">'
+    + trkKv([["Epoch", (ep.name || "\u2014") + (ep.started_at ? " \u00b7 since " + fmtWhen(ep.started_at) : "")],
+             ["Groups done", campaignProgress()],
+             ["Rounds", `${t.running || 0} running \u00b7 ${t.finished || 0} finished${t.lost ? " \u00b7 " + t.lost + " lost" : ""}`],
+             ["Agent-hours used", t.core_hours != null ? scNum(Math.round(t.core_hours)) : "\u2014"],
+             ["Wasted passes", t.passes_kept ? `${scNum(t.passes_wasted)} of ${scNum(t.passes_kept)} \u00b7 ${scPct(t.wasted_share)}`
+                                             : "none kept yet"]]);
+  if(bs.length)
+    out += '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Bucket</th><th>Groups done</th><th>Settings locked</th></tr>'
+      + bs.map(b => {
+          const L = locked[b.key];
+          return `<tr><td>${scBucket(b.regime, b.bucket_id)}</td><td>${b.done || 0} of ${b.total || 0}</td>`
+            + `<td>${L ? L.locked + " of " + L.total : "\u2014"}</td></tr>`;
+        }).join("") + '</table></div>';
+  out += `<div class="trk-note">A wasted pass ran after its round's best was already within ${
+      Math.round((S.waste_eps || 0.01) * 100)}% of where the round ended (so far, for a round still running). `
+    + 'Agent-hours = agents working on a round, minute by minute.</div>';
+  return out + '</div></div>';
+}
+function scheffRoundsCard(){
+  const rs = SCHEFF.rounds || [];
+  if(!rs.length) return '<div class="card"><div class="card-in"><div class="trk-note">No round this epoch yet.</div></div></div>';
+  let out = '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl">'
+    + '<tr><th>Round</th><th>Time</th><th>Passes</th><th>Best vs original</th><th>Wasted</th></tr>';
+  rs.forEach(r => {
+    const c = r.curve || {};
+    const key = scRoundKey(r);
+    const best = c.best != null ? Number(c.best).toFixed(2) : "\u2014";
+    const vs = r.gain_pct != null
+      ? ` <span class="${r.gain_pct >= 0 ? "" : "bad"}">${r.gain_pct >= 0 ? "+" : ""}${r.gain_pct}%</span>`
+      : (c.best != null ? ' <span class="dim">no original</span>' : "");
+    const pf = r.bucket_pf_before != null && r.bucket_pf_after != null
+      ? `<br><span class="dim">bucket PF ${Number(r.bucket_pf_before).toFixed(2)} \u2192 ${Number(r.bucket_pf_after).toFixed(2)}</span>` : "";
+    out += `<tr data-scround="${esc(key)}"${c.passes ? ' style="cursor:pointer"' : ""}>`
+      + `<td style="white-space:normal">${scBucket(r.regime, r.bucket_id)} ${esc(humanize(r.group_id || ""))}`
+      + `<br><span class="dim">${r.status === "running" ? '<span class="chip gold">running</span> ' : esc(r.status) + " \u00b7 "}`
+      + `${copyTag(effCopyOf(r.machine))} ${r.settings ? esc(String(r.settings)) + " settings \u00b7 " : ""}`
+      + `${r.grid ? scNum(r.grid) + " combinations" : ""}</span>${r.over_cap ? ' <span class="chip warn">over the cap</span>' : ""}</td>`
+      + `<td>${scHours(r.hours)}</td>`
+      + `<td>${scNum(r.passes)}${r.pace ? `<br><span class="dim">${esc(String(r.pace))}/h</span>` : ""}</td>`
+      + `<td>${best}${vs}${pf}</td><td>${c.passes ? scPct(c.wasted_share) : "\u2014"}</td></tr>`;
+  });
+  out += '</table></div>';
+  /* The open round's chart under the table, the card's full width (inside the scrolling table it ran off a phone). */
+  const open = rs.find(r => SCHEFF_OPEN === scRoundKey(r) && (r.curve || {}).passes);
+  if(open)
+    out += `<div class="tlab" style="margin-top:10px">${scBucket(open.regime, open.bucket_id)} ${esc(humanize(open.group_id || ""))}`
+      + ' \u00b7 best so far</div>' + scCurveChart(open);
+  out += '<div class="trk-note">Tap a round with kept passes for its best so far, pass by pass. Best and '
+    + 'the original are the round\'s own Result (profit \u00f7 drawdown).</div>';
+  return out + '</div></div>';
+}
+/* THE BEST SO FAR, one round: a step line (it only ever rises), the original as a dashed reference, the pass where the
+   round came within the waste margin of its best marked. One series -- the title names it, no legend. */
+const SC_G = {W: 320, H: 150, pl: 36, pr: 10, pt: 12, pb: 22};
+function scCurveChart(r){
+  const pts = r.best_curve || [], c = r.curve || {};
+  if(pts.length < 2) return '<div class="trk-note">Not enough passes kept to draw yet.</div>';
+  const {W, H, pl, pr, pt, pb} = SC_G;
+  const n1 = Math.max(2, pts[pts.length - 1][0]);
+  let lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1]));
+  if(r.original != null){ lo = Math.min(lo, r.original); hi = Math.max(hi, r.original); }
+  const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+  lo -= pad; hi += pad;
+  const x = n => pl + (n - 1) * (W - pl - pr) / (n1 - 1);
+  const y = v => pt + (1 - (v - lo) / (hi - lo)) * (H - pt - pb);
+  let g = "";
+  [lo + pad, (lo + hi) / 2, hi - pad].forEach(t => {
+    g += `<line x1="${pl}" x2="${W - pr}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`
+      + `<text x="${pl - 4}" y="${(y(t) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--faint)">${t.toFixed(2)}</text>`;
+  });
+  [[1, "start", "pass 1"], [Math.round(n1 / 2), "middle", null], [n1, "end", null]].forEach(([n, a, lab]) => {
+    g += `<text x="${x(n).toFixed(1)}" y="${H - 7}" text-anchor="${a}" font-size="9" fill="var(--faint)">${
+      lab || Number(n).toLocaleString()}</text>`;
+  });
+  if(r.original != null)
+    g += `<line x1="${pl}" x2="${W - pr}" y1="${y(r.original).toFixed(1)}" y2="${y(r.original).toFixed(1)}" stroke="var(--dim)" stroke-width="1" stroke-dasharray="4 3"/>`
+      + `<text x="${W - pr}" y="${(y(r.original) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--dim)">original ${
+          Number(r.original).toFixed(2)}</text>`;
+  let d = `M${x(pts[0][0]).toFixed(1)} ${y(pts[0][1]).toFixed(1)}`;
+  for(let i = 1; i < pts.length; i++) d += `H${x(pts[i][0]).toFixed(1)}V${y(pts[i][1]).toFixed(1)}`;
+  g += `<path d="${d}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if(c.there_n){
+    const at = pts.filter(p => p[0] <= c.there_n).pop() || pts[0];
+    g += `<circle cx="${x(c.there_n).toFixed(1)}" cy="${y(at[1]).toFixed(1)}" r="4" fill="var(--gold)" stroke="var(--card)" stroke-width="2"/>`;
+  }
+  g += `<line class="scx" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="var(--dim)" stroke-width="1" visibility="hidden"/>`;
+  const table = '<details class="efftable"><summary>Table</summary><table><tr><th>Pass</th><th>Best so far</th></tr>'
+    + pts.map(p => `<tr><td>${scNum(p[0])}</td><td>${Number(p[1]).toFixed(4)}</td></tr>`).join("") + '</table></details>';
+  return `<div class="effchart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Best Result so far, pass by pass" `
+    + `data-scsvg="${esc(scRoundKey(r))}" data-n="${n1}">${g}</svg><div class="sctip" hidden></div></div>`
+    + `<div class="trk-note">Best ${c.best != null ? Number(c.best).toFixed(2) : "\u2014"} first reached at pass ${scNum(c.best_n)}; `
+    + `within the margin of it by pass ${scNum(c.there_n)} of ${scNum(c.passes)}.</div>` + table;
+}
+function scTip(svg, clientX){
+  const r = ((SCHEFF && SCHEFF.rounds) || []).find(x => scRoundKey(x) === svg.dataset.scsvg);
+  if(!r) return;
+  const pts = r.best_curve || [], n1 = +svg.dataset.n;
+  const box = svg.getBoundingClientRect();
+  const {W, pl, pr} = SC_G;
+  const vx = (clientX - box.left) * W / box.width;
+  const n = Math.max(1, Math.min(n1, Math.round(1 + (vx - pl) * (n1 - 1) / (W - pl - pr))));
+  const at = pts.filter(p => p[0] <= n).pop() || pts[0];
+  const xv = pl + (n - 1) * (W - pl - pr) / (n1 - 1);
+  const cross = svg.querySelector(".scx"), tip = svg.parentElement.querySelector(".sctip");
+  cross.setAttribute("x1", xv); cross.setAttribute("x2", xv); cross.setAttribute("visibility", "visible");
+  tip.innerHTML = `<b>Pass ${scNum(n)}</b><br>Best so far: ${Number(at[1]).toFixed(4)}`
+    + (r.original != null ? `<br>Original: ${Number(r.original).toFixed(4)}` : "");
+  tip.hidden = false;
+  const px = xv * box.width / W;
+  tip.style.left = Math.max(0, Math.min(px + 10, box.width - tip.offsetWidth)) + "px";
+}
+function scHideTips(){
+  document.querySelectorAll("svg[data-scsvg]").forEach(svg => {
+    const tip = svg.parentElement.querySelector(".sctip"), x = svg.querySelector(".scx");
+    if(tip) tip.hidden = true;
+    if(x) x.setAttribute("visibility", "hidden");
+  });
+}
+["pointermove", "pointerdown"].forEach(t => document.addEventListener(t, e => {
+  const svg = e.target.closest && e.target.closest("svg[data-scsvg]");
+  if(svg && (t === "pointerdown" || e.pointerType === "mouse" || e.buttons)) scTip(svg, e.clientX);
+  else if(!svg && t === "pointerdown") scHideTips();
+}));
+document.addEventListener("click", e => {
+  const row = e.target.closest && e.target.closest("[data-scround]");
+  if(!row) return;
+  e.preventDefault();
+  SCHEFF_OPEN = SCHEFF_OPEN === row.dataset.scround ? null : row.dataset.scround;
+  const y = window.scrollY;
+  repaintSchedule();
+  window.scrollTo(0, y);
+});
+const scBandFor = grid => ((SCHEFF && SCHEFF.cost_bands) || []).find(b => grid >= b.lo && grid <= b.hi);
+function scheffNextCard(){
+  /* Only a scheduled sweep carries a plan (queue_preview._entry) -- the internal task name is the leak scan's. */
+  const q = (QUEUE || []).filter(it => it && it.plan && it.group_id).slice(0, 8);
+  if(!q.length) return '<div class="card"><div class="card-in"><div class="trk-note">Nothing queued right now.</div></div></div>';
+  const cap = SCHEFF.grid_cap || Infinity;
+  let out = '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl">'
+    + '<tr><th>Next</th><th>Size</th><th>Expect</th></tr>';
+  q.forEach(it => {
+    const p = it.plan || {}, pts = p.points || [];
+    const over = (p.grid || 0) > cap, b = p.grid ? scBandFor(p.grid) : null;
+    /* 2026-10-20 -- a group over the cap runs in blocks: the series, when one has started (its next block). */
+    const ser = ((SCHEFF.blocks || {})[`${it.regime}|${it.bucket_id}|${it.group_id}`]) || null;
+    const blk = over ? (ser ? `block ${Math.min(ser.done + 1, ser.of)} of ${ser.of}` : "runs in blocks") : "";
+    out += `<tr><td style="white-space:normal">${scBucket(it.regime, it.bucket_id)} ${esc(humanize(it.group_id))}`
+      + `${it.source === "seed" ? ' <span class="chip">seed</span>' : ""}</td>`
+      + `<td>${p.settings ? esc(p.settings + " \u00d7 " + pts.join("/")) : "\u2014"}`
+      + `${p.grid ? `<br><span class="dim">${scNum(p.grid)}</span>` : ""}${over ? ' <span class="chip warn">over the cap</span>' : ""}</td>`
+      + `<td>${over ? esc(blk) + '<br><span class="dim">each block about one round under the cap</span>'
+          : b && b.rounds ? `~${scNum(b.passes)} passes \u00b7 ~${scHours(b.hours)}<br><span class="dim">${b.rounds} round${
+            b.rounds === 1 ? "" : "s"} this size measured</span>` : "not measured yet"}</td></tr>`;
+  });
+  out += '</table></div><div class="trk-note">Settings \u00d7 values each. A group over the cap runs in blocks of up to '
+    + '4 settings, each its own round; the group counts once its last block is done. The order is the built-in rotation '
+    + 'until the efficiency order is live.</div>';
+  return out + '</div></div>';
+}
+function scheffCostCard(){
+  const bands = SCHEFF.cost_bands || [];
+  let out = '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl">'
+    + '<tr><th>Combinations</th><th>Rounds</th><th>Passes</th><th>Hours</th></tr>'
+    + bands.map(b => `<tr><td>${esc(b.band)}</td><td>${b.rounds}</td><td>${b.rounds ? scNum(b.passes)
+        + (b.passes_lo !== b.passes_hi ? ` <span class="dim">(${scNum(b.passes_lo)}\u2013${scNum(b.passes_hi)})</span>` : "") : "\u2014"}</td>`
+        + `<td>${b.rounds ? scHours(b.hours) : "\u2014"}</td></tr>`).join("") + '</table></div>';
+  const big = (SCHEFF.rounds || []).filter(r => r.status === "running" && r.over_cap);
+  if(big.length)
+    out += '<div class="trk-note"><b>Over the cap, still running:</b> ' + big.map(r =>
+        `${esc(r.regime)} ${esc(bktTier(r.regime, r.bucket_id) || String(r.bucket_id))} ${scNum(r.passes)} passes in ${scHours(r.hours)}`).join(" \u00b7 ")
+      + `. The old estimate for any round this big was ~${scNum(SCHEFF.old_rule_passes)} passes.</div>`;
+  out += '<div class="trk-note">Finished real-tick rounds on the optimizer box. Typical = the middle round, with the '
+    + 'middle half\'s range of passes.</div>';
+  return out + '</div></div>';
+}
 function renderSchedule(){
   /* The builder takes the whole page when it is open -- it is a form, and a
      summary card above a form you are already inside is one more thing between
      you and the field you came to change. Its own back control returns here. */
   if(SCHED_VIEW) return renderScheduleBuilder();
-  return '<div class="home">'
-    + '<button type="button" class="backbtn" data-go="home">\u2039 Home</button>'
-    + '<div class="section-label">Schedule</div>'
-    + (noScheduleText() ? '<div class="nosched" style="cursor:default;margin:0 0 10px">'
+  /* 2026-10-20 -- the hand-built schedule is not needed any more (the efficiency order takes over); it stays reachable,
+     folded, until that is live. */
+  const hand = '<details class="efftable" style="margin-top:14px"><summary>Hand-built schedule</summary>'
+    + (noScheduleText() ? '<div class="nosched" style="cursor:default;margin:8px 0 10px">'
                           + esc(noScheduleText()) + '</div>' : "")
     + scheduleBadge()
     + '<div class="section-label" style="margin-top:14px">Flow</div>'
-    + scheduleFlowchart()
-    + '<div class="section-label" style="margin-top:14px">Recurring bucket tests</div>'
-    + recurringCard()
-    + '</div>';
+    + scheduleFlowchart() + '</details>';
+  const head = '<div class="home">'
+    + '<button type="button" class="backbtn" data-go="home">\u2039 Home</button>'
+    + '<div class="section-label">Schedule Efficiency</div>';
+  const recurring = '<div class="section-label" style="margin-top:14px">Recurring bucket tests</div>' + recurringCard();
+  if(!SCHEFF)
+    return head + '<div class="card"><div class="card-in"><div class="trk-note">This snapshot has no efficiency data yet '
+      + '\u2014 it arrives with the publisher that builds it.</div></div></div>' + recurring + hand + '</div>';
+  return head + scheffEpochCard()
+    + '<div class="section-label" style="margin-top:14px">Rounds this epoch</div>' + scheffRoundsCard()
+    + '<div class="section-label" style="margin-top:14px">Next up</div>' + scheffNextCard()
+    + '<div class="section-label" style="margin-top:14px">What a round costs</div>' + scheffCostCard()
+    + recurring + hand + '</div>';
 }
 
 /* 2026-10-13 -- RECURRING BUCKET TESTS. Trevor: "I'd like to know what this regime is making. I'd like to
@@ -15389,6 +15602,8 @@ function applySnapshot(d, source){
   FAHIST = d.fleet_agents_history || null;
   EFF = d.efficiency || null;
   EFFMODEL = (d.efficiency_model && typeof d.efficiency_model === "object") ? d.efficiency_model : null;
+  SCHEFF = (d.schedule_efficiency && typeof d.schedule_efficiency === "object" && !d.schedule_efficiency.error)
+    ? d.schedule_efficiency : null;
   TRACK = (d.track_record && typeof d.track_record === "object") ? d.track_record : {};
   AGENTCONTRIB = d.agent_contribution || {};
   SEEDS = Array.isArray(d.seeds) ? d.seeds : [];
