@@ -1731,6 +1731,24 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-sw.now{background:var(--text);border-radius:50%;}
 .lv-gauge .init{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--faint);border-radius:1px;}
 .lv-gauge .stopmk{position:absolute;top:-6px;bottom:-6px;width:4px;margin-left:-2px;border-radius:2px;}
+/* 2026-10-22 -- the give-back cap: shorter than the stop's marker, so when the
+   two meet (the cap is holding the stop) both still show. A ring until it arms. */
+.lv-gauge .capmk{position:absolute;top:-3px;bottom:-3px;width:4px;margin-left:-2px;border-radius:2px;background:var(--done);}
+.lv-gauge .armmk{position:absolute;top:-2px;width:12px;height:12px;margin-left:-6px;border-radius:50%;
+  box-sizing:border-box;border:2px solid var(--done);background:var(--bg);}
+.lv-sw.cap{background:var(--done);width:4px;height:10px;}
+.lv-pill.cap{background:rgba(169,139,224,.16);color:var(--done);}
+.lv-glabels{flex-wrap:wrap;}
+.lv-gtags{position:relative;height:13px;margin:0 2px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.64rem;line-height:13px;font-variant-numeric:tabular-nums;}
+.lv-gtags span{position:absolute;white-space:nowrap;}
+.lv-gtags.top{margin-bottom:5px;}
+.lv-gtags.bot{margin-top:8px;}
+.lv-gtags .stop{color:var(--bad);}
+.lv-gtags .tp{color:var(--good);}
+.lv-gtags .cap, .lv-gtags i{color:var(--done);font-style:normal;}
+.lv-gtags .entry{color:var(--gold);}
+.lv-gtags .now{color:var(--text);}
 .lv-stop{display:flex;flex-direction:column;gap:6px;background:var(--bg);border-radius:10px;padding:10px 11px 11px;}
 .lv-stophead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .lv-stophead .lv-v{font-size:1.05rem;}
@@ -1950,7 +1968,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261021-201325";
+const APP_BUILD = "20261022-112639";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14420,7 +14438,8 @@ function lvPaintOpen(){
      second otherwise. Rebuilding once a second would replace the button under
      a finger that was halfway through tapping it. */
   const key = JSON.stringify(pos.map(p => [p.ticket, p.sl, p.tp, p.regime, p.bucket, p.sl_initial,
-                                           (p.sl_trail || []).length, !!p.sl_gap]));
+                                           (p.sl_trail || []).length, !!p.sl_gap,
+                                           p.giveback ? [p.giveback.cap_r > 0, p.giveback.bucket] : null]));
   if(el.dataset.key !== key){
     el.dataset.key = key;
     el.innerHTML = pos.map(lvOpenCard).join("");
@@ -14442,15 +14461,77 @@ function lvPerPoint(p){
    The EA sends no take-profit (TP is 0 on every order and every modify), so
    unless it closes on a signal, this IS the trade's result. Swap is included;
    slippage past the stop is not, so it reads "about". */
-function lvStopPnl(p){
-  const v = lvPerPoint(p), sl = Number(p.sl);
-  if(!v || !sl) return null;
-  return (sl - Number(p.entry_price)) * (p.dir === "buy" ? 1 : -1) * v + Number(p.swap || 0);
+function lvStopPnl(p){ return lvLevelPnl(p, p.sl); }
+/* The same for any price on the bar: what closing there would make, entry = 0. */
+function lvLevelPnl(p, level){
+  const v = lvPerPoint(p), x = Number(level);
+  if(!v || !x) return null;
+  return (x - Number(p.entry_price)) * (p.dir === "buy" ? 1 : -1) * v + Number(p.swap || 0);
+}
+
+/* THE GIVE-BACK CAP, beside the stop. Trevor, 2026-10-22: "I want to know where
+   the give back cap is. Then I get to see two sliders converging to see who will
+   be getting the profit." The VPS feed sends the bucket's cap and the best price
+   since entry; the price now can be newer than that, so the cap is worked out
+   again here every second. Once armed it sits a fixed distance behind the best
+   price, and the broker stop is the tighter of it and the trail -- so the cap
+   meeting the stop IS the cap taking over. null from an older feed. */
+function lvGiveBack(p){
+  const gb = p.giveback;
+  if(!gb) return null;
+  const trig = Number(gb.trigger_r), capR = Number(gb.cap_r), risk = Number(gb.risk);
+  if(!(trig > 0 && capR > 0 && risk > 0)) return {gb, off: true};
+  const dir = p.dir === "buy" ? 1 : -1, entry = Number(p.entry_price), px = Number(p.price);
+  let best = Number(gb.best) || entry;
+  if(px && (px - best) * dir > 0) best = px;
+  const back = capR * risk;
+  const armAt = entry + dir * trig * risk;
+  const armed = (best - entry) * dir >= trig * risk - 1e-9;
+  const cap = armed ? best - dir * back : null;
+  const sl = Number(p.sl);
+  /* "At or tighter than the stop" within a hair: the best price here is rebuilt
+     from bid bars plus the spread now, not the EA's own tick. */
+  const holds = armed && !!sl && (cap - sl) * dir >= -Math.max(0.2, risk * 0.005);
+  return {gb, off: false, dir, best, back, trig, capR, armAt, armed, cap, holds,
+          // where the price must reach for a looser cap to take the stop over
+          takeover: armed && !holds && sl ? sl + dir * back : null};
+}
+
+function lvGiveBackHead(p, c){
+  if(!c) return "";
+  if(c.off) return `<span class="lv-pill off">No cap</span>`;
+  if(!c.armed) return `<span class="lv-v">${lvPx(c.armAt)}</span><span class="lv-pill off">Not armed</span>`;
+  // Holding, the cap IS the broker stop, so it shows the stop's own number.
+  return `<span class="lv-v">${lvPx(c.holds ? p.sl : c.cap)}</span>` +
+         (c.holds ? `<span class="lv-pill cap">Cap holds</span>` : `<span class="lv-pill on">Trail holds</span>`);
+}
+
+function lvGiveBackLine(p, c){
+  if(!c) return "";
+  const gb = c.gb;
+  if(c.off) return `No give-back cap in ${gb.bucket != null ? bktEl(gb.bucket, false, null, gb.regime) : "this bucket"}, ` +
+                   `the bucket the EA is in now. The trail alone decides. It comes back if the slope moves into a bucket that has one.`;
+  const r = v => `${(+v).toFixed(2).replace(/\.?0+$/, "")} R`;
+  const away = Math.abs(Number(p.price) - c.armAt);
+  if(!c.armed) return `Switches on at <b>${lvPx(c.armAt)}</b> (${r(c.trig)} in profit), ${away.toFixed(2)} from the price. ` +
+                      `From then on it keeps the stop ${c.back.toFixed(2)} (${r(c.capR)}) behind the best price.`;
+  const newExt = c.dir > 0 ? "new high" : "new low";
+  if(c.holds) return `It sets the stop now: ${c.back.toFixed(2)} (${r(c.capR)}) behind the best price, about ` +
+                     `<b>${lvPx(c.best)}</b>. Each ${newExt} pulls it along.`;
+  return `About <b>${lvPx(c.cap)}</b>, ${Math.abs(c.cap - Number(p.sl)).toFixed(2)} behind the stop: ` +
+         `${c.back.toFixed(2)} (${r(c.capR)}) behind the best price so far. ` +
+         `It takes the stop over if the price reaches <b>${lvPx(c.takeover)}</b>.`;
 }
 
 function lvOpenCard(p){
   const t = esc(p.ticket), sl = Number(p.sl), tp = Number(p.tp);
   const stopPnl = lvStopPnl(p);
+  /* Trevor, 2026-10-22: red, it is the Stop; "As Soon as that turns green when
+     it's in profit. Lets call it a TP." At the broker it is still the same stop
+     order -- the EA never sends a take-profit -- but once it locks a profit,
+     closing there IS taking that profit. */
+  const isTp = stopPnl != null && stopPnl > 0.005;
+  const cap = lvGiveBack(p);
   let head, line = "";
   if(!sl){
     head = `<span class="lv-pill risk">No stop</span>`;
@@ -14466,7 +14547,9 @@ function lvOpenCard(p){
     line = init && Math.abs(init - sl) > 1e-9
       ? `Started at <b>${lvPx(init)}</b> and moved ${moves || "at least once"}${moves ? (moves === 1 ? " time" : " times") : ""}. `
       : "Where the EA placed it at entry. ";
-    line += "This is the stop that closes the trade; the EA only ever tightens it. " +
+    line += (isTp ? "It is in profit now, so it is the TP: if the price comes back to it, the trade closes " +
+                    "and keeps that profit. The EA only ever tightens it. "
+                  : "This is the stop that closes the trade; the EA only ever tightens it. ") +
             `<span id="lvo-${t}-room"></span>`;
   }
   const g = p.sl_gap;
@@ -14481,11 +14564,17 @@ function lvOpenCard(p){
     <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
       `<span class="lv-sub" id="lvo-${t}-move"></span></div>
     <div class="lv-stop">
-      <div class="lv-stophead"><span class="lv-k">Stop</span>${head}</div>
+      <div class="lv-stophead"><span class="lv-k">${isTp ? "TP" : "Stop"}</span>${head}</div>
       <div class="lv-line">${line}</div>
-      ${sl ? `<div class="lv-gauge" id="lvo-${t}-gauge" aria-hidden="true"></div>
-      <div class="lv-glabels"><span><i class="lv-sw stop"></i>stop</span><span><i class="lv-sw entry"></i>entry</span>` +
-        `<span><i class="lv-sw now"></i>price</span></div>` : ""}
+      ${cap ? `<div class="lv-stophead" id="lvo-${t}-gbh"></div>
+      <div class="lv-line" id="lvo-${t}-gbl"></div>` : ""}
+      ${sl ? `<div class="lv-gtags top" id="lvo-${t}-gtop" aria-hidden="true"></div>
+      <div class="lv-gauge" id="lvo-${t}-gauge" aria-hidden="true"></div>
+      <div class="lv-gtags bot" id="lvo-${t}-gbot" aria-hidden="true"></div>
+      <div class="lv-glabels"><span><i class="lv-sw stop" style="background:${isTp ? LV_C.good : LV_C.bad}"></i>` +
+        `${isTp ? "TP" : "stop"}</span><span><i class="lv-sw entry"></i>entry = 0</span>` +
+        `<span><i class="lv-sw now"></i>price</span>` +
+        (cap && !cap.off ? `<span><i class="lv-sw cap"></i>give-back cap</span>` : "") + `</div>` : ""}
       ${tp ? `<div class="lv-line">Target at the broker: <b>${lvPx(tp)}</b>.</div>` : ""}
     </div>
     ${gap}
@@ -14515,28 +14604,77 @@ function lvOpenLive(p){
     room.textContent = gap > 0 ? `The price is ${gap.toFixed(2)} away from it.`
                                : "The price is at or through it.";
   }
+  const c = lvGiveBack(p);
+  const set = (el, html) => { if(el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
+  if(c){
+    set($("gbh"), `<span class="lv-k">Give-back cap</span>${lvGiveBackHead(p, c)}`);
+    set($("gbl"), lvGiveBackLine(p, c));
+  }
   const g = $("gauge");
   if(g && sl){
     /* One axis for everything that matters: where it started, the stop now,
-       the entry and the price. The shaded run is the money at the stop --
-       green when the stop has already locked in a profit, red when a loss. */
-    const vals = [sl, Number(p.entry_price), Number(p.price)];
+       the entry, the price and the give-back cap. The shaded run is the money
+       at the stop -- green when the stop has already locked in a profit, red
+       when a loss. */
+    const entry = Number(p.entry_price), px = Number(p.price);
+    const vals = [sl, entry, px];
     const init = Number(p.sl_initial);
     if(init) vals.push(init);
+    // the cap: its level once armed (the stop's own, while it holds it), else where it switches on
+    const capAt = c && !c.off ? (c.armed ? (c.holds ? sl : c.cap) : c.armAt) : null;
+    if(capAt) vals.push(capAt);
     let lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = Math.max((hi - lo) * 0.12, 0.5);
     lo -= pad; hi += pad;
     const pct = v => ((v - lo) / (hi - lo) * 100).toFixed(2);
-    const locked = (sl - Number(p.entry_price)) * dir > 0;
-    const s = pct(sl), en = pct(Number(p.entry_price)), pr = pct(Number(p.price));
+    const locked = (sl - entry) * dir > 0;
+    const s = pct(sl), en = pct(entry), pr = pct(px);
     g.innerHTML =
       `<div class="fill" style="left:${Math.min(s, en)}%;width:${Math.abs(s - en).toFixed(2)}%;` +
       `background:${locked ? LV_C.good : LV_C.bad};opacity:.45"></div>` +
       (init && Math.abs(init - sl) > 1e-9 ? `<div class="init" style="left:${pct(init)}%"></div>` : "") +
       `<div class="tick" style="left:${en}%"></div>` +
       `<div class="stopmk" style="left:${s}%;background:${locked ? LV_C.good : LV_C.bad}"></div>` +
+      (capAt ? `<div class="${c.armed ? "capmk" : "armmk"}" style="left:${pct(capAt)}%"></div>` : "") +
       `<div class="now" style="left:${pr}%"></div>`;
+    /* Trevor, 2026-10-22: "Lets have a number accociate the markings. Let's
+       keep the Entry Price at 0. And all the other's relative to The Entry."
+       Money, like the LOCKS pill: the exits above the bar, entry and price
+       below it. */
+    const stopPnl = lvStopPnl(p);
+    const top = [{x: +s, cls: locked ? "tp" : "stop",
+                  html: `${locked ? "TP" : "Stop"} ${lvMoney(stopPnl)}` + (c && c.holds ? ` <i>· cap</i>` : "")}];
+    if(capAt && !c.holds)
+      top.push({x: +pct(capAt), cls: "cap",
+                html: c.armed ? `cap ${lvMoney(lvLevelPnl(p, c.cap))}` : `cap on ${lvMoney(lvLevelPnl(p, c.armAt))}`});
+    lvTagRow($("gtop"), top, true);
+    lvTagRow($("gbot"), [{x: +en, cls: "entry", html: "0"},
+                         {x: +pr, cls: "now", html: lvMoney(Number(p.profit || 0) + Number(p.swap || 0))}], false);
   }
+}
+
+/* Numbers pinned under (or over) the bar's markers. Each sits centred on its
+   marker, inside the card; one that would touch its left neighbour moves a row
+   further from the bar. Rewritten every second, so laid out from the DOM. */
+function lvTagRow(box, items, up){
+  if(!box) return;
+  const html = items.map(it => `<span class="${it.cls}">${it.html}</span>`).join("");
+  if(box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
+  const W = box.clientWidth;
+  if(!W) return;                                    // hidden tab: laid out on the next tick
+  const els = [...box.children], ends = [];
+  let rows = 1;
+  items.map((it, i) => i).sort((a, b) => items[a].x - items[b].x).forEach(i => {
+    const el = els[i], w = el.offsetWidth;
+    const left = Math.min(Math.max(items[i].x / 100 * W - w / 2, 0), Math.max(0, W - w));
+    let r = 0;
+    while(ends[r] != null && ends[r] + 6 > left) r++;
+    ends[r] = left + w;
+    rows = Math.max(rows, r + 1);
+    el.style.left = left.toFixed(1) + "px";
+    el.style[up ? "bottom" : "top"] = (r * 13) + "px";
+  });
+  box.style.height = (rows * 13) + "px";
 }
 
 const LV_HF = [["today", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All"]];
