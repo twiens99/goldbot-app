@@ -1969,7 +1969,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-115256";
+const APP_BUILD = "20261022-121659";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12800,7 +12800,9 @@ const LV_LIB_SRI = "sha384-OK7vELvjHdhUFi31JYioPIcRHTROLdcDa6ZsNWgvgLaKj+9JqhU0A
 const LV_BAND = {BULL: "rgba(95,190,149,.55)", BEAR: "rgba(224,104,90,.55)",
                  RANGING: "rgba(111,168,212,.55)"};
 const LV_C = {card: "#141E26", card2: "#1B2933", grid: "#18242D", line: "#22313C",
-              dim: "#8CA0AC", faint: "#5F727E", gold: "#E0B457", good: "#5FBE95", bad: "#E0685A"};
+              dim: "#8CA0AC", faint: "#5F727E", gold: "#E0B457", good: "#5FBE95", bad: "#E0685A",
+              // 2026-10-22: a selected trade's entry line (gold is the chart's slope average) and its give-back cap
+              orange: "#E08B4A", cap: "#A98BE0"};
 /* The EA's own exit reason wins: the broker records a trailing stop and a
    plain stop both as "sl", and only the EA knows which it was. */
 const LV_EA_REASON = {TRAIL: "Trail", SL: "Stop", TP: "Target", SIGNAL: "Signal"};
@@ -12821,6 +12823,8 @@ let LV = {
   wantLive: false,    // /now saw a trade open or close: fetch /live next tick
   showStop: (() => { try{ return localStorage.getItem("gb.live.stop") !== "0"; }catch(e){ return true; } })(),
   trail: null,
+  capDot: null, capDash: null,   // the selected trade's give-back cap: not armed / armed
+  hist: {},           // ticket -> {at, d, busy}: /trade, that trade's stop and cap over its life
   viewGen: 0,         // bumped by every tap that moves the chart; see lvShow
   chart: null, chartP: null, series: null, band: null, path: null, lines: [], sig: "",
 };
@@ -13937,7 +13941,10 @@ function lvSkeleton(){
     +   '<div class="lv-legend">'
     +     '<span><span style="color:var(--gold)">▲▼</span>Entry</span>'
     +     '<span><span class="lv-good">●</span>/<span class="lv-bad">●</span>Exit, won / lost</span>'
-    +     '<span><span class="lv-stopkey"></span>Stop and its trail: red at risk, green locked in</span>'
+    +     '<span><span class="lv-stopkey"></span>Stop and its trail: red = Stop (a hit loses), green = TP (locks a profit)</span>'
+    +     '<span><span style="color:var(--warn)">━</span>One trade shown: its entry</span>'
+    +     '<span><span style="color:var(--done)">┅</span>Give-back cap, not armed · '
+    +       '<span style="color:var(--done)">╍</span>armed (on the green line = it holds the stop)</span>'
     +     '<span><span class="lv-band" style="background:var(--bull)"></span>'
     +       '<span class="lv-band" style="background:var(--bear)"></span>'
     +       '<span class="lv-band" style="background:var(--range)"></span>Bottom band: regime</span>'
@@ -14016,7 +14023,9 @@ function lvPaintControls(){
   if(st) st.innerHTML = [["candles", "Candles"], ["bars", "Bars"]].map(([k, l]) =>
     `<button type="button" data-lvstyle="${k}" aria-pressed="${LV.style === k}">${l}</button>`).join("");
   const so = document.getElementById("lvstopt");
-  if(so) so.innerHTML = `<button type="button" data-lvstopt aria-pressed="${LV.showStop}">Stop</button>`;
+  if(so) so.innerHTML = `<button type="button" data-lvstopt aria-pressed="${LV.showStop}">Stop</button>` +
+    /* a selected trade is drawn alone; this brings the others back */
+    (LV.sel ? `<button type="button" data-lvall>All trades</button>` : "");
 }
 
 function lvPaint(){
@@ -14587,7 +14596,7 @@ function lvOpenCard(p){
       <div><span class="lv-k">Now</span><span class="lv-v" id="lvo-${t}-now"></span></div>
       <div><span class="lv-k">Opened</span><span class="lv-v">${lvWhen(p.entry_time)}</span></div>
     </div>
-    <button type="button" class="lv-link" data-lvfocus="p${t}">Show stop on chart</button>
+    <button type="button" class="lv-link" data-lvfocus="p${t}">Show trade on chart</button>
   </div>`;
 }
 
@@ -14812,6 +14821,12 @@ function lvEnsureChart(){
     /* The axis average on the candles -- see lvAxisMa. */
     LV.ma = LV.chart.addLineSeries({lineWidth: 2, color: LV_C.gold,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    /* 2026-10-22 -- THE SELECTED TRADE'S GIVE-BACK CAP, dotted until it arms and dashed once armed. Added after
+       the stop's step so it draws on top: a cap that holds the stop reads as the green line in purple dashes. */
+    LV.capDot = LV.chart.addLineSeries({lineType: LC.LineType.WithSteps, lineWidth: 2, color: LV_C.cap,
+      lineStyle: LC.LineStyle.Dotted, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    LV.capDash = LV.chart.addLineSeries({lineType: LC.LineType.WithSteps, lineWidth: 2, color: LV_C.cap,
+      lineStyle: LC.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
     LV.chart.priceScale("band").applyOptions({scaleMargins: {top: 0.945, bottom: 0}, visible: false});
     /* THE TWO STUDY PANES, each its own chart with its own scale, kept in step
        with the candles by lvSyncCharts. Built only if their boxes exist. */
@@ -15412,6 +15427,10 @@ function lvChartLive(){
   }
   lvMarks(false);
   lvTrailLive();
+  lvCapLive();
+  /* the selected open trade's history, kept fresh: a new stop move or a new low lands within 30 s */
+  const sel = LV.sel && lvChartTrades().find(t => t.id === LV.sel);
+  if(sel && sel.open) lvHistFetch(sel.id, false);
 }
 function lvChartTrades(){
   const sym = LV.data && LV.data.symbol && LV.data.symbol.name;
@@ -15431,7 +15450,12 @@ function lvChartTrades(){
 function lvTrailData(t){
   const arr = lvBars();
   if(!t || !arr.length) return [];
-  const pts = (Array.isArray(t.pos.sl_trail) ? t.pos.sl_trail : []).slice().sort((a, b) => a[0] - b[0]);
+  /* 2026-10-22 -- every stop the broker accepted (the terminal's journal, via /trade) when the feed has it; the
+     heartbeat's minute path otherwise. */
+  const h = lvHist(t);
+  const src = h && Array.isArray(h.stop) && h.stop.length ? h.stop
+            : t.pos && Array.isArray(t.pos.sl_trail) ? t.pos.sl_trail : [];
+  const pts = src.slice().sort((a, b) => a[0] - b[0]);
   const out = [];
   let carry = null;
   pts.forEach(([time, sl]) => {
@@ -15443,7 +15467,7 @@ function lvTrailData(t){
     else out.push({time: s, value: sl});
   });
   if(!out.length && carry != null) out.push({time: arr[0].time, value: carry});
-  const last = arr[arr.length - 1].time, live = Number(t.sl);
+  const last = arr[arr.length - 1].time, live = t.open ? Number(t.sl) : 0;
   if(live){
     if(out.length && out[out.length - 1].time === last) out[out.length - 1].value = live;
     else if(!out.length || out[out.length - 1].time < last) out.push({time: last, value: live});
@@ -15453,14 +15477,92 @@ function lvTrailData(t){
   return out;
 }
 function lvStopTrade(list){
-  return (list || lvChartTrades()).find(t => t.open && Number(t.sl));
+  const l = list || lvChartTrades();
+  /* the selected trade's stop -- a closed one too, once /trade has its history */
+  const sel = LV.sel && l.find(t => t.id === LV.sel);
+  if(sel && (sel.open ? Number(sel.sl) : lvHist(sel))) return sel;
+  return l.find(t => t.open && Number(t.sl));
 }
+
+/* ONE TRADE'S HISTORY. Trevor, 2026-10-22: "Lets Show that Entire Trade With it's history ... I want the STOP,
+   TP ... the Cap, And the Entry." /trade sends every stop the broker accepted and the give-back cap bar by bar;
+   an older feed has no /trade, and the chart then draws what /live has. */
+function lvHist(t){
+  const h = t && LV.hist[String(t.id).slice(1)];
+  return h ? h.d : null;
+}
+async function lvHistFetch(id, force){
+  const n = String(id || "").slice(1);
+  if(!/^\d+$/.test(n)) return;
+  const h = LV.hist[n];
+  if(h && (h.busy || (!force && Date.now() - h.at < 30000))) return;
+  LV.hist[n] = {at: h ? h.at : 0, d: h ? h.d : null, busy: true};
+  try{
+    const d = await lvGet("/trade?ticket=" + n);
+    LV.hist[n] = {at: Date.now(), d, busy: false};
+  }catch(e){
+    LV.hist[n] = {at: Date.now(), d: h ? h.d : null, busy: false};   // retried in 30 s
+    return;
+  }
+  if(LV.sel === id) lvMarks(true);
+}
+/* The cap as two step lines on this timeframe's candles: dotted while it is not armed, dashed once it is, a gap
+   while the bucket has no cap. A candle shows where it stood at the candle's close; the forming candle, where
+   the page puts it this second. Where the style changes, the old line runs on to meet the new one. */
+function lvCapData(t){
+  const out = {dot: [], dash: [], at: null};
+  const h = lvHist(t), arr = lvBars();
+  if(!h || !Array.isArray(h.cap) || !h.cap.length || !arr.length) return out;
+  const pts = h.cap.slice().sort((a, b) => a[0] - b[0]);
+  let live = null;
+  if(t.open && t.pos){
+    const c = lvGiveBack(t.pos);
+    if(c) live = c.off ? [null, false] : [c.holds ? Number(t.sl) : c.best - c.dir * c.back, c.armed];
+  }
+  const a = Math.max(0, lvIdx(arr, Number(t.entry_time)));
+  const z = t.open ? arr.length - 1 : lvIdx(arr, Number(t.exit_time));
+  let j = -1, prev = null;
+  for(let i = a; i <= z && i < arr.length; i++){
+    const bound = i + 1 < arr.length ? arr[i + 1].time : Infinity;
+    while(j + 1 < pts.length && pts[j + 1][0] < bound) j++;
+    let lv = j >= 0 ? pts[j][1] : null, armed = j >= 0 && !!pts[j][2];
+    if(i === arr.length - 1 && live){ lv = live[0]; armed = live[1]; }
+    const state = lv == null ? "off" : armed ? "dash" : "dot";
+    const v = {dot: null, dash: null};
+    if(state !== "off") v[state] = Number(lv);
+    if(prev && prev !== "off" && state !== "off" && prev !== state) v[prev] = Number(lv);
+    out.dot.push(v.dot == null ? {time: arr[i].time} : {time: arr[i].time, value: v.dot});
+    out.dash.push(v.dash == null ? {time: arr[i].time} : {time: arr[i].time, value: v.dash});
+    prev = state;
+    out.at = state === "off" ? null : {level: Number(lv), armed};
+  }
+  return out;
+}
+function lvCapDraw(){
+  if(!LV.capDot) return;
+  const t = LV.sel && lvChartTrades().find(x => x.id === LV.sel);
+  const cd = t ? lvCapData(t) : {dot: [], dash: [], at: null};
+  const sig = JSON.stringify([LV.sel, LV.tf, cd.dot.length, cd.at]);
+  if(sig === LV.capSig) return;
+  LV.capSig = sig;
+  LV.capDot.setData(cd.dot);
+  LV.capDash.setData(cd.dash);
+}
+/* Every second: the forming candle's cap follows the price. */
+function lvCapLive(){ lvCapDraw(); }
+
 function lvMarks(force){
   if(!LV.series) return;
-  const list = lvChartTrades();
+  const all = lvChartTrades();
+  /* Trevor, 2026-10-22: "Take off any of the other trades so as not to confuse me." A selected trade is drawn
+     alone; "All trades" (or a timeframe) brings the rest back. */
+  const selT = LV.sel ? all.find(t => t.id === LV.sel) : null;
+  const list = selT ? [selT] : all;
+  const capNow = selT && selT.open && selT.pos ? lvGiveBack(selT.pos) : null;
   const sig = JSON.stringify([LV.tf, LV.sel, LV.showStop, lvBars().length ? lvBars()[0].time : 0,
     list.map(t => [t.id, t.exit_time || 0, t.sl || 0, t.tp || 0,
-                   t.pos ? (t.pos.sl_trail || []).length : 0])]);
+                   t.pos ? (t.pos.sl_trail || []).length : 0]),
+    capNow && !capNow.off ? [capNow.armed, capNow.holds, capNow.cap != null ? capNow.cap.toFixed(2) : null] : null]);
   if(force || sig !== LV.sig){
     LV.sig = sig;
     const marks = [];
@@ -15481,25 +15583,43 @@ function lvMarks(force){
     LV.lines.forEach(l => { try{ LV.series.removePriceLine(l); }catch(e){} });
     LV.lines = [];
     const LS = LV.LC.LineStyle;
-    list.filter(t => t.open).forEach(t => {
-      LV.lines.push(LV.series.createPriceLine({price: Number(t.entry_price), color: LV_C.gold, lineWidth: 1,
-        lineStyle: LS.Solid, axisLabelVisible: true, title: t.dir === "buy" ? "BUY" : "SELL"}));
+    /* A selected trade's entry: a solid ORANGE line across the chart (Trevor: "Entry will be a horizontal Line.
+       Orange"); a closed one's too. With no trade selected, every open trade's entry, as before. */
+    (selT ? list : list.filter(t => t.open)).forEach(t => {
+      LV.lines.push(LV.series.createPriceLine({price: Number(t.entry_price), color: selT ? LV_C.orange : LV_C.gold,
+        lineWidth: selT ? 2 : 1, lineStyle: LS.Solid, axisLabelVisible: true,
+        title: selT ? "Entry" : t.dir === "buy" ? "BUY" : "SELL"}));
+      if(!t.open) return;
       /* THE STOP, labelled with what a hit would close the trade at -- the
          number Trevor asked to see. Solid and heavier than the rest: of every
-         line here, it is the one that ends the trade. */
+         line here, it is the one that ends the trade. Named like the card: the
+         Stop while a hit would lose, the TP once it locks a profit. With a trade
+         selected, its path (the step line) IS the stop, so only the label stays. */
       if(LV.showStop && Number(t.sl)){
         const at = lvStopPnl(t.pos);
+        const tp = at != null && at > 0.005;
+        const capHolds = selT && capNow && capNow.holds;
         LV.lines.push(LV.series.createPriceLine({price: Number(t.sl),
-          color: at != null && at > 0 ? LV_C.good : LV_C.bad, lineWidth: 2, lineStyle: LS.Solid,
-          axisLabelVisible: true, title: "SL " + (at != null ? lvMoney(at) : "")}));
+          color: tp ? LV_C.good : LV_C.bad, lineWidth: 2, lineStyle: LS.Solid, lineVisible: !selT,
+          axisLabelVisible: true, title: (tp ? "TP " : "Stop ") + (at != null ? lvMoney(at) : "") +
+                                         (capHolds ? " · cap" : "")}));
+      }
+      /* The armed cap that is NOT holding the stop has a level of its own. */
+      if(selT && capNow && !capNow.off && capNow.armed && !capNow.holds && capNow.cap != null){
+        const at = lvLevelPnl(t.pos, capNow.cap);
+        LV.lines.push(LV.series.createPriceLine({price: capNow.cap, color: LV_C.cap, lineWidth: 1,
+          lineStyle: LS.Dashed, lineVisible: false, axisLabelVisible: true,
+          title: "Cap " + (at != null ? lvMoney(at) : "")}));
       }
       if(Number(t.tp)) LV.lines.push(LV.series.createPriceLine({price: Number(t.tp), color: LV_C.good,
         lineWidth: 1, lineStyle: LS.Dashed, axisLabelVisible: true, title: "TP"}));
     });
     if(LV.trail){
-      const st = LV.showStop ? lvStopTrade(list) : null;
+      const st = LV.showStop || selT ? lvStopTrade(list) : null;
       LV.trail.setData(st ? lvTrailData(st) : []);
     }
+    LV.capSig = null;
+    lvCapDraw();
   }
   lvPath(list);
 }
@@ -15521,7 +15641,9 @@ function lvPath(list){
   const a = t ? lvSnap(t.entry_time) : null;
   const last = lvLastBar();
   const b = t ? (t.open ? (last && last.time) : lvSnap(t.exit_time)) : null;
-  if(!t || a == null || b == null || b <= a){ LV.path.setData([]); return; }
+  /* 2026-10-22: not beside the cap's dashes -- with the stop and the cap drawn, the price candles say the rest */
+  const h = lvHist(t);
+  if(!t || a == null || b == null || b <= a || (h && h.cap && h.cap.length)){ LV.path.setData([]); return; }
   LV.path.applyOptions({color: t.profit >= 0 ? LV_C.good : LV_C.bad});
   LV.path.setData([{time: a, value: Number(t.entry_price)},
                    {time: b, value: Number(t.open ? t.price : t.exit_price)}]);
@@ -15557,6 +15679,7 @@ async function lvFocus(id){
   if(!t) return;
   LV.viewGen++;
   LV.sel = id;
+  lvHistFetch(id, true);
   lvPaintHistory();
   const end = t.open ? lvNow() : Number(t.exit_time);
   const span = end - Number(t.entry_time), age = lvNow() - Number(t.entry_time);
@@ -15582,6 +15705,13 @@ async function lvFocus(id){
 document.addEventListener("click", e => {
   const tf = e.target.closest("[data-lvtf]");
   if(tf){ LV.sel = null; lvSetTf(tf.dataset.lvtf, false); lvPaintHistory(); return; }
+  if(e.target.closest("[data-lvall]")){
+    LV.sel = null;
+    lvPaintControls();
+    lvPaintHistory();
+    lvMarks(true);
+    return;
+  }
   const st = e.target.closest("[data-lvstyle]");
   if(st && LV.chart){
     LV.style = st.dataset.lvstyle;
