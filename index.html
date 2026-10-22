@@ -1974,7 +1974,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-132212";
+const APP_BUILD = "20261022-143756";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2761,10 +2761,15 @@ const FAIL_ACTS = [
 /* \ud83d\udd34 WHAT HAS A ROUTE (2026-09-23). Until today NONE of these did -- every
    Confirm on this card printed "was not sent", Clear included, and Set the
    count had no number to send. fleet_api's POST /failure takes these three.
-   Recover and Delete stay unwired ON PURPOSE: both DO something (apply a
-   round's parameters; remove reports), and the write endpoint only ever
-   leaves a note for the tick loop. See fleet_api's banner. */
-const FAIL_WIRED = { clear: true, retry: true, count: true };
+   Recover stays unwired ON PURPOSE: it DOES something (applies a round's
+   parameters), and the write endpoint only ever leaves a note for the tick
+   loop. See fleet_api's banner.
+   2026-10-22 -- DELETE HAS ONE NOW. Trevor: "I'm trying to delete the data on
+   them. But it says that the button doesn't have a purpose, no route." It
+   sends the unclaimed folders' names as a NOTE (failure_discards); the next
+   tick re-checks each one and moves it to Reports\_discarded -- kept, not
+   erased. The card shows what the tick did (f.discard). */
+const FAIL_WIRED = { clear: true, retry: true, count: true, delete: true };
 
 /* The ladder, as round_failures.OPERATOR_RUNGS defines it. The picker offers
    exactly these; fleet_api refuses anything else. */
@@ -2780,6 +2785,11 @@ function failSentLine(s){
   const park = s.park === "lifted" ? " The scheduler\u2019s park was lifted with it."
     : s.park === "parked" ? " The scheduler parks it too, so the two agree."
     : "";
+  if(s.act === "delete")
+    return `\u2713 <b>Delete sent</b> for ${esc((s.passes || []).join(", ") || "the data")}.
+      The next tick moves it to <b>Reports\\_discarded</b> (kept, not erased)
+      after checking nothing has written there since. This card updates on the
+      next snapshot.`;
   if(s.already)
     return `✓ <b>Already cleared.</b> The Laptop has no failure on record for
       this group, so an earlier Clear landed. This card goes when the list next
@@ -2820,13 +2830,24 @@ async function failSend(key, act, n){
   const body = {regime: parts[0], bucket_id: Number(parts[1]),
                 group_id: parts[2], action: act, by: "app"};
   if(act === "count") body.failures = Number(n);
+  if(act === "delete"){
+    /* Exactly the folders this card listed as unclaimed -- the tick re-checks
+       each one and refuses any that a round owns or that was written since. */
+    const f = FAILURES.find(x => failKey(x) === key);
+    body.passes = failOrphans(f).map(p => p.pass);
+    if(!body.passes.length){
+      FAILSTATE.said = "\u26a0\ufe0f <b>Delete the data</b> was not sent \u2014 "
+        + "nothing unclaimed is left on this card. Nothing changed.";
+      repaintCards(); return;
+    }
+  }
   FAILSTATE.busy = key; FAILSTATE.said = null;
   repaintCards();
   const res = await apiCall("/failure", body);
   FAILSTATE.busy = null;
   if(res.ok){
     FAILSTATE.sent[key] = {act: act, after: res.out.after, park: res.out.park,
-                           at: Date.now()};
+                           passes: res.out.passes, at: Date.now()};
     failSentSave();
   }else if(res.status === 409 && act === "clear"){
     /* 409 on a CLEAR is the thing already being true: the only 409 fleet_api
@@ -2860,6 +2881,20 @@ function failOrphans(f){
   return ((f || {}).data || []).filter(p => p && !p.claimed);
 }
 
+/* What the tick did with the last "Delete the data" (failure_discards). */
+function failDiscardLine(f){
+  const d = (f || {}).discard;
+  if(!d || !d.status) return "";
+  const what = esc((d.passes || []).join(", ") || "the data");
+  if(d.status === "requested")
+    return `<div class="opsnote"><b>Delete sent</b> for ${what} \u2014 waiting for
+      the next tick to move it to Reports\\_discarded.</div>`;
+  const ok = d.status === "applied";
+  return `<div class="${ok ? "opsnote" : "opsdis"}">${ok ? "\u2713" : "\u26a0\ufe0f"}
+    <b>Delete ${ok ? "done" : esc(d.status)}</b> for ${what}${
+      d.message ? ": " + esc(d.message) : "."}</div>`;
+}
+
 function failData(f){
   const rows = (f || {}).data || [];
   if(!rows.length)
@@ -2876,7 +2911,8 @@ function failData(f){
     `<div class="opsnote">${failOrphans(f).length
       ? `A sweep that finished whose round never closed out. The reports are
          real \u2014 often days of compute \u2014 and nothing points at them, which is
-         what <b>Recover the round</b> re-attaches.`
+         what <b>Recover the round</b> re-attaches. <b>Delete the data</b> moves
+         them to Reports\\_discarded instead \u2014 kept, not erased.`
       : `Every folder here already belongs to a round you can open from Results,
          so there is nothing to decide.`}</div>`;
 }
@@ -2932,6 +2968,7 @@ function failPanel(f){
 
       <div class="opsh">What data exists</div>
       ${failData(f)}
+      ${failDiscardLine(f)}
 
       <div class="opsh">Actions</div>
       ${/* SAID BEFORE THE TAP, not after it. With no link, Clear could only
@@ -2953,7 +2990,8 @@ function failPanel(f){
         rotation. <b>Retry now</b> makes it due without clearing its history
         \u2014 due, not first; a parked group comes back with one life.
         <b>Set the count</b> moves it up or down the three-failure ladder by
-        hand.</div>
+        hand. <b>Delete the data</b> moves the unclaimed folders aside at the
+        next tick; the failure count stays until you clear it.</div>
     </div>`;
 }
 
