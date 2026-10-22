@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261021-180040";
+const APP_BUILD = "20261021-193827";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10616,6 +10616,22 @@ function scheffCostCard(){
       + `. The old estimate for any round this big was ~${scNum(SCHEFF.old_rule_passes)} passes.</div>`;
   out += '<div class="trk-note">Finished real-tick rounds on the optimizer box. Typical = the middle round, with the '
     + 'middle half\'s range of passes.</div>';
+  /* 2026-10-22 -- SIZE PROBES (group_blocks.probe_state). Trevor: "I want the planner to try Bigger rounds to get the
+     kind of data that we need. Just maybe not Exit G1 big." A round in the lowest unmeasured band above the cap runs
+     whole; the next band opens once this one is measured within its hours. */
+  const pr = SCHEFF.probes || [];
+  if(pr.length)
+    out += '<div class="tlab" style="margin-top:10px">Bigger rounds, tried on purpose</div>'
+      + '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Combinations</th><th>Probes</th><th>Typical</th><th>Now</th></tr>'
+      + pr.map(b => `<tr><td>${scNum(b.lo)} – ${scNum(b.hi)}</td><td>${b.finished} of ${b.per_band || "—"}`
+          + `${b.running ? ` <span class="dim">(+${b.running} running)</span>` : ""}</td>`
+          + `<td>${b.median_hours != null ? scHours(b.median_hours) : "—"}</td>`
+          + `<td>${b.measured ? "measured" : b.open ? "runs whole now" : "waits for the smaller band"}</td></tr>`).join("")
+      + '</table></div>'
+      + `<div class="trk-note">A round in an open band runs whole instead of in blocks, so the planner learns what that `
+      + `size costs and gains. The next band opens once this one has its probes at a typical ${
+          scHours((pr[0] || {}).unlock_hours)} or less. Nothing over ${scNum((pr[pr.length - 1] || {}).hi)} `
+      + `combinations ever runs whole — a group that big always runs in blocks.</div>`;
   return out + '</div></div>';
 }
 /* 2026-10-22 -- SPLIT READINESS (schedule_efficiency -> split_planner). Trevor: *"So the efficiency planner needs to also
