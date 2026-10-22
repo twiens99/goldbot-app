@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261020-173305";
+const APP_BUILD = "20261021-180040";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10618,6 +10618,43 @@ function scheffCostCard(){
     + 'middle half\'s range of passes.</div>';
   return out + '</div></div>';
 }
+/* 2026-10-22 -- SPLIT READINESS (schedule_efficiency -> split_planner). Trevor: *"So the efficiency planner needs to also
+   figure our where to split it and when."* Today's buckets against the line every bucket must clear, and where the
+   planner would put the lines now. Nothing here splits: the re-cut runs at an epoch's end once its gain flattens, the
+   first on Trevor's tap. */
+const scSlope = v => v == null ? "" : (v > 0 ? "+" : "") + Number(v).toFixed(4);
+const scRange = b => b.lo == null ? `below ${scSlope(b.hi)}` : b.hi == null ? `from ${scSlope(b.lo)}`
+                                  : `${scSlope(b.lo)} to ${scSlope(b.hi)}`;
+const scPf = v => v == null ? "—" : Number(v).toFixed(2);
+function scSplitTable(bs){
+  return '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Slope</th><th>Trades</th><th>PF</th><th>Year 1</th>'
+    + '<th>Year 2</th><th>Clears</th></tr>'
+    + bs.map(b => `<tr><td>${esc(scRange(b))}</td><td>${scNum(b.n)}</td><td>${scPf(b.pf)}</td><td>${scPf(b.pf_y1)}</td>`
+      + `<td>${scPf(b.pf_y2)}</td><td class="${b.clears ? "" : "bad"}">${b.clears ? "✓ yes" : "✗ no"}</td></tr>`).join("")
+    + '</table></div>';
+}
+function scheffSplitCard(){
+  const sp = SCHEFF.split || {};
+  if(sp.error || !sp.regimes)
+    return '<div class="card"><div class="card-in"><div class="trk-note">' + esc(sp.error || "Not scored yet.")
+      + '</div></div></div>';
+  const r = sp.rule || {};
+  let out = '<div class="card"><div class="card-in">';
+  Object.keys(sp.regimes).forEach(reg => {
+    const R = sp.regimes[reg], P = R.plan, n = (R.today || []).length;
+    out += `<div class="tlab" style="margin-top:6px"><span class="chip ${REGIME_CLASS[reg] || ""}">${esc(reg)}</span> `
+      + `today · ${n} bucket${n === 1 ? "" : "s"}</div>` + scSplitTable(R.today || []);
+    out += P
+      ? `<div class="tlab" style="margin-top:8px">The planner's lines · ${P.buckets.length} bucket${
+          P.buckets.length === 1 ? "" : "s"}${R.differs ? "" : " — the same as today"}</div>` + scSplitTable(P.buckets)
+      : '<div class="trk-note">No set of lines clears the line yet.</div>';
+  });
+  out += `<div class="trk-note">Every bucket must have PF ${scPf(r.pf)} over the 2 years with at least ${scNum(r.trades)} `
+    + `trades, and PF ${scPf(r.year_pf)} or better in each year; a line must still hold one step either side. Scored on `
+    + `the newest full test (${scNum(sp.trades)} trades, to ${esc(sp.window_end || "")}). Nothing splits here: the `
+    + 're-cut runs at an epoch\'s end once its gain flattens, and the first one waits for your tap.</div>';
+  return out + '</div></div>';
+}
 function renderSchedule(){
   /* The builder takes the whole page when it is open -- it is a form, and a
      summary card above a form you are already inside is one more thing between
@@ -10642,6 +10679,7 @@ function renderSchedule(){
     + '<div class="section-label" style="margin-top:14px">Rounds this epoch</div>' + scheffRoundsCard()
     + '<div class="section-label" style="margin-top:14px">Next up</div>' + scheffNextCard()
     + '<div class="section-label" style="margin-top:14px">What a round costs</div>' + scheffCostCard()
+    + '<div class="section-label" style="margin-top:14px">Split readiness</div>' + scheffSplitCard()
     + recurring + hand + '</div>';
 }
 
