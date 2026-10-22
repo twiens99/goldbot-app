@@ -1950,7 +1950,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261021-193827";
+const APP_BUILD = "20261021-201325";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10480,7 +10480,13 @@ function scheffRoundsCard(){
       + `<br><span class="dim">${r.status === "running" ? '<span class="chip gold">running</span> ' : esc(r.status) + " \u00b7 "}`
       + `${copyTag(effCopyOf(r.machine))} ${r.settings ? esc(String(r.settings)) + " settings \u00b7 " : ""}`
       + `${r.grid ? scNum(r.grid) + " combinations" : ""}</span>${r.over_cap ? ' <span class="chip warn">over the cap</span>' : ""}</td>`
-      + `<td>${scHours(r.hours)}</td>`
+      + `<td>${scHours(r.hours)}${(() => {
+          /* 2026-10-22 -- a running round's own prediction (track_predictions), beside the time it has taken. */
+          const pr = r.status === "running" ? (((SCHEFF.predictions || {}).open || []).find(o =>
+            o.machine === r.machine && Math.round(o.start || 0) === Math.round(r.start || 0))) : null;
+          return pr ? `<br><span class="dim">${pr.hours != null ? "predicted ~" + scHours(pr.hours)
+                                                              : "no prediction"}${pr.late ? " (late)" : ""}</span>` : "";
+        })()}</td>`
       + `<td>${scNum(r.passes)}${r.pace ? `<br><span class="dim">${esc(String(r.pace))}/h</span>` : ""}</td>`
       + `<td>${best}${vs}${pf}</td><td>${c.passes ? scPct(c.wasted_share) : "\u2014"}</td></tr>`;
   });
@@ -10634,6 +10640,32 @@ function scheffCostCard(){
       + `combinations ever runs whole — a group that big always runs in blocks.</div>`;
   return out + '</div></div>';
 }
+/* 2026-10-22 -- HOW THE PLANNER'S PREDICTIONS DID (schedule_efficiency.track_predictions). Trevor: "make the planner
+   predict and score every round". Each round is predicted the first time it is seen sweeping, from what rounds of its
+   size have cost, and scored when it finishes. A late prediction (made over 30 min into its round) is shown but never
+   scored. The typical miss falling from the 5 before to the last 5 is the planner getting better. */
+const scOff = r => r.ratio_hours ? `${r.ratio_hours >= 1 ? "+" : "−"}${Math.abs(Math.round((r.ratio_hours - 1) * 100))}%`
+                                 : r.late ? "late — not scored" : (r.outcome === "lost" ? "lost" : "no prediction");
+function scheffPredictCard(){
+  const P = SCHEFF.predictions || {}, s = P.tally || {}, rows = P.scored || [];
+  let out = '<div class="card"><div class="card-in">'
+    + trkKv([["Rounds predicted", scNum(s.predicted)], ["Scored", scNum(s.scored)],
+             ["Typical miss, last 5", s.miss_recent != null ? scPct(s.miss_recent) : "—"],
+             ["Typical miss, the 5 before", s.miss_before != null ? scPct(s.miss_before) : "—"]]);
+  if(rows.length)
+    out += '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Round</th><th>Predicted</th><th>Took</th>'
+      + '<th>Off by</th></tr>' + rows.map(r => `<tr><td style="white-space:normal">${scBucket(r.regime, r.bucket_id)} `
+        + `${esc(humanize(r.group_id || ""))}</td><td>${r.hours != null ? scHours(r.hours) : "—"}</td>`
+        + `<td>${scHours(r.actual_hours)}</td><td class="${r.ratio_hours && (r.ratio_hours > 1.5 || r.ratio_hours < 0.67)
+            ? "bad" : ""}">${esc(scOff(r))}</td></tr>`).join("") + '</table></div>';
+  else
+    out += '<div class="trk-note">No round has finished since the planner began predicting. The first scores land '
+      + 'when the first rounds finish; a round already running when it began is marked late and never counts.</div>';
+  out += '<div class="trk-note">Each round is predicted when it starts, from what rounds of its size have cost, and '
+    + 'scored when it ends. Every finished round joins its size\'s record, so the next prediction stands on one more '
+    + 'round: the typical miss shrinking from the 5 before to the last 5 is the planner getting better.</div>';
+  return out + '</div></div>';
+}
 /* 2026-10-22 -- SPLIT READINESS (schedule_efficiency -> split_planner). Trevor: *"So the efficiency planner needs to also
    figure our where to split it and when."* Today's buckets against the line every bucket must clear, and where the
    planner would put the lines now. Nothing here splits: the re-cut runs at an epoch's end once its gain flattens, the
@@ -10695,6 +10727,7 @@ function renderSchedule(){
     + '<div class="section-label" style="margin-top:14px">Rounds this epoch</div>' + scheffRoundsCard()
     + '<div class="section-label" style="margin-top:14px">Next up</div>' + scheffNextCard()
     + '<div class="section-label" style="margin-top:14px">What a round costs</div>' + scheffCostCard()
+    + '<div class="section-label" style="margin-top:14px">How its predictions did</div>' + scheffPredictCard()
     + '<div class="section-label" style="margin-top:14px">Split readiness</div>' + scheffSplitCard()
     + recurring + hand + '</div>';
 }
