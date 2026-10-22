@@ -1974,7 +1974,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-124240";
+const APP_BUILD = "20261022-132212";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -15640,7 +15640,6 @@ function lvMarks(force){
   const shown = lvShown(all), sel = LV.sel.length > 0;
   /* marks: the toggled-on trades alone; with none on, every trade under "All", none under "Clear" */
   const marked = sel ? shown : LV.showAll ? all : [];
-  const no = lvTradeNo(), multi = shown.length > 1;
   const caps = {};
   shown.forEach(t => { if(t.open && t.pos) caps[t.id] = lvGiveBack(t.pos); });
   const sig = JSON.stringify([LV.tf, LV.sel, LV.showAll, lvBars().length ? lvBars()[0].time : 0,
@@ -15649,17 +15648,19 @@ function lvMarks(force){
                      return c && !c.off ? [t.id, c.armed, c.holds, c.cap != null ? c.cap.toFixed(2) : null] : null; })]);
   if(force || sig !== LV.sig){
     LV.sig = sig;
+    /* Trevor, 2026-10-22: "I want the numbers that appear inside the chart to dissapear. I can't see everything.
+       Just leave the Price lines lit up on the right side of the chart ... If i want the numbers i can check the
+       trade card." So the marks carry no text, and the price lines no title -- only their boxes on the price axis. */
     const marks = [];
     marked.forEach(t => {
       const big = lvIsSel(t.id);
       const a = lvSnap(t.entry_time);
       if(a != null) marks.push({time: a, position: t.dir === "buy" ? "belowBar" : "aboveBar",
-        color: LV_C.gold, shape: t.dir === "buy" ? "arrowUp" : "arrowDown", size: big ? 1.6 : 1,
-        text: big ? (multi && no[t.id] ? "T" + no[t.id] + " " : "") + (t.dir === "buy" ? "BUY " : "SELL ") + lvPx(t.entry_price) : ""});
+        color: LV_C.gold, shape: t.dir === "buy" ? "arrowUp" : "arrowDown", size: big ? 1.6 : 1});
       if(!t.open){
         const b = lvSnap(t.exit_time);
         if(b != null) marks.push({time: b, position: "inBar", color: t.profit >= 0 ? LV_C.good : LV_C.bad,
-          shape: "circle", size: big ? 1.3 : 0.7, text: big ? lvMoney(t.profit) : ""});
+          shape: "circle", size: big ? 1.3 : 0.7});
       }
     });
     marks.sort((x, y) => x.time - y.time);
@@ -15668,32 +15669,26 @@ function lvMarks(force){
     LV.lines = [];
     const LS = LV.LC.LineStyle;
     shown.forEach(t => {
-      /* "T1 " in front once two trades share the chart */
-      const tag = multi && no[t.id] ? "T" + no[t.id] + " " : "";
       /* Its entry: a solid ORANGE line across the chart (Trevor: "Entry will be a horizontal Line. Orange") --
          not gold, which is the slope average on these candles. */
       LV.lines.push(LV.series.createPriceLine({price: Number(t.entry_price), color: LV_C.orange, lineWidth: 2,
-        lineStyle: LS.Solid, axisLabelVisible: true, title: tag + "Entry"}));
+        lineStyle: LS.Solid, axisLabelVisible: true, title: ""}));
       if(!t.open) return;
-      /* THE STOP, labelled with what a hit would close the trade at, and named like the card: the Stop while a
-         hit would lose, the TP once it locks a profit. Its path is the step line, so only the label is here. */
+      /* THE STOP's box on the price axis: red while a hit would lose (the Stop), green once it locks a profit (the
+         TP), as on the card. Its path is the step line, so there is no line here. */
       if(Number(t.sl)){
-        const at = lvStopPnl(t.pos), tp = at != null && at > 0.005, c = caps[t.id];
+        const at = lvStopPnl(t.pos), tp = at != null && at > 0.005;
         LV.lines.push(LV.series.createPriceLine({price: Number(t.sl),
           color: tp ? LV_C.good : LV_C.bad, lineWidth: 2, lineStyle: LS.Solid, lineVisible: false,
-          axisLabelVisible: true, title: tag + (tp ? "TP " : "Stop ") + (at != null ? lvMoney(at) : "") +
-                                         (c && c.holds ? " · cap" : "")}));
+          axisLabelVisible: true, title: ""}));
       }
       /* The armed cap that is NOT holding the stop has a level of its own. */
       const c = caps[t.id];
-      if(c && !c.off && c.armed && !c.holds && c.cap != null){
-        const at = lvLevelPnl(t.pos, c.cap);
+      if(c && !c.off && c.armed && !c.holds && c.cap != null)
         LV.lines.push(LV.series.createPriceLine({price: c.cap, color: LV_C.cap, lineWidth: 1,
-          lineStyle: LS.Dashed, lineVisible: false, axisLabelVisible: true,
-          title: tag + "Cap " + (at != null ? lvMoney(at) : "")}));
-      }
+          lineStyle: LS.Dashed, lineVisible: false, axisLabelVisible: true, title: ""}));
       if(Number(t.tp)) LV.lines.push(LV.series.createPriceLine({price: Number(t.tp), color: LV_C.good,
-        lineWidth: 1, lineStyle: LS.Dashed, axisLabelVisible: true, title: tag + "Target"}));
+        lineWidth: 1, lineStyle: LS.Dashed, axisLabelVisible: true, title: ""}));
     });
     /* each shown trade's own stop and cap lines */
     lvPruneSeries(shown.map(t => t.id));
