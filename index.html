@@ -1737,6 +1737,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-gauge .armmk{position:absolute;top:-2px;width:12px;height:12px;margin-left:-6px;border-radius:50%;
   box-sizing:border-box;border:2px solid var(--done);background:var(--bg);}
 .lv-sw.cap{background:var(--done);width:4px;height:10px;}
+.lv-sw.arm{width:10px;height:10px;border-radius:50%;box-sizing:border-box;border:2px solid var(--done);background:transparent;}
 .lv-pill.cap{background:rgba(169,139,224,.16);color:var(--done);}
 .lv-glabels{flex-wrap:wrap;}
 .lv-gtags{position:relative;height:13px;margin:0 2px;
@@ -1968,7 +1969,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-112639";
+const APP_BUILD = "20261022-115256";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14439,7 +14440,7 @@ function lvPaintOpen(){
      a finger that was halfway through tapping it. */
   const key = JSON.stringify(pos.map(p => [p.ticket, p.sl, p.tp, p.regime, p.bucket, p.sl_initial,
                                            (p.sl_trail || []).length, !!p.sl_gap,
-                                           p.giveback ? [p.giveback.cap_r > 0, p.giveback.bucket] : null]));
+                                           p.giveback ? [p.giveback.cap_r > 0, p.giveback.bucket, p.giveback.armed] : null]));
   if(el.dataset.key !== key){
     el.dataset.key = key;
     el.innerHTML = pos.map(lvOpenCard).join("");
@@ -14574,7 +14575,10 @@ function lvOpenCard(p){
       <div class="lv-glabels"><span><i class="lv-sw stop" style="background:${isTp ? LV_C.good : LV_C.bad}"></i>` +
         `${isTp ? "TP" : "stop"}</span><span><i class="lv-sw entry"></i>entry = 0</span>` +
         `<span><i class="lv-sw now"></i>price</span>` +
-        (cap && !cap.off ? `<span><i class="lv-sw cap"></i>give-back cap</span>` : "") + `</div>` : ""}
+        /* Trevor, 2026-10-22, on the ring: "How did the purple cross the white without triggering?" The ring is not
+           a level the trade closes at -- it is where the cap switches on -- so it gets its own name. */
+        (cap && !cap.off ? (cap.armed ? `<span><i class="lv-sw cap"></i>give-back cap</span>`
+                                      : `<span><i class="lv-sw arm"></i>cap switches on</span>`) : "") + `</div>` : ""}
       ${tp ? `<div class="lv-line">Target at the broker: <b>${lvPx(tp)}</b>.</div>` : ""}
     </div>
     ${gap}
