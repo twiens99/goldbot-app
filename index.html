@@ -1974,7 +1974,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-143756";
+const APP_BUILD = "20261022-212257";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8063,9 +8063,27 @@ function nextRoundBadge(t){
 
   const rows = vars.map(v => nrRow(v)).join("");
 
+  /* 2026-10-22 -- WHAT THE SCHEDULER WILL RUN. Trevor: "the next round card, needs to be updated to what the
+     scheduler wants. If the schedule changes because it's learned something, then it also updates the next round
+     card." nr.block / nr.probe are group_blocks.decide's answer -- the function the round itself calls -- so the
+     head line, the ETA and the rows above are the BLOCK's when there is one. */
+  const blk = nr.block && Array.isArray(nr.block.plan) ? nr.block : null;
+  const plan = blk ? `<div class="opsnote" style="margin:0 0 8px"><b>Runs in blocks.</b> The whole group is ${
+      esc(Number(nr.whole_grid || 0).toLocaleString())} combinations, over the 50,625 cap, so this round sweeps
+      <b>block ${esc(blk.index + 1)} of ${esc(blk.of)}</b> and holds the rest at their values.${
+      blk.last ? " It is the last block: this round counts as the group's run." : " Only the last block counts as the group's run."}</div>
+      <div class="tshaped" style="margin:0 0 8px">${blk.plan.map((b, i) =>
+        `${i === blk.index ? "<b>" : ""}${esc(i + 1)}. ${b.map(n => esc(spaceOut(stripRegime(n)))).join(", ")}${
+          (blk.grids || [])[i] ? ` · ${esc(Number(blk.grids[i]).toLocaleString())}` : ""}${
+          i === blk.index ? " · this round</b>" : ""}`).join("<br>")}</div>` : "";
+  const probe = nr.probe ? `<div class="opsnote" style="margin:0 0 8px"><b>Runs whole, as a size probe.</b> It is over
+      the 50,625 cap, but the planner is measuring rounds of ${esc(Number(nr.probe.lo || 0).toLocaleString())}–${
+      esc(Number(nr.probe.hi || 0).toLocaleString())} combinations (${esc(nr.probe.finished || 0)} finished, ${
+      esc(nr.probe.running || 0)} running).</div>` : "";
+
   return wrap(`What this group's next optimization in this bucket sweeps, built
       by the same code that will build it, from the bucket as it stands now.`,
-    head + rows +
+    plan + probe + head + rows +
     `<div class="vhcap">The group's count is <b>${esc(nr.group_count)}</b> values
       for ${esc(nr.active)} active variables, from the pass budget; a variable
       that keeps winning inside its range narrows below it. A second pass follows
