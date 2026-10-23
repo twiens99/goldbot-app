@@ -1974,7 +1974,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-222302";
+const APP_BUILD = "20261023-002457";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -12918,6 +12918,8 @@ let LV = {
   bars: {},           // tf -> {at, bars:[{time,open,high,low,close}]}
   runs: null,         // [[server_time, regime], ...] from /regimes
   runsAt: 0,
+  slopes: null,       // 2026-10-22 -- {points: [[server_time, slope], ...], last} from /slopes: the EA's own slope
+  slopesAt: 0, slopesBusy: false,
   tf: "M5", style: "candles", sel: [], hf: "all",   // sel: the trades toggled on (lvShown)
   built: false, editing: false, formErr: "", busy: false, timer: null, runsBusy: false,
   liveAt: 0,          // Date.now() of the last /live (the joins); /now moves `at`
@@ -13154,6 +13156,8 @@ function lvPaintFast(){
 }
 async function lvMaybeBars(force){
   if(await lvMaybeAxisBars()) lvStudiesSet();
+  if(await lvMaybeStepBars()) lvStudiesSet();
+  lvMaybeSlopes();
   const tf = LV.tf, c = LV.bars[tf];
   if(!force && c && Date.now() - c.at < 60000) return;
   try{
@@ -13175,6 +13179,36 @@ async function lvMaybeRegimes(){
     if(LV.band) LV.band.setData(lvBandData());
   }catch(e){ /* no band is better than a wrong one */ }
   finally{ LV.runsBusy = false; }
+}
+/* 2026-10-22 -- THE SLOPE THE EA TRADES ON, from its own log (/slopes). Trevor: "fix the slope pane so it shows the
+   rolling 24-hour slope the EA actually trades on, stepping every 10 minutes." Every 2 minutes is plenty; an older
+   feed server has no /slopes, and the pane then works from the bars alone. */
+async function lvMaybeSlopes(){
+  if(LV.slopesBusy || (LV.slopesAt && Date.now() - LV.slopesAt < 120000)) return;
+  LV.slopesBusy = true;
+  try{
+    const d = await lvGet("/slopes");
+    LV.slopes = {points: Array.isArray(d.points) ? d.points : [],
+                 last: d.last != null && isFinite(Number(d.last)) ? Number(d.last) : null};
+  }catch(e){ /* the bars alone */ }
+  finally{ LV.slopesAt = Date.now(); LV.slopesBusy = false; }
+  if(LV.slope) lvStudiesSet();
+}
+/* The finer bars the slope's definition is worked on, when the chart shows another timeframe. */
+async function lvMaybeStepBars(){
+  const r = lvRolling(lvAxis());
+  if(!r || LV.tf === "M5") return false;
+  const c = LV.bars.M5;
+  if(c && Date.now() - c.at < 120000) return false;
+  try{
+    const d = await lvGet("/bars?tf=M5");
+    LV.bars.M5 = {at: Date.now(), bars: (Array.isArray(d.bars) ? d.bars : [])
+      .map(b => ({time: b[0], open: b[1], high: b[2], low: b[3], close: b[4]}))};
+    return true;
+  }catch(e){
+    if(!c) LV.bars.M5 = {at: Date.now(), bars: [], err: lvErrText(e)};
+    return false;
+  }
 }
 
 /* ---------- OUR ETA (2026-09-26) ---------- */
@@ -14054,8 +14088,9 @@ function lvSkeleton(){
     +     '<span><span style="color:var(--gold)">━</span>Bucket-slope average · 4H dotted = simulated</span>'
     +     '<span><span style="color:#A9DEC4">━</span><span style="color:#2E9F6E">━</span>'
     +       '<span style="color:#F2A79C">━</span><span style="color:#D8463A">━</span>'
-    +       'Slope line, coloured by bucket (light = Low, deep = High), as it would close now; '
-    +       'thin grey step = the value in force today; dashes = bucket edges</span>'
+    +       'Slope line = the slope the EA trades on, a step each time it re-reads it, coloured by bucket '
+    +       '(light = Low, deep = High); thin grey line = where its next step lands if price holds there; '
+    +       'dashes = bucket edges</span>'
     +     '<span><span class="lv-good">▮</span><span class="lv-bad">▮</span>MACD main, '
     +       'line = signal</span>'
     +   '</div>'
@@ -14953,15 +14988,16 @@ function lvEnsureChart(){
       /* its label runs two lines, so the plot starts below them */
       LV.slopeChart.applyOptions({rightPriceScale: {scaleMargins: {top: 0.34, bottom: 0.06}}});
       LV.macdChart = LC.createChart(mb, lvSubOpts(LC, true));
-      /* 2026-10-18 -- THE IN-FORCE VALUE, a thin step: what the EA trades on during each day (it moves once a day,
-         at the D1 close). Drawn under the forming line. */
-      LV.slopeNow = LV.slopeChart.addLineSeries({lineWidth: 1, lineType: LC.LineType.WithSteps,
+      /* 2026-10-22 -- THE NEXT STEP, thin and smooth: where the EA's slope lands at its next re-read if price holds
+         at this candle's close (short timeframes). Was (10-18) the once-a-day value -- not what V3.1 trades on. */
+      LV.slopeNow = LV.slopeChart.addLineSeries({lineWidth: 1,
         color: LV_C.dim, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         priceFormat: {type: "price", precision: 4, minMove: 0.0001}});
-      /* 2026-10-18 -- THE FORMING SLOPE, smooth, coloured by the bucket it is in. Trevor: "is there a way to not make
-         so square? I was expecting a steeper slope the closer it got to the bucket transition line. The colour of the
-         line can be what actually defines what bucket its in." See lvStudyCalc's `form`. */
-      LV.slope = LV.slopeChart.addLineSeries({lineWidth: 2,
+      /* 2026-10-22 -- THE SLOPE THE EA TRADES ON, a step per re-read, coloured by the bucket it is in (10-18,
+         Trevor: "The colour of the line can be what actually defines what bucket its in."). It was the daily
+         figure's what-if; Trevor, 10-22: "fix the slope pane so it shows the rolling 24-hour slope the EA actually
+         trades on, stepping every 10 minutes." See lvRollCalc. */
+      LV.slope = LV.slopeChart.addLineSeries({lineWidth: 2, lineType: LC.LineType.WithSteps,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         priceFormat: {type: "price", precision: 4, minMove: 0.0001},
         /* 2026-10-18 -- THE BUCKET THE LINE IS IN, EDGE TO EDGE: the scale reaches the nearest edge below the
@@ -15175,8 +15211,8 @@ function lvCrossTarget(chart, t){
   const st = LV.study;
   if(!st) return null;
   if(chart === LV.slopeChart)
-    return st.form && st.form[i] != null ? {series: LV.slope, price: st.form[i]}
-         : st.slope[i] != null && LV.slopeNow ? {series: LV.slopeNow, price: st.slope[i]} : null;
+    return st.slope[i] != null ? {series: LV.slope, price: st.slope[i]}
+         : st.next && st.next[i] != null && LV.slopeNow ? {series: LV.slopeNow, price: st.next[i]} : null;
   if(chart === LV.macdChart)
     return {series: LV.macdS, price: st.sig[i] != null ? st.sig[i] : st.main[i]};
   return null;
@@ -15394,8 +15430,103 @@ function lvStudyCalc(){
       if(cur != null && prev) form[i] = (cur - prev) / prev;
     }
   }
-  LV.study = {main, sig, slope, form, axis: a, ma: lvAxisMa(a)};
+  /* 2026-10-22 -- `slope` / `form` above are the axis' own per-bar figures. What the pane draws is what the EA
+     trades on: lvRollCalc. */
+  const ro = lvRollCalc(bars, a, form);
+  LV.study = {main, sig, slope: ro.inf, next: ro.next, rolling: ro.rolling, axis: a, ma: lvAxisMa(a)};
   return LV.study;
+}
+/* 2026-10-22 -- THE SLOPE THE EA TRADES ON, at every candle. Its definition is private (regime_axis.rolling: how
+   often the EA re-reads it, how long its trading day is), so nothing of it is written here. At each candle, in
+   force at its close (or now): the EA's own logged value where its log reaches; else the definition worked on the
+   feed's bars; else, on the axis' own timeframe, the closed bar's own figure. `next` (short timeframes): the value
+   at the next re-read if price holds at this candle's close. Checked 10-22: the bars give the EA's logged value to
+   6 decimals at every re-read. */
+function lvRolling(a){
+  const r = a && a.rolling;
+  return r && r.step_min > 0 && r.day_min > 0 && r.day_min % r.step_min === 0 ? r : null;
+}
+function lvNowSrv(){
+  const d = LV.data;
+  return d && d.served_gmt != null && d.gmt_offset != null ? Number(d.served_gmt) + Number(d.gmt_offset) : null;
+}
+/* The EA's log as [[re-read time, value], ...]: each change put on the re-read it belongs to (a line can be stamped
+   a moment before it), and `last`, the newest re-read the log has reached. */
+function lvEaSteps(step){
+  const d = LV.slopes, pts = [];
+  if(!d || !Array.isArray(d.points)) return {pts, last: null};
+  const snap = t => step ? (t + 60) - (t + 60) % step : t;
+  d.points.forEach(q => {
+    const t = Number(q[0]), v = Number(q[1]);
+    if(!isFinite(t) || !isFinite(v)) return;
+    const k = snap(t);
+    if(pts.length && pts[pts.length - 1][0] >= k) pts[pts.length - 1][1] = v; else pts.push([k, v]);
+  });
+  return {pts, last: d.last == null ? null : (step ? d.last - d.last % step : d.last)};
+}
+/* The closes the definition reads, from the feed's finer bars and the forming one. */
+function lvStepCloses(r){
+  const step = r.step_min * 60, c = LV.bars.M5;
+  if(r.step_min % 5 || !c || !Array.isArray(c.bars) || !c.bars.length) return null;
+  const t = [], cl = [];
+  const add = (time, close) => {
+    const k = time - time % step;
+    if(t.length && t[t.length - 1] === k) cl[cl.length - 1] = close;
+    else if(!t.length || k > t[t.length - 1]){ t.push(k); cl.push(close); }
+  };
+  c.bars.forEach(b => add(b.time, b.close));
+  const f = LV.data && LV.data.forming && LV.data.forming.M5;
+  if(f && f[0] >= c.bars[c.bars.length - 1].time) add(f[0], f[4]);
+  return {t, c: cl, step, n: r.day_min / r.step_min};
+}
+function lvIdxBefore(arr, t){       // the last index whose value is < t, or -1
+  let lo = 0, hi = arr.length - 1;
+  if(hi < 0 || arr[0] >= t) return -1;
+  while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(arr[mid] < t) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+function lvRollAt(sc, j, p, a){     // the value read after bar j closes (at `p`, when given)
+  const n = sc.n, per = a.period, lb = a.lookback;
+  if(!(per >= 1 && lb >= 1) || j - (per - 1 + lb) * n < 0) return null;
+  let now = 0, then = 0;
+  for(let k = 0; k < per; k++){
+    const x = k === 0 && p != null ? p : sc.c[j - k * n];
+    if(x == null) return null;
+    now += x; then += sc.c[j - (k + lb) * n];
+  }
+  return then ? (now - then) / then : null;
+}
+function lvRollCalc(bars, a, form){
+  const n = bars.length, inf = new Array(n).fill(null), next = new Array(n).fill(null);
+  const r = lvRolling(a), span = LV_TF_SEC[LV.tf] || 60, step = r ? r.step_min * 60 : 0;
+  const ea = lvEaSteps(step), sc = r ? lvStepCloses(r) : null, now = lvNowSrv();
+  const scEnd = sc && sc.t.length ? sc.t[sc.t.length - 1] + step : null;
+  const eaT = ea.pts.map(q => q[0]);
+  for(let i = 0; i < n; i++){
+    let e = bars[i].time + span - 1;
+    if(now != null && e > now) e = now;
+    const s = step ? e - e % step : e;
+    let v = null;
+    if(ea.last != null && s <= ea.last){
+      const j = lvIdxBefore(eaT, s + 1);
+      if(j >= 0) v = ea.pts[j][1];
+    }
+    if(v == null && sc && s <= scEnd){
+      const j = lvIdxBefore(sc.t, s);
+      if(j >= 0) v = lvRollAt(sc, j, null, a);
+    }
+    if(v == null && ea.pts.length){               // past the log's newest line: it holds until the next re-read
+      const j = lvIdxBefore(eaT, s + 1);
+      if(j >= 0) v = ea.pts[j][1];
+    }
+    if(v == null && a && LV.tf === a.tf && i < n - 1 && form) v = form[i];
+    inf[i] = v;
+    if(sc && span <= 900 && s <= scEnd){
+      const f = lvIdxBefore(sc.t, s) + 1;
+      if(f > 0) next[i] = lvRollAt(sc, f, bars[i].close, a);
+    }
+  }
+  return {inf, next, rolling: !!(r || ea.pts.length)};
 }
 function lvStudyPoint(i){
   const st = LV.study, t = lvBars()[i].time;
@@ -15405,11 +15536,10 @@ function lvStudyPoint(i){
       ? {time: t, value: m, color: m >= 0 ? "rgba(95,190,149,.6)" : "rgba(224,104,90,.6)"}
       : {time: t},
     s: i >= LV_MACD.slow + LV_MACD.signal - 2 && s != null ? {time: t, value: s} : {time: t},
-    l: st.form[i] != null && st.axis
-      ? {time: t, value: st.form[i], color: (lvBandOf(st.form[i], st.axis) || {}).ink
-                                          || LV_REGIME_LINE[lvRegimeOf(st.form[i], st.axis)]}
+    l: v != null && st.axis
+      ? {time: t, value: v, color: (lvBandOf(v, st.axis) || {}).ink || LV_REGIME_LINE[lvRegimeOf(v, st.axis)]}
       : {time: t},
-    n: v != null && st.axis ? {time: t, value: v} : {time: t},
+    n: st.next && st.next[i] != null && st.axis ? {time: t, value: st.next[i]} : {time: t},
     m: st.ma && st.ma[i] != null ? {time: t, value: st.ma[i]} : {time: t},
   };
 }
@@ -15501,17 +15631,20 @@ function lvPaneLabels(bar){
   if(!ps || !pm || !LV.study) return;
   const bars = lvBars(), i = bar ? lvIdx(bars, bar.time) : bars.length - 1;
   const st = LV.study, a = st.axis;
-  const v = i >= 0 && st.form ? st.form[i] : null, now = i >= 0 ? st.slope[i] : null;
-  const bf = lvBandOf(v, a), bn = lvBandOf(now, a);
+  const v = i >= 0 ? st.slope[i] : null, nx = i >= 0 && st.next ? st.next[i] : null;
+  const bv = lvBandOf(v, a), bx = lvBandOf(nx, a);
   const fmt = x => (x >= 0 ? "+" : "") + x.toFixed(5);
-  /* 2026-10-18 -- the forming value, its bucket and where it sits in it; the in-force value (the thin grey step,
-     what the EA trades on today) beside it. */
+  /* 2026-10-22 -- the slope the EA trades on, its bucket and where it sits in it; where the next re-read lands
+     beside it (short timeframes). Was (10-18) the daily figure's what-if, with the daily value "in force". */
+  const r = lvRolling(a);
+  const name = !st.rolling ? esc(a ? a.tf : "") + " slope"
+    : "Slope" + (r ? ` · rolling, every ${esc(r.step_min)} min` : "");
   ps.innerHTML = !a
     ? "Slope <b>waiting for its definition from the fleet</b>"
-    : esc(a.tf) + " slope" + (v == null ? "" : ` <b style="color:${(bf || {}).ink || LV_C.dim}">${fmt(v)} ${
-        esc((bf || {}).name || lvRegimeOf(v, a))}</b>` + (bf ? "<br>" + esc(lvBandPos(v, bf)) : ""))
-      + (now == null ? "" : `${bf ? " · " : "<br>"}in force <b style="color:${(bn || {}).ink || LV_C.dim}">${fmt(now)}${
-        bn && bf && bn.name !== bf.name ? " " + esc(bn.name) : ""}</b>`);
+    : name + (v == null ? "" : ` <b style="color:${(bv || {}).ink || LV_C.dim}">${fmt(v)} ${
+        esc((bv || {}).name || lvRegimeOf(v, a))}</b>` + (bv ? "<br>" + esc(lvBandPos(v, bv)) : ""))
+      + (nx == null ? "" : `${bv ? " · " : "<br>"}next step <b style="color:${(bx || {}).ink || LV_C.dim}">${
+        fmt(nx)}${bx && bv && bx.name !== bv.name ? " " + esc(bx.name) : ""}</b>`);
   const m = i >= LV_MACD.slow - 1 ? st.main[i] : null, s = i >= 0 ? st.sig[i] : null;
   pm.innerHTML = `MACD ${LV_MACD.fast}·${LV_MACD.slow}·${LV_MACD.signal}` + (m == null ? ""
     : ` <b>${m.toFixed(2)}</b>` + (s == null ? "" : ` <b>/ ${s.toFixed(2)}</b>`));
