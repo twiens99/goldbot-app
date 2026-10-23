@@ -1974,7 +1974,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261022-212257";
+const APP_BUILD = "20261022-222302";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4378,9 +4378,8 @@ function jobCheckpoints(r){
   });
   if(!mine.length) return "";
   const what = c => {
-    if(c.decision) return c.decision.choice === "accept"
-      ? "accepted " + ckArm(c.decision.pick) + " \u2014 the bucket now runs it"
-      : "rejected \u2014 the current setting stays";
+    if(c.decision) return ckDecided(c.decision) + (c.decision.choice === "accept" ? " \u2014 the bucket now runs it"
+      : c.decision.choice === "trial" ? " \u2014 optimizing it in the bucket" : " \u2014 the current setting stays");
     if(c.status === "running") return "still testing";
     if(c.status === "failed") return "did not finish";
     if(c.verdict === "HOLDS") return "the current setting holds \u2014 nothing changed";
@@ -5361,14 +5360,27 @@ function ckSeed(label){
   const o = /^ORIG_[A-Z]{2}\d+_(.+)_\d{14}$/i.exec(String(label || ""));
   if(o) return {title: "Original values · " + (humanize(o[1]) || o[1]),
                 detail: "scored like a pass · the round keeps it if it ties or wins"};
-  const m = /^CK_[A-Z]{2}\d+_(D\d+)_\d+_(.+)_(Y\d)$/i.exec(String(label || ""));
+  /* 2026-10-22 -- every switch's runs (was D1-D3 only), and the AUTO-TRIAL's: its optimize round (CKT_) and its
+     tuned-vs-off confirm runs (trial_on / trial_off). */
+  const ckTitle = id => {
+    let title = "";
+    ((CHECKPOINTS || {}).buckets || []).forEach(b => (b.checkpoints || []).forEach(c => {
+      if(!title && c.switch === id) title = c.title || "";
+    }));
+    return title;
+  };
+  const t = /^CKT_[A-Z]{2}\d+_([A-Z]\d+)_\d{14}$/i.exec(String(label || ""));
+  if(t){
+    const ttl = ckTitle(t[1].toUpperCase());
+    return {title: "Checkpoint trial " + t[1].toUpperCase() + (ttl ? " · " + ttl : ""),
+            detail: "optimizing it on in the bucket · kept only if it beats off"};
+  }
+  const m = /^CK_[A-Z]{2}\d+_([A-Z]\d+)_\d+_(.+)_(Y\d)$/i.exec(String(label || ""));
   if(!m) return null;
-  let title = "";
-  ((CHECKPOINTS || {}).buckets || []).forEach(b => (b.checkpoints || []).forEach(c => {
-    if(!title && c.switch === m[1].toUpperCase()) title = c.title || "";
-  }));
-  const tag = m[2].toLowerCase() === "current" ? "the current setting"
-            : m[2].replace(/_/g, " ").replace(/(\d)p(\d)/g, "$1.$2");
+  const title = ckTitle(m[1].toUpperCase());
+  const k = m[2].toLowerCase();
+  const tag = k === "current" ? "the current setting" : k === "trial_on" ? "the tuned setting (trial)"
+            : k === "trial_off" ? "it off (trial)" : m[2].replace(/_/g, " ").replace(/(\d)p(\d)/g, "$1.$2");
   return {title: "Checkpoint " + m[1].toUpperCase() + (title ? " · " + title : ""),
           detail: "testing " + tag + " · year " + m[3].slice(1)};
 }
@@ -7449,8 +7461,27 @@ function ckText(s){
   return String(s || "").replace(/'([A-Za-z0-9_.]+)'/g, function(m, tag){ return ckArm(tag); })
     .replace(/ -- /g, " — ").replace(/ -> /g, " → ");
 }
+/* 2026-10-22 -- THE AUTO-TRIAL (checkpoints.py): a verdict that turns a setting ON acts by itself. Its decisions:
+   "trial" while it runs; accept / reject by "auto-trial" when it ends (kept / reverted, or closed); an accept by
+   "auto" = a switch with nothing to optimize, simply turned on. */
+function ckDecided(d){
+  if(!d) return "";
+  if(d.choice === "trial") return "trialling " + ckArm(d.pick);
+  if(d.by === "auto-trial") return d.choice === "accept" ? "kept " + ckArm(d.pick) + " after its trial"
+    : d.trial === "closed" ? "trial of " + ckArm(d.pick) + " closed" : "reverted " + ckArm(d.pick) + " after its trial";
+  if(d.by === "auto") return "turned " + ckArm(d.pick) + " on automatically";
+  return d.choice === "accept" ? "accepted " + ckArm(d.pick) : "rejected";
+}
+function ckTrial(c){
+  const t = c.trial;
+  if(!t) return "";
+  return '<div class="tnote">' + esc(ckText(t.message))
+    + (t.phase === "confirming" ? " (" + esc(t.in) + " of " + esc(t.of) + " runs in)" : "") + '</div>'
+    + (t.rows && t.rows.length ? ckTable({rows: t.rows}) : "");
+}
 function ckTrigger(tr){
   const s = String(tr || "");
+  if(s.indexOf("@") > 0) return humanize(s.split("@")[0]) + " tuned on bucket " + s.split("@")[1];
   return s.indexOf("LANE:") === 0 ? "the " + s.slice(5) + " lane finished its pass" : humanize(s);
 }
 /* What needs a tap from Trevor: a FLIP SUGGESTED nobody has answered, from here or the snapshot. */
@@ -7461,9 +7492,15 @@ function ckWaiting(c){
 const CK_CHIP = {"FLIP SUGGESTED": ["gold", "Flip suggested"], "MIXED": ["warn", "Mixed"],
                  "HOLDS": ["ckhold", "Holds"], "WAITING": ["", "Running"]};
 function ckVerdictChip(c){
-  if(c.decision)
-    return c.decision.choice === "accept" ? '<span class="chip ckok">Accepted</span>'
-                                          : '<span class="chip ckhold">Rejected</span>';
+  if(c.decision){
+    const d = c.decision;
+    if(d.choice === "trial") return '<span class="chip gold">Trial</span>';
+    if(d.by === "auto-trial") return d.choice === "accept" ? '<span class="chip ckok">Kept</span>'
+      : '<span class="chip ckhold">' + (d.trial === "closed" ? "Trial closed" : "Reverted") + '</span>';
+    if(d.by === "auto") return '<span class="chip ckok">Auto on</span>';
+    return d.choice === "accept" ? '<span class="chip ckok">Accepted</span>'
+                                 : '<span class="chip ckhold">Rejected</span>';
+  }
   if(c.status === "failed") return '<span class="chip warn">Incomplete</span>';   // not seeded, or a run gave no result
   const m = CK_CHIP[c.verdict] || ["", c.verdict || ""];
   return '<span class="chip ' + m[0] + '">' + esc(m[1]) + '</span>';
@@ -7487,13 +7524,15 @@ function ckTable(c){
     + '</table>';
 }
 function ckAnswer(c){
-  if(c.decision)
-    return '<div class="lmsg ' + (c.decision.choice === "accept" ? "ok" : "busy") + '">'
-      + (c.decision.choice === "accept" ? "Accepted " + esc(ckArm(c.decision.pick)) : "Rejected — the current setting stays")
-      + ' · ' + esc(fmtWhen(c.decision.at)) + '</div>';
+  if(c.decision){
+    const d = c.decision, mine = d.by !== "auto" && d.by !== "auto-trial" && d.choice !== "trial";
+    return '<div class="lmsg ' + (d.choice === "reject" ? "busy" : "ok") + '">'
+      + esc(ckCap(ckDecided(d))) + (mine && d.choice === "reject" ? " — the current setting stays" : "")
+      + ' · ' + esc(fmtWhen(d.at)) + '</div>' + ckTrial(c);
+  }
   if(c.status !== "awaiting") return "";
   const sent = CK_UI.sent[c.id], req = c.request;
-  let msg = "";
+  let msg = ckTrial(c);      // a "Not trialled: ..." note -- the choice stays yours
   if(sent)
     msg = '<div class="lmsg busy">Sent: ' + (sent.choice === "accept" ? "accept " + esc(ckArm(sent.tag)) : "reject")
       + '. The tick applies it at its next boundary.</div>';
@@ -7522,8 +7561,7 @@ function ckHistory(c){
   if(!h.length) return "";
   return '<div class="ck-sub">Earlier: ' + h.slice(0, 4).map(function(x){
     const v = String(x.verdict || "").toLowerCase();
-    const d = x.decision ? (x.decision.choice === "accept" ? ", accepted " + ckArm(x.decision.pick) : ", rejected")
-            : (x.pick ? " (" + ckArm(x.pick) + ")" : "");
+    const d = x.decision ? ", " + ckDecided(x.decision) : (x.pick ? " (" + ckArm(x.pick) + ")" : "");
     return esc(fmtWhen(x.at) + " " + v + d);
   }).join(" · ") + '</div>';
 }
@@ -7554,7 +7592,9 @@ function ckOverview(){
     const wait = cs.filter(ckWaiting).length, run = cs.filter(function(c){ return c.status === "running"; }).length;
     const known = (STATUS.buckets || []).some(function(x){ return x.key === b.key; });
     const line = cs.map(function(c){
-      return c.switch + " " + (c.decision ? (c.decision.choice === "accept" ? "accepted" : "rejected")
+      return c.switch + " " + (c.decision ? (c.decision.choice === "trial" ? "trial"
+          : c.decision.by === "auto-trial" ? (c.decision.choice === "accept" ? "kept" : "reverted")
+          : c.decision.choice === "accept" ? "accepted" : "rejected")
         : c.status === "running" ? "running" : String(c.verdict || "").toLowerCase());
     }).join(" · ");
     h += (known ? '<button type="button" class="strow" data-stb="' + esc(b.key) + '">' : '<div class="strow">')
