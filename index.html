@@ -1889,6 +1889,42 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .fin-tbl td:first-child{text-align:left;font-family:inherit;padding-left:0;white-space:normal;}
 .fin-tbl td .fin-sub{display:block;}
 .fin-more{border:0;background:transparent;color:var(--gold);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:10px 13px;text-align:left;}
+/* 2026-10-23 -- Finance tabs: GOLDbot / Statements / Budget */
+.fin-tabs{display:flex;gap:4px;padding:3px;border-radius:11px;background:var(--card);border:1px solid var(--line);}
+.fin-tabs button{
+  flex:1;min-width:0;border:0;background:transparent;color:var(--dim);font:inherit;font-size:.8rem;
+  font-weight:700;border-radius:8px;padding:8px 4px;cursor:pointer;white-space:nowrap;
+}
+.fin-tabs button[aria-selected="true"]{background:var(--gold);color:#17130a;}
+.fin-tabs button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.fin-tabn{
+  display:inline-block;margin-left:5px;min-width:17px;padding:0 5px;border-radius:9px;font-size:.66rem;
+  line-height:17px;background:var(--bad);color:#fff;vertical-align:1px;
+}
+.pf-acct{padding:11px 13px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px;}
+.pf-acct:last-child{border-bottom:0;}
+.pf-ah{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.pf-chips{display:flex;flex-wrap:wrap;gap:5px;}
+.pf-chip{
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.7rem;padding:3px 7px;border-radius:7px;
+  border:1px solid var(--line);background:var(--bg);color:var(--dim);white-space:nowrap;font-weight:500;
+}
+button.pf-chip{cursor:pointer;}
+.pf-chip.in{color:var(--good);border-color:rgba(95,190,149,.35);}
+.pf-chip.missing,.pf-chip.miss{color:var(--bad);border-color:rgba(224,104,90,.45);}
+.pf-chip.skipped{color:var(--faint);text-decoration:line-through;}
+.pf-in{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;
+  padding:9px 10px;font-family:inherit;font-size:1rem;
+}
+.pf-in:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.pf-lnk{border:0;background:transparent;color:var(--gold);font:inherit;font-weight:600;cursor:pointer;padding:0;}
+.pf-res{font-size:.8rem;line-height:1.45;}
+.pf-res.ok{color:var(--good);}
+.pf-res.bad{color:var(--warn);}
+.pf-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px!important;}
+.pf-check input{width:auto!important;}
+.fin-tbl td.pf-short{color:var(--bad);}
 </style>
 
 <div class="app">
@@ -1981,7 +2017,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261023-133816";
+const APP_BUILD = "20261023-135135";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -16742,7 +16778,8 @@ function finRender(){
 }
 function finShow(){
   finRender();
-  finLoad(false);
+  if(finTab() === "goldbot") finLoad(false);
+  else pfLoad(false);
 }
 
 async function finLoad(force){
@@ -17071,9 +17108,13 @@ function finWhen(v, reached){
 }
 
 function renderFinance(){
+  /* 2026-10-23 -- three tabs. Statements and Budget are Trevor's own money,
+     from the LAPTOP through their own link -- see pfRender. */
+  const tab = finTab();
+  if(tab !== "goldbot") return pfRender(tab);
   const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
   if(!apiBase())
-    return '<div class="home">' + back + finCard(
+    return '<div class="home">' + back + finTabs() + finCard(
       '<div class="fin-note">The books live on the Laptop and come to this phone over Tailscale ' +
       "only. They are never put in the public app or the snapshot. Add the Laptop link in " +
       "<b>Settings → Laptop link</b>, then come back.</div>" +
@@ -17082,7 +17123,7 @@ function renderFinance(){
   const d = FIN.data;
   const head = '<div class="fin-head">' + back +
     `<button type="button" class="fin-btn" data-fin="refresh"${FIN.loading ? " disabled" : ""}>` +
-    `${FIN.loading ? "Loading…" : "Refresh"}</button></div>`;
+    `${FIN.loading ? "Loading…" : "Refresh"}</button></div>` + finTabs();
   if(!d){
     return '<div class="home">' + head + finCard(FIN.err
       ? `<div class="fin-warn">${esc(FIN.err)}</div>`
@@ -17330,6 +17371,611 @@ document.addEventListener("change", e => {
   }
 });
 
+/* ==========================================================================
+   FINANCE TABS -- STATEMENTS AND BUDGET: Trevor's own money (2026-10-23)
+   ==========================================================================
+   Trevor: *"Lets add some Tabs inside the Finance Section. I want a tab that
+   lets me know what statements need to be submitted, which ones are missing,
+   which ones that are already submitted. Then we'll have to have a budget tab
+   that Tells me how much to pay Certain bills to get the most interest
+   savings possible."* The order is his: chequing's bills, then the
+   Mastercard, then the Line of Credit, and what is left goes to GOLDbot.
+
+   🔴 NOT GOLDbot's BOOKS, AND NOT FROM THE SAME MACHINE. These come from the
+   LAPTOP only (personal_api.py, over Tailscale; the books never leave
+   C:\PersonalFinance), through their own link -- the GOLDbot tab's goes to
+   the T7910. Memory only, never localStorage. No number, payee or account
+   is in this file or the snapshot, and the server sends an account ID, never
+   the account number. The arithmetic is personal.py's, with tests: this
+   page draws what it is sent. */
+let PF = {data: null, at: 0, loading: false, err: "", busy: false, msg: null, form: null,
+          formErr: "", confirm: "", open: "", all: {}, link: {editing: false, err: "", typed: ""}};
+const PF_KEY = "gb.personal.v1";
+const PF_TAB_KEY = "gb.fintab.v1";
+const PF_TABS = [["goldbot", "GOLDbot"], ["statements", "Statements"], ["budget", "Budget"]];
+const PF_LINK_RE = /^(https:\/\/[^\s"'<>\/]+|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)\/[A-Za-z0-9_-]{8,64}$/i;
+
+function finTab(){
+  if(!FIN.tab){
+    try{ FIN.tab = localStorage.getItem(PF_TAB_KEY) || "goldbot"; }catch(e){ FIN.tab = "goldbot"; }
+    if(!PF_TABS.some(t => t[0] === FIN.tab)) FIN.tab = "goldbot";
+  }
+  return FIN.tab;
+}
+function finTabs(){
+  const t = finTab();
+  const miss = PF.data ? (((PF.data.statements || {}).counts || {}).missing || 0) : 0;
+  return '<div class="fin-tabs" role="tablist" aria-label="Finance">' + PF_TABS.map(([k, label]) =>
+    `<button type="button" role="tab" data-fintab="${k}" aria-selected="${t === k}">${label}` +
+    (k === "statements" && miss ? `<span class="fin-tabn">${esc(miss)}</span>` : "") + "</button>").join("") +
+    "</div>";
+}
+
+/* ---------- the Laptop link ---------- */
+function pfBase(){
+  try{
+    if(PF.link.typed) return PF.link.typed;
+    /* `#...&personal=<link>` sets it, the way `&api=` sets the GOLDbot one. */
+    const h = (new URLSearchParams(location.hash.slice(1)).get("personal") || "").trim().replace(/\/+$/, "");
+    if(h && PF_LINK_RE.test(h)){
+      try{ localStorage.setItem(PF_KEY, h); }catch(e){}
+      return h;
+    }
+    const v = localStorage.getItem(PF_KEY);
+    return v && PF_LINK_RE.test(v) ? v : "";
+  }catch(e){ return ""; }
+}
+function pfLinkFrom(text){
+  /* A whole link, or just the Laptop's Tailscale name: the GOLDbot link gives
+     the rest -- the same tailnet, and personal_api answers to fleet_api's token. */
+  const v = String(text || "").trim().replace(/\/+$/, "");
+  if(PF_LINK_RE.test(v)) return v;
+  if(/^[a-z0-9][a-z0-9-]{0,62}$/i.test(v)){
+    try{
+      const u = new URL(apiBase());
+      const dot = u.host.indexOf(".");
+      const tok = u.pathname.split("/").filter(Boolean)[0] || "";
+      if(dot > 0 && tok) return "https://" + v.toLowerCase() + u.host.slice(dot) + "/" + tok;
+    }catch(e){}
+  }
+  return "";
+}
+function pfHost(){
+  try{
+    const h = new URL(pfBase()).hostname;
+    return /^[\d.]+$/.test(h) ? h : h.split(".")[0];
+  }catch(e){ return ""; }
+}
+
+/* ---------- loading and saving ---------- */
+async function pfLoad(force){
+  const base = pfBase();
+  if(!base || PF.loading || PF.link.editing) return;
+  if(!force && PF.data && Date.now() - PF.at < 60000) return;
+  PF.loading = true;
+  PF.err = "";
+  finRender();
+  try{
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 30000) : null;
+    const r = await fetch(base + "/personal", {cache: "no-store", signal: ctl ? ctl.signal : undefined});
+    if(timer) clearTimeout(timer);
+    const out = await r.json().catch(() => ({}));
+    if(r.ok && out && out.schema){
+      PF.data = out;
+      PF.at = Date.now();
+    }else if(r.status === 404){
+      let svc = "";
+      try{ svc = ((await (await fetch(base + "/health", {cache: "no-store"})).json()) || {}).service || ""; }catch(e){}
+      PF.err = svc === "fleet_api"
+        ? "That link goes to the GOLDbot server, not the Laptop. Tap Change and use the Laptop's name."
+        : "The Laptop answered, but not to this link. Tap Change and enter it again.";
+    }else{
+      PF.err = out.error || ("The Laptop answered with HTTP " + r.status + ".");
+    }
+  }catch(e){
+    PF.err = "No answer from the Laptop. It has to be on and awake, with Tailscale on there and on " +
+      "this phone. Tap Refresh to try again.";
+  }
+  PF.loading = false;
+  finRender();
+}
+
+async function pfSend(body, after){
+  const base = pfBase();
+  if(!base || PF.busy) return null;
+  PF.busy = true;
+  PF.formErr = "";
+  finRender();
+  let res = null;
+  try{
+    const r = await fetch(base + "/personal", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const out = await r.json().catch(() => ({}));
+    /* 200 MEANS SAVED, as for the GOLDbot books: bookkeeping, applied on the spot. */
+    if(r.status === 200 && out.ok){
+      res = out;
+      if(out.report){ PF.data = out.report; PF.at = Date.now(); }
+      if(after) after(out);
+    }else{
+      PF.formErr = out.error || ("Not saved: HTTP " + r.status);
+    }
+  }catch(e){
+    PF.formErr = "No answer from the Laptop — not saved. Check Tailscale, then try again.";
+  }
+  PF.busy = false;
+  PF.confirm = "";
+  finRender();
+  return res;
+}
+
+function pfReadFile(file){
+  return new Promise((ok, bad) => {
+    const fr = new FileReader();
+    fr.onload = () => ok(String(fr.result || "").replace(/^data:[^,]*,/, ""));
+    fr.onerror = () => bad(fr.error);
+    fr.readAsDataURL(file);
+  });
+}
+async function pfUpload(files){
+  /* One at a time, and the phone's file name is never shown or sent: a bank's
+     download name carries the account number. */
+  const list = Array.from(files || []);
+  if(!list.length || PF.busy) return;
+  PF.msg = {items: [], left: list.length};
+  for(const f of list){
+    if(f.size > 15 * 1024 * 1024){
+      PF.msg.items.push({status: "refused", why: "Over 15 MB — that isn't a statement."});
+    }else{
+      let data = null;
+      try{ data = await pfReadFile(f); }catch(e){
+        PF.msg.items.push({status: "refused", why: "This phone couldn't open that file."});
+      }
+      if(data !== null){
+        const out = await pfSend({op: "upload", data: data});
+        if(out) (out.results || []).forEach(x => PF.msg.items.push(x));
+        else PF.msg.items.push({status: "refused", why: PF.formErr || "Not sent."});
+        PF.formErr = "";
+      }
+    }
+    PF.msg.left--;
+    finRender();
+  }
+}
+
+/* ---------- shared bits ---------- */
+function pfRender(tab){
+  const back = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  const base = pfBase();
+  let out = '<div class="home"><div class="fin-head">' + back +
+    (base && !PF.link.editing ? `<button type="button" class="fin-btn" data-pf="refresh"` +
+      `${PF.loading ? " disabled" : ""}>${PF.loading ? "Loading…" : "Refresh"}</button>` : "") +
+    "</div>" + finTabs();
+  if(!base || PF.link.editing) return out + pfLinkCard() + "</div>";
+  const d = PF.data;
+  if(!d){
+    return out + finCard(PF.err ? `<div class="fin-warn">${esc(PF.err)}</div>`
+      : '<div class="fin-note">Loading from the Laptop…</div>') + pfLinkFoot() + "</div>";
+  }
+  out += `<div class="fin-asof">From the Laptop · as of ${esc(finDate(d.as_of, true))}</div>`;
+  if(PF.err) out += `<div class="fin-warn">${esc(PF.err)}</div>`;
+  if(PF.formErr) out += `<div class="fin-err">${esc(PF.formErr)}</div>`;
+  (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
+  out += tab === "statements" ? pfStatements(d) : pfBudget(d);
+  return out + pfLinkFoot() + "</div>";
+}
+function pfLinkCard(){
+  return '<div class="section-label">The Laptop link</div>' + finCard(
+    '<div class="fin-note">Your statements and budget stay on the <b>Laptop</b> and come to this phone ' +
+    "over Tailscale only — never through the public app, the snapshot or the GOLDbot server. Enter the " +
+    "Laptop's name as the Tailscale app lists it, or paste its whole link (https://…ts.net/…).</div>" +
+    '<input id="pf-link" class="pf-in" type="text" autocomplete="off" autocapitalize="off" ' +
+    'spellcheck="false" placeholder="Laptop name or link">' +
+    (PF.link.err ? `<div class="fin-err">${esc(PF.link.err)}</div>` : "") +
+    '<div class="fin-acts"><button type="button" class="fin-btn gold" data-pf="linksave">Save</button>' +
+    (pfBase() ? '<button type="button" class="fin-btn" data-pf="linkcancel">Cancel</button>' : "") +
+    "</div>");
+}
+function pfLinkFoot(){
+  return `<div class="fin-note">Laptop link: <b>${esc(pfHost())}</b> · ` +
+    '<button type="button" class="pf-lnk" data-pf="linkchange">Change</button></div>';
+}
+function pfFormField(label, field, value, attrs){
+  return `<label>${label}<input type="text" data-pff="${field}" value="${finAttr(value)}" ` +
+    `autocomplete="off" ${attrs || 'inputmode="decimal"'}></label>`;
+}
+
+/* ---------- the Statements tab ---------- */
+function pfImportLine(x){
+  const when = x.end ? finMonth(String(x.end).slice(0, 7)) : "";
+  if(x.status === "new" || x.status === "replaced")
+    return `<div class="pf-res ok">✓ ${esc(x.name)} · ${esc(when)} — added, ${esc(x.txns)} transactions, ` +
+           "and it adds up to the cent.</div>";
+  if(x.status === "duplicate")
+    return `<div class="pf-res">Already in: ${esc(x.name)} · ${esc(when)}.</div>`;
+  return `<div class="pf-res bad">⚠ Couldn't use it: ${esc(x.why || "unreadable")}` +
+    (x.status === "error" ? " It waits in the Laptop's inbox."
+      : x.status === "rejected" ? " Kept aside on the Laptop (PersonalFinance\\rejected), not filed." : "") +
+    "</div>";
+}
+function pfStatements(d){
+  const s = d.statements || {};
+  const c = s.counts || {};
+  const accts = s.accounts || [];
+  const nxt = (s.upcoming || [])[0];
+  let h = finStats([
+    ["Missing", String(c.missing || 0), c.missing ? "lv-bad" : "lv-good",
+     c.missing ? "to download" : "all caught up"],
+    ["Submitted", String(c.in || 0), "", s.history_from ? "since " + finMonth(s.history_from) : ""],
+  ]);
+
+  /* SUBMIT */
+  const m = PF.msg;
+  h += '<div class="section-label">Submit statements</div>' + finCard(
+    '<div class="fin-note">Download the PDF from the bank, then pick it here — several at once is fine. ' +
+    "The Laptop reads it, checks every line adds up to the cent, and files it.</div>" +
+    '<input type="file" id="pf-file" accept="application/pdf,.pdf" multiple hidden data-pffile>' +
+    '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-pf="pick"${PF.busy ? " disabled" : ""}>` +
+    `${m && m.left > 0 ? "Sending… " + m.left + " to go" : "Choose PDF statements"}</button>` +
+    ((d.inbox || {}).files ? `<button type="button" class="fin-btn" data-pf="import"${PF.busy ? " disabled" : ""}>` +
+      `Read the Laptop's inbox (${esc(d.inbox.files)})</button>` : "") + "</div>" +
+    (m && m.items.length ? m.items.map(pfImportLine).join("") : ""));
+
+  /* MISSING */
+  const missing = accts.filter(a => (a.missing || []).length);
+  h += '<div class="section-label">Missing — download these</div>';
+  h += missing.length
+    ? '<div class="card"><div class="fin-rows">' + missing.map(pfMissRow).join("") + "</div></div>"
+    : finCard('<div class="fin-note">Nothing missing. Every statement the banks have published is in.</div>');
+
+  /* COMING UP */
+  if((s.upcoming || []).length)
+    h += '<div class="section-label">Coming up</div><div class="card"><div class="fin-rows">' +
+      s.upcoming.map(u => '<div class="fin-row" style="cursor:default">' +
+        `<div><div class="fin-rt">${esc(u.name)}</div>` +
+        `<div class="fin-rs">${esc(finMonth(u.month))} statement · closes ${esc(finDate(u.end))}</div></div>` +
+        `<div><div class="fin-ra">${esc(finDate(u.ready))}</div><div class="fin-rc">ready about</div></div></div>`
+      ).join("") + "</div></div>";
+
+  /* EVERY STATEMENT */
+  h += '<div class="section-label">Every statement</div><div class="card"><div class="fin-rows">' +
+    accts.map(a => {
+      const all = !!PF.all[a.id];
+      const rows = all ? a.months : a.months.slice(0, 12);
+      const nIn = a.months.filter(r => r.state === "in").length;
+      return '<div class="pf-acct"><div class="pf-ah"><div>' +
+        `<div class="fin-rt">${esc(a.name)}</div>` +
+        `<div class="fin-rs">${esc(nIn)} in · ${esc(a.missing.length)} missing · ` +
+        `${esc(a.cycle === "month-end" ? "closes at month-end" : "closes on the " + finOrd(a.cycle.split(" ")[1]))}` +
+        `${a.closed ? " · closed " + esc(finMonth(a.closed)) : ""}</div></div></div>` +
+        '<div class="pf-chips">' + rows.map(r => {
+          const key = "un|" + a.id + "|" + r.month;
+          const label = (r.state === "in" ? "✓ " : "") + finMonth(r.month);
+          if(r.state === "skipped")
+            return `<button type="button" class="pf-chip skipped" data-pf="unskip" data-id="${finAttr(a.id)}" ` +
+              `data-m="${finAttr(r.month)}">${esc(PF.confirm === key ? "Tap again: ask for it" : label)}</button>`;
+          return `<span class="pf-chip ${r.state}">${esc(label)}</span>`;
+        }).join("") + "</div>" +
+        (a.months.length > 12 ? `<button type="button" class="fin-more" style="padding:0" data-pf="all" ` +
+          `data-id="${finAttr(a.id)}">${all ? "Show the latest 12" : "Show all " + a.months.length}</button>` : "") +
+        "</div>";
+    }).join("") + "</div></div>";
+
+  /* WHERE "MISSING" STARTS */
+  if(PF.form && PF.form.kind === "history"){
+    h += '<div class="card"><div class="fin-form">' +
+      `<label>Count statements from<input type="month" data-pff="from" value="${finAttr(PF.form.from)}"></label>` +
+      '<div class="fin-note">Blank = the first full month your statements cover' +
+      (s.books_from ? " (" + esc(finMonth(s.books_from)) + ")" : "") + ".</div>" +
+      '<div class="fin-acts">' +
+      `<button type="button" class="fin-btn gold" data-pf="historysave"${PF.busy ? " disabled" : ""}>Save</button>` +
+      '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div></div>';
+  }else{
+    h += `<div class="fin-note">Missing counts from <b>${esc(finMonth(s.history_from))}</b>. A statement ` +
+      `counts as ready ${esc(s.ready_days)} days after it closes. ` +
+      '<button type="button" class="pf-lnk" data-pf="history">Change</button></div>';
+  }
+  return h;
+}
+function pfMissRow(a){
+  const rows = a.months.filter(r => r.state === "missing").slice().reverse();     // oldest first
+  const open = PF.open === a.id;
+  const lastIn = String(a.last_in || "").slice(0, 7);
+  let h = '<div class="pf-acct"><div class="pf-ah"><div>' +
+    `<div class="fin-rt">${esc(a.name)}</div>` +
+    `<div class="fin-rs">${esc(rows.length)} statement${rows.length === 1 ? "" : "s"} · oldest first</div></div>` +
+    `<button type="button" class="fin-btn" data-pf="open" data-id="${finAttr(a.id)}" ` +
+    `aria-expanded="${open}">${open ? "Done" : "Edit"}</button></div>` +
+    '<div class="pf-chips">' + rows.map(r => {
+      const key = "skip|" + a.id + "|" + r.month;
+      return open
+        ? `<button type="button" class="pf-chip miss" data-pf="skip" data-id="${finAttr(a.id)}" ` +
+          `data-m="${finAttr(r.month)}">${esc(PF.confirm === key ? "Tap again: none that month" : finMonth(r.month))}</button>`
+        : `<span class="pf-chip miss">${esc(finMonth(r.month))}</span>`;
+    }).join("") + "</div>";
+  if(open){
+    const before = rows.some(r => r.month < a.first_in);
+    const after = rows.some(r => r.month > lastIn);
+    h += '<div class="fin-note">Tap a month the bank never made a statement for, and it stops being ' +
+      "asked for (it can be undone under Every statement).</div><div class=\"fin-acts\">" +
+      (before ? `<button type="button" class="fin-btn" data-pf="from" data-id="${finAttr(a.id)}" ` +
+        `data-m="${finAttr(a.first_in)}">Opened ${esc(finMonth(a.first_in))} — none before</button>` : "") +
+      (after ? `<button type="button" class="fin-btn bad" data-pf="closed" data-id="${finAttr(a.id)}" ` +
+        `data-m="${finAttr(lastIn)}">${PF.confirm === "closed|" + a.id ? "Tap again: it's closed" : "Account closed"}` +
+        "</button>" : "") + "</div>";
+  }
+  return h + "</div>";
+}
+
+/* ---------- the Budget tab ---------- */
+function pfDue(iso, today){
+  /* A due date already gone means the newer statement isn't in -- the note at
+     the top says so -- and the money still goes out this month. */
+  return !iso || iso < today ? "this month" : "by " + finDate(iso);
+}
+function pfDebtLine(x, today){
+  const pay = finMoney(x.pay), mn = finMoney(x.min) + (x.min_estimated ? " (estimated)" : "");
+  if(x.kind === "loc"){
+    const auto = !x.autopay_date ? ""
+      : x.autopay_date < today ? `The ${mn} minimum comes out automatically each month`
+      : `The ${mn} minimum comes out automatically on ${finDate(x.autopay_date)}`;
+    const extra = Math.max(0, Number(x.pay) - Number(x.min));
+    if(x.in_full) return (auto ? auto + ". " : "") + `Pay ${pay} in all ${pfDue(x.due_date, today)} — that pays it off.`;
+    if(auto) return auto + (extra > 0.004 ? `; pay the other ${finMoney(extra)} yourself ${pfDue(x.due_date, today)}.` : ".");
+    return `Pay ${pay} ${pfDue(x.due_date, today)}. Minimum ${mn}.`;
+  }
+  if(x.in_full) return `Pay ${pay} ${pfDue(x.due_date, today)} — the full balance, so no interest on new purchases.`;
+  return `Pay ${pay} ${pfDue(x.due_date, today)}. Minimum ${mn}; this leaves ${finMoney(x.left)} owing at ${x.rate}%.`;
+}
+function pfShort(kind){ return kind === "card" ? "Card" : kind === "loc" ? "LOC" : "Debt"; }
+
+function pfBudget(d){
+  const b = d.budget || {};
+  const today = d.as_of || finToday();
+  let h = "";
+  (b.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
+  if(!b.ready){
+    h += finCard(`<div class="fin-warn">${esc(b.why || "Not enough to plan with yet.")}</div>`);
+    if((b.debts || []).length)
+      h += '<div class="section-label">What you owe</div>' + finCard(finKv(b.debts.map(x =>
+        [x.name + " · " + x.rate + "%", finMoney(x.owed), "",
+         "minimum " + finMoney(x.min) + (x.due_date ? " · due " + finDate(x.due_date) : "")])));
+    return h + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
+  }
+  const t = b.this_month, p = b.plan, inc = b.inputs.income;
+  const incSub = inc.typed != null ? "the amount you typed"
+    : "average of " + inc.months.map(finMonth).join(", ") + " in chequing";
+
+  /* THIS MONTH -- top to bottom is the order the money goes. */
+  const rows = [["Pay coming in", finMoney(t.income), "", incSub]];
+  rows.push(["Bills from chequing", finMoney(-t.bills), "",
+             b.bills.filter(x => !x.off).length + " monthly bills — listed below"]);
+  if(t.keep > 0.004) rows.push(["Kept in chequing", finMoney(-t.keep), "", "your buffer"]);
+  if(t.extra > 0.004) rows.push(["One-off extra", finMoney(t.extra), "", "this month only"]);
+  t.debts.forEach(x => rows.push([x.name, finMoney(-x.pay), "", pfDebtLine(x, today)]));
+  rows.push(["Into GOLDbot", finMoney(t.goldbot), "sum",
+             t.goldbot > 0.004 ? "What's left. Record it in the GOLDbot tab as a deposit from you — it's " +
+             "your loan to GOLDbot, at " + b.inputs.goldbot_rate_pct + "%." : "Nothing left over this month — " +
+             "every spare dollar is earning more on the debts.", t.goldbot > 0.004 ? "lv-good" : ""]);
+  h += `<div class="section-label">${esc(finMonth(t.month))} — what to pay</div>` + finCard(finKv(rows) +
+    (t.short > 0.004 ? `<div class="fin-warn">⚠ ${esc(finMoney(t.short))} short of the minimum payments. ` +
+      "Pay the minimums before anything else — a missed one costs a fee and your credit score.</div>" : ""));
+
+  /* THE PLAN */
+  const names = {};
+  t.debts.forEach(x => { names[x.id] = x.name; });
+  h += '<div class="section-label">The plan</div>' + finStats([
+    ["Debt-free", p.debt_free ? finMonth(p.debt_free) : "Not in 10 yrs", p.debt_free ? "lv-good" : "lv-bad",
+     p.debt_free ? "card + line of credit" : "at this rate"],
+    ["Then to GOLDbot", p.goldbot_after != null ? finMoney(p.goldbot_after, false) + "/mo" : "—", "",
+     "once the debts are done"],
+    ["Interest, this plan", finMoney(p.interest, false), "", "to " + finMonth(p.horizon)],
+    ["Better off by", finMoney(p.better_by, false), finTone(p.better_by), "vs. minimums only"],
+  ]);
+  const done = Object.keys(p.paid_off || {}).map(id =>
+    `${names[id] || "A debt"}: ${t.debts.find(x => x.id === id && x.kind === "card")
+      ? "paid in full every month from " : "paid off in "}${finMonth(p.paid_off[id])}`);
+  h += finCard(
+    (done.length ? '<div class="fin-note">' + done.map(esc).join("<br>") + "</div>" : "") +
+    '<table class="fin-tbl"><tr><th>Month</th>' +
+    t.debts.map(x => `<th>${esc(pfShort(x.kind))}</th>`).join("") + "<th>GOLDbot</th></tr>" +
+    p.months.map(r => `<tr><td>${esc(finMonth(r.month))}</td>` +
+      r.pay.map(v => `<td>${esc(finMoney(v, false))}</td>`).join("") +
+      `<td class="${r.short > 0.004 ? "pf-short" : ""}">${esc(r.short > 0.004 ? "short " + finMoney(r.short, false)
+        : finMoney(r.goldbot, false))}</td></tr>`).join("") + "</table>" +
+    `<div class="fin-note"><b>Why this order:</b> every minimum first, so nothing is ever late; then each ` +
+    "extra dollar to the highest rate — the Mastercard, then the line of credit. Paying only the minimums " +
+    `and putting the rest into GOLDbot at ${esc(b.inputs.goldbot_rate_pct)}% would leave you ` +
+    `${esc(finMoney(p.better_by, false))} worse off by ${esc(finMonth(p.horizon))}: ` +
+    `${esc(finMoney(p.minimums_interest, false))} in interest instead of ${esc(finMoney(p.interest, false))}, ` +
+    "because the debts cost more than GOLDbot pays. The card's spending is taken as " +
+    `${esc(finMoney(b.inputs.card_spend.value, false))} a month, paid off with each statement.</div>`);
+  return h + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
+}
+function pfAdviceNote(){
+  return '<div class="fin-note">Arithmetic on your own statements, with interest estimated from their ' +
+    "rates — a planning tool, not financial advice.</div>";
+}
+
+function pfInputsCard(b){
+  const i = b.inputs || {};
+  const f = PF.form && PF.form.kind === "budget" ? PF.form : null;
+  let h = '<div class="fin-head"><div class="section-label">Your numbers</div>' +
+    (f ? "" : '<button type="button" class="fin-btn" data-pf="budgetedit">Edit</button>') + "</div>";
+  if(f){
+    const inc = i.income || {}, cs = i.card_spend || {};
+    return h + '<div class="card"><div class="fin-form">' +
+      pfFormField("Monthly take-home pay <span class=\"fin-hint\">blank = from chequing" +
+        (inc.statements != null ? ", " + esc(finMoney(inc.statements, false)) : "") + "</span>", "income", f.income) +
+      pfFormField("Card spending a month <span class=\"fin-hint\">blank = from the statements" +
+        (cs.statements != null ? ", " + esc(finMoney(cs.statements, false)) : "") + "</span>", "card_spend", f.card_spend) +
+      pfFormField("Keep in chequing each month", "keep", f.keep) +
+      pfFormField("One-off extra this month <span class=\"fin-hint\">e.g. money back from GOLDbot</span>",
+                  "extra_now", f.extra_now) +
+      pfFormField("GOLDbot pays you (% a year)", "goldbot_rate_pct", f.goldbot_rate_pct) +
+      '<div class="fin-acts">' +
+      `<button type="button" class="fin-btn gold" data-pf="budgetsave"${PF.busy ? " disabled" : ""}>` +
+      `${PF.busy ? "Saving…" : "Save"}</button>` +
+      '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div></div>';
+  }
+  const inc = i.income || {}, cs = i.card_spend || {};
+  return h + finCard(finKv([
+    ["Monthly take-home pay", inc.value != null ? finMoney(inc.value) : "—", "",
+     inc.typed != null ? "you typed it" : inc.statements != null ? "from chequing statements" : "not known yet"],
+    ["Card spending a month", finMoney(cs.value), "", cs.typed != null ? "you typed it" : "from the card statements"],
+    ["Kept in chequing", finMoney(i.keep || 0)],
+    ["One-off extra this month", finMoney(i.extra_now || 0)],
+    ["GOLDbot pays you", (i.goldbot_rate_pct ?? 5) + "% a year"],
+  ]));
+}
+
+function pfBillsCard(b){
+  const bills = b.bills || [];
+  const f = PF.form && PF.form.kind === "bill" ? PF.form : null;
+  let h = '<div class="fin-head"><div class="section-label">Monthly bills from chequing</div>' +
+    (f && !f.id ? "" : '<button type="button" class="fin-btn gold" data-pf="billadd">+ Add</button>') + "</div>";
+  const row = x => {
+    if(f && f.id === x.id) return pfBillForm(f, x);
+    const tags = (x.off ? '<span class="fin-tag">not counted</span>' : "") +
+      (x.edited ? '<span class="fin-tag">edited</span>' : "") + (!x.auto ? '<span class="fin-tag">added</span>' : "");
+    const sub = [x.day ? "around the " + finOrd(x.day) : "",
+                 x.auto ? "found in " + x.seen + " month" + (x.seen === 1 ? "" : "s") : "you added it"]
+                 .filter(Boolean).join(" · ");
+    return `<button type="button" class="fin-row" data-pf="bill" data-id="${finAttr(x.id)}">` +
+      `<div><div class="fin-rt">${esc(x.name)}${tags}</div><div class="fin-rs">${esc(sub)}</div></div>` +
+      `<div><div class="fin-ra"${x.off ? ' style="text-decoration:line-through;opacity:.6"' : ""}>` +
+      `${esc(finMoney(x.amount))}</div></div></button>`;
+  };
+  h += '<div class="card"><div class="fin-rows">' + (f && !f.id ? pfBillForm(f, null) : "") +
+    (bills.length ? bills.map(row).join("") : '<div class="fin-note" style="padding:13px">None found yet — ' +
+      "they're read from the chequing statements. Add one with + Add.</div>") + "</div></div>";
+  return h + `<div class="fin-note">Found by looking for the same payment in more than one month of ` +
+    `chequing (card and line-of-credit payments, and money to GOLDbot, are left out). Total ` +
+    `<b>${esc(finMoney(b.bills_total || 0))}</b> a month. Tap one to change it or stop counting it.</div>`;
+}
+function pfBillForm(f, x){
+  const manual = !x || !x.auto;
+  return '<div class="fin-form">' +
+    (manual ? pfFormField("Name", "name", f.name, 'maxlength="60"')
+            : `<div class="fin-rt">${esc(x.name)}</div>`) +
+    '<div class="fin-two">' + pfFormField("Amount a month", "amount", f.amount) +
+    pfFormField("Day of the month", "day", f.day, 'inputmode="numeric"') + "</div>" +
+    (x && x.auto ? `<label class="pf-check"><input type="checkbox" data-pff="count"${f.count ? " checked" : ""}>` +
+      "Count it as a monthly bill</label>" +
+      '<div class="fin-note">Blank amount = what the statements show' +
+      ` (${esc(finMoney(x.amount))} on average).</div>` : "") +
+    '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-pf="billsave"${PF.busy ? " disabled" : ""}>` +
+    `${PF.busy ? "Saving…" : x ? "Save" : "Add it"}</button>` +
+    '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button>' +
+    (x && !x.auto ? `<button type="button" class="fin-btn bad" data-pf="billremove"${PF.busy ? " disabled" : ""}>` +
+      `${PF.confirm === "rm|" + x.id ? "Tap again to remove" : "Remove"}</button>` : "") +
+    "</div></div>";
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const tb = e.target.closest && e.target.closest("[data-fintab]");
+  if(tb){
+    FIN.tab = tb.dataset.fintab;
+    try{ localStorage.setItem(PF_TAB_KEY, FIN.tab); }catch(err){}
+    PF.form = null; PF.formErr = ""; PF.confirm = ""; PF.msg = null;
+    finShow();
+    return;
+  }
+  const el = e.target.closest && e.target.closest("[data-pf]");
+  if(!el) return;
+  const act = el.dataset.pf, id = el.dataset.id || "", mo = el.dataset.m || "";
+  const d = PF.data || {};
+  const b = d.budget || {};
+  if(act === "refresh"){ PF.msg = null; pfLoad(true); return; }
+  if(act === "linkchange"){ PF.link.editing = true; PF.link.err = ""; }
+  else if(act === "linkcancel"){ PF.link.editing = false; PF.link.err = ""; }
+  else if(act === "linksave"){
+    const inp = document.getElementById("pf-link");
+    const v = pfLinkFrom(inp ? inp.value : "");
+    if(!v){
+      PF.link.err = apiBase() || /^https?:/i.test(inp ? inp.value.trim() : "")
+        ? "That isn't a link this page can use: https://…ts.net/ and then the token."
+        : "A name alone needs the GOLDbot link set first (Settings → Laptop link). Paste the whole link instead.";
+    }else{
+      try{ localStorage.setItem(PF_KEY, v); }catch(err){}
+      PF.link = {editing: false, err: "", typed: v};
+      PF.data = null; PF.err = "";
+      pfLoad(true);
+      return;
+    }
+  }
+  else if(act === "pick"){ const inp = document.getElementById("pf-file"); if(inp) inp.click(); return; }
+  else if(act === "import"){ pfSend({op: "import"}, out => { PF.msg = {items: out.results || [], left: 0}; }); return; }
+  else if(act === "open"){ PF.open = PF.open === id ? "" : id; PF.confirm = ""; }
+  else if(act === "skip" || act === "unskip"){
+    const key = (act === "skip" ? "skip|" : "un|") + id + "|" + mo;
+    if(PF.confirm !== key){ PF.confirm = key; }
+    else{ pfSend(act === "skip" ? {op: "account", id: id, skip: [mo]} : {op: "account", id: id, unskip: [mo]}); return; }
+  }
+  else if(act === "from"){ pfSend({op: "account", id: id, from: mo}); return; }
+  else if(act === "closed"){
+    if(PF.confirm !== "closed|" + id){ PF.confirm = "closed|" + id; }
+    else{ pfSend({op: "account", id: id, closed: mo}); return; }
+  }
+  else if(act === "all"){ PF.all[id] = !PF.all[id]; }
+  else if(act === "history"){ PF.form = {kind: "history", from: (d.statements || {}).history_from || ""}; }
+  else if(act === "historysave" && PF.form){
+    pfSend({op: "history", from: PF.form.from || null}, () => { PF.form = null; }); return;
+  }
+  else if(act === "budgetedit"){
+    const i = b.inputs || {};
+    const s = v => v == null ? "" : String(v);
+    PF.form = {kind: "budget", income: s((i.income || {}).typed), card_spend: s((i.card_spend || {}).typed),
+               keep: i.keep ? s(i.keep) : "", extra_now: i.extra_now ? s(i.extra_now) : "",
+               goldbot_rate_pct: s(i.goldbot_rate_pct)};
+  }
+  else if(act === "budgetsave" && PF.form){
+    const f = PF.form;
+    pfSend({op: "budget", income: f.income, card_spend: f.card_spend, keep: f.keep,
+            extra_now: f.extra_now, goldbot_rate_pct: f.goldbot_rate_pct}, () => { PF.form = null; });
+    return;
+  }
+  else if(act === "cancel"){ PF.form = null; PF.formErr = ""; PF.confirm = ""; }
+  else if(act === "billadd"){ PF.form = {kind: "bill", id: "", name: "", amount: "", day: ""}; PF.confirm = ""; }
+  else if(act === "bill"){
+    const x = (b.bills || []).find(y => y.id === id);
+    if(!x) return;
+    PF.form = {kind: "bill", id: x.id, name: x.name, amount: x.auto && !x.edited ? "" : String(x.amount),
+               day: x.day ? String(x.day) : "", count: !x.off, auto: x.auto};
+    PF.confirm = "";
+  }
+  else if(act === "billsave" && PF.form){
+    const f = PF.form;
+    const body = {op: "bill", amount: f.amount, day: f.day};
+    if(f.id) body.id = f.id;
+    if(!f.auto) body.name = f.name;
+    if(f.auto) body.off = !f.count;
+    pfSend(body, () => { PF.form = null; });
+    return;
+  }
+  else if(act === "billremove" && PF.form){
+    if(PF.confirm !== "rm|" + PF.form.id){ PF.confirm = "rm|" + PF.form.id; }
+    else{ pfSend({op: "bill", id: PF.form.id, remove: true}, () => { PF.form = null; }); return; }
+  }
+  finRender();
+});
+document.addEventListener("input", e => {
+  const f = e.target.closest && e.target.closest("[data-pff]");
+  if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+});
+document.addEventListener("change", e => {
+  const f = e.target.closest && e.target.closest("[data-pff]");
+  if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+  const up = e.target.closest && e.target.closest("[data-pffile]");
+  if(up){
+    const files = up.files;
+    pfUpload(files).finally(() => { try{ up.value = ""; }catch(err){} });
+  }
+});
+
 /* The home badge wants a number without a tap: one read at start-up when a
    link exists, and none at all when it does not. */
 setTimeout(() => { if(apiBase()) finLoad(false); }, 1200);
@@ -17381,7 +18027,8 @@ function navPage(){
 function navState(){
   return {p: navPage(), aj: ACTIVE_JOB, rj: RESULTS_JOB, rf: RESULTS_FROM,
           st: [ST_NAV.bucket, ST_NAV.group, ST_NAV.variable],
-          sv: SCHED_VIEW, se: SCHED_EDIT, sf: !!SEED_FORM, ff: !!(FIN && FIN.form)};
+          sv: SCHED_VIEW, se: SCHED_EDIT, sf: !!SEED_FORM, ff: !!(FIN && FIN.form) || !!(PF && PF.form),
+          ft: (FIN && FIN.tab) || ""};
 }
 let NAV_KEY = null, NAV_STATE = null, NAV_Y = 0, NAV_BUSY = false;
 function navRecord(){
@@ -17421,6 +18068,8 @@ window.addEventListener("popstate", e => {
     SCHED_VIEW = s.sv; SCHED_EDIT = s.se;
     if(!s.sf) SEED_FORM = null;
     if(!s.ff && FIN) FIN.form = null;
+    if(!s.ff && PF) PF.form = null;
+    if(s.ft && FIN) FIN.tab = s.ft;
     navShow(s.p);
     document.getElementById("page-home").innerHTML = renderHome();
     document.getElementById("page-active").innerHTML = renderActive();
