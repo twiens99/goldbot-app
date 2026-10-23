@@ -121,6 +121,11 @@ h1{
   background:var(--bad);border:0;border-radius:6px;padding:7px 9px;
 }
 .nosched[hidden]{display:none;}
+.holdbar{margin-top:7px;font-size:.8rem;line-height:1.45;color:var(--text);background:rgba(224,139,74,.14);
+  border:1px solid rgba(224,139,74,.45);border-radius:6px;padding:7px 9px;}
+.holdbar[hidden]{display:none;}
+.holdbar b{color:var(--warn);}
+.holdbar .chips{margin-top:6px;}
 .baked{
   margin-top:7px;
   font-size:.7rem;color:var(--warn);
@@ -1903,6 +1908,8 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
     <div id="hagbars"></div>
     <div class="baked" id="banner" hidden></div>
     <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
+    <!-- 2026-10-23 -- THE FLEET HOLD: on, the copies finish what they run and start nothing new. See paintHold. -->
+    <div class="holdbar" id="holdbar" hidden></div>
   </header>
 
   <main>
@@ -1974,7 +1981,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261023-002457";
+const APP_BUILD = "20261023-133816";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9606,6 +9613,37 @@ function paintNoSchedule(){
   const el = document.getElementById("nosched");
   if(el) el.hidden = true;
 }
+/* 2026-10-23 -- THE FLEET HOLD (fleet_hold.py). Trevor: "pause all the jobs so that they can finish by tommorow so I
+   can Install the RAM tommorow." On every page while it is on: what it means, since when, and Resume (two taps, like
+   every control here). The tap only writes the shared file; each copy reads it at its next tick. */
+const HOLD_UI = {armed: false, busy: false, sent: "", err: ""};
+function paintHold(){
+  const el = document.getElementById("holdbar");
+  if(!el) return;
+  const h = LAST_SNAPSHOT && LAST_SNAPSHOT.fleet_hold;
+  if(!h || !h.on){ el.hidden = true; HOLD_UI.armed = false; HOLD_UI.sent = ""; return; }
+  el.hidden = false;
+  const btn = HOLD_UI.sent ? '<span class="tby">' + esc(HOLD_UI.sent) + '</span>'
+    : apiBase() ? '<button type="button" class="chip' + (HOLD_UI.armed ? " on" : "") + '" data-hold="resume"'
+      + (HOLD_UI.busy ? " disabled" : "") + '>' + (HOLD_UI.armed ? "Tap again to resume" : "Resume") + '</button>'
+    : '<span class="tby">Resume needs the Laptop link (Settings)</span>';
+  el.innerHTML = '<b>\u23F8 Fleet on hold</b> since ' + esc(fmtWhen(h.since)) + ' \u2014 each copy finishes the job it is '
+    + 'running (and its owed tests), then starts nothing new.'
+    + (h.reason ? '<br>' + esc(String(h.reason).replace(/ -- /g, " — ")) : '')
+    + (HOLD_UI.err ? '<div class="lmsg err">' + esc(HOLD_UI.err) + '</div>' : '')
+    + '<div class="chips">' + btn + '</div>';
+}
+document.addEventListener("click", async function(ev){
+  const b = ev.target.closest && ev.target.closest("[data-hold]");
+  if(!b || HOLD_UI.busy) return;
+  if(!HOLD_UI.armed){ HOLD_UI.armed = true; paintHold(); return; }
+  HOLD_UI.busy = true; HOLD_UI.err = ""; paintHold();
+  const res = await apiCall("/hold", {action: "resume", by: "app"});
+  HOLD_UI.busy = false; HOLD_UI.armed = false;
+  if(res.ok) HOLD_UI.sent = "Resume sent \u2014 the copies take new work at their next tick.";
+  else HOLD_UI.err = "Not sent: " + res.error;
+  paintHold();
+});
 
 function scheduleSummary(){
   const sch = schedule();
@@ -16130,6 +16168,7 @@ function paint(stamp){
   document.getElementById("hagbars").innerHTML = fleetAgentBars();
   document.getElementById("banner").hidden = true;
   paintNoSchedule();
+  paintHold();
 }
 
 let LAST_SNAPSHOT = null;
