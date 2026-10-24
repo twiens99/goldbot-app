@@ -1892,8 +1892,8 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 /* 2026-10-23 -- Finance tabs: GOLDbot / Statements / Budget */
 .fin-tabs{display:flex;gap:4px;padding:3px;border-radius:11px;background:var(--card);border:1px solid var(--line);}
 .fin-tabs button{
-  flex:1;min-width:0;border:0;background:transparent;color:var(--dim);font:inherit;font-size:.8rem;
-  font-weight:700;border-radius:8px;padding:8px 4px;cursor:pointer;white-space:nowrap;
+  flex:1 1 auto;min-width:0;border:0;background:transparent;color:var(--dim);font:inherit;font-size:.76rem;
+  font-weight:700;border-radius:8px;padding:8px 5px;cursor:pointer;white-space:nowrap;
 }
 .fin-tabs button[aria-selected="true"]{background:var(--gold);color:#17130a;}
 .fin-tabs button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
@@ -1925,6 +1925,24 @@ button.pf-chip{cursor:pointer;}
 .pf-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px!important;}
 .pf-check input{width:auto!important;}
 .fin-tbl td.pf-short{color:var(--bad);}
+/* 2026-10-23 -- the Spending tab */
+.pf-months{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
+.pf-months::-webkit-scrollbar{display:none;}
+.pf-months button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#17130a;}
+.pf-meter{height:8px;border-radius:4px;background:var(--card-2);overflow:hidden;}
+.pf-meter span{display:block;height:100%;border-radius:4px;background:var(--good);}
+.pf-meter.over span{background:var(--bad);}
+.pf-goal{display:flex;flex-direction:column;gap:5px;padding:10px 0;border-bottom:1px solid var(--line);}
+.pf-goal:last-child{border-bottom:0;padding-bottom:0;}
+.pf-goal:first-child{padding-top:0;}
+.pf-goal .pf-gh{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;font-weight:600;}
+.pf-goal .pf-gh span:last-child{font-family:"Roboto Mono",ui-monospace,monospace;font-weight:500;white-space:nowrap;}
+.pf-bar{grid-column:1 / -1;height:4px;border-radius:2px;background:var(--card-2);overflow:hidden;margin-top:3px;}
+.pf-bar span{display:block;height:100%;border-radius:2px;background:var(--gold);opacity:.6;}
+.pf-sel{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;
+  padding:9px 10px;font-family:inherit;font-size:1rem;
+}
 </style>
 
 <div class="app">
@@ -2017,7 +2035,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261023-135135";
+const APP_BUILD = "20261024-124407";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17392,7 +17410,8 @@ let PF = {data: null, at: 0, loading: false, err: "", busy: false, msg: null, fo
           formErr: "", confirm: "", open: "", all: {}, link: {editing: false, err: "", typed: ""}};
 const PF_KEY = "gb.personal.v1";
 const PF_TAB_KEY = "gb.fintab.v1";
-const PF_TABS = [["goldbot", "GOLDbot"], ["statements", "Statements"], ["budget", "Budget"]];
+const PF_TABS = [["goldbot", "GOLDbot"], ["statements", "Statements"], ["budget", "Budget"],
+                 ["spending", "Spending"]];
 const PF_LINK_RE = /^(https:\/\/[^\s"'<>\/]+|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)\/[A-Za-z0-9_-]{8,64}$/i;
 
 function finTab(){
@@ -17561,7 +17580,7 @@ function pfRender(tab){
   if(PF.err) out += `<div class="fin-warn">${esc(PF.err)}</div>`;
   if(PF.formErr) out += `<div class="fin-err">${esc(PF.formErr)}</div>`;
   (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
-  out += tab === "statements" ? pfStatements(d) : pfBudget(d);
+  out += tab === "statements" ? pfStatements(d) : tab === "spending" ? pfSpending(d) : pfBudget(d);
   return out + pfLinkFoot() + "</div>";
 }
 function pfLinkCard(){
@@ -17793,6 +17812,170 @@ function pfBudget(d){
     `${esc(finMoney(b.inputs.card_spend.value, false))} a month, paid off with each statement.</div>`);
   return h + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
 }
+/* ---------- the Spending tab (2026-10-23) ----------
+   Trevor: *"Certain personal Spending we will track and shoot for a goal to
+   reduce some spending."* A goal is a monthly ceiling for one category. A
+   month a category can't be counted in (a statement it depends on is missing)
+   shows "not counted", never a low number that looks like cutting back. */
+function pfAmt(a){ return Number(a) < 0 ? finMoney(-Number(a)) : "+" + finMoney(a); }
+function pfLabel(s, id){
+  const hit = (s.labels || []).find(l => l.id === id);
+  return hit ? hit.label : String(id || "");
+}
+function pfSpendMonth(s){
+  const ms = (s.months || []).map(m => m.month);
+  if(!PF.month || !ms.includes(PF.month)) PF.month = s.default_month || ms[0] || "";
+  return PF.month;
+}
+function pfTxnRow(s, t){
+  if(PF.form && PF.form.kind === "tag" && PF.form.id === t.id) return pfTagForm(s, t);
+  const tag = t.category === "unsorted" ? "" : `<span class="fin-tag">${esc(pfLabel(s, t.category))}</span>`;
+  return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
+    `<div><div class="fin-rt">${esc(t.desc)}</div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
+    `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
+}
+function pfTagForm(s, t){
+  const f = PF.form;
+  const text = String(f.rule_text || "").trim().toUpperCase();
+  const more = text.length >= 3 ? (s.txns || []).filter(x => x.id !== t.id && x.category === "unsorted" &&
+    x.desc.toUpperCase().includes(text)).length : 0;
+  const spend = (s.labels || []).filter(l => l.kind === "spend");
+  const other = (s.labels || []).filter(l => l.kind !== "spend" && l.id !== "unsorted");
+  const opt = l => `<option value="${finAttr(l.id)}"${f.category === l.id ? " selected" : ""}>${esc(l.label)}</option>`;
+  return '<div class="fin-form">' +
+    `<div class="fin-rt">${esc(t.desc)}</div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + " · " + pfAmt(t.amount))}</div>` +
+    '<label>Category<select class="pf-sel" data-pff="category">' +
+    (f.category ? "" : '<option value="" selected>Pick one…</option>') +
+    '<optgroup label="Spending">' + spend.map(opt).join("") + "</optgroup>" +
+    '<optgroup label="Not spending">' + other.map(opt).join("") + "</optgroup></select></label>" +
+    `<label class="pf-check"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}>` +
+    "Every payment whose description has these words, from now on</label>" +
+    `<input type="text" class="pf-in" data-pff="rule_text" value="${finAttr(f.rule_text)}" autocomplete="off" ` +
+    'autocapitalize="characters" spellcheck="false">' +
+    `<div class="fin-note">${more ? esc(more) + " more unsorted payment" + (more === 1 ? "" : "s") +
+      " match these words today." : "No other unsorted payment matches these words today."} ` +
+    "A rule also sorts every future statement.</div>" +
+    `<label>Note<input type="text" data-pff="note" value="${finAttr(f.note)}" maxlength="200"></label>` +
+    '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || !f.category ? " disabled" : ""}>` +
+    `${PF.busy ? "Saving…" : "Save"}</button>` +
+    '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div>';
+}
+function pfSpending(d){
+  const s = d.spending || {};
+  const months = s.months || [];
+  const cats = s.categories || [];
+  let h = "";
+  (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
+  if(!months.length)
+    return h + finCard('<div class="fin-note">No full month of spending yet — submit a month of ' +
+      "card and chequing statements first.</div>");
+  const mk = pfSpendMonth(s);
+  const m = months.find(x => x.month === mk) || months[0];
+  const g = s.goals || {};
+  const counted = cats.filter(c => c.months[mk] != null);
+  const avgSum = counted.reduce((a, c) => a + (c.avg || 0), 0);
+  const unsMonth = (s.txns || []).filter(t => t.category === "unsorted" && t.date.slice(0, 7) === mk && t.amount < 0);
+
+  h += '<div class="pf-months" role="group" aria-label="Month">' + months.map(x =>
+    `<button type="button" class="pf-chip" data-pf="month" data-m="${finAttr(x.month)}" ` +
+    `aria-pressed="${x.month === mk}">${esc(finMonth(x.month))}</button>`).join("") + "</div>";
+  h += finStats([
+    ["Spent in " + finMonth(mk), finMoney(m.total, false), "",
+     m.complete ? "every account is in" : "partly — " + m.missing.join(", ") + " missing"],
+    ["Usual for these", finMoney(avgSum, false), "", "3-month average of the categories counted"],
+    ["Goals on track", g.count ? g.on_track + " of " + g.count : "—", g.count && g.on_track < g.count ? "lv-bad" : "",
+     g.count ? "latest full month" : "set one below"],
+    ["Unsorted", String(s.unsorted || 0), s.unsorted ? "lv-bad" : "", unsMonth.length + " in " + finMonth(mk)],
+  ]);
+
+  /* GOALS */
+  const withGoal = cats.filter(c => c.goal != null);
+  if(withGoal.length){
+    h += '<div class="section-label">Goals</div>' + finCard(withGoal.map(c => {
+      const lt = c.latest;
+      if(!lt) return `<div class="pf-goal"><div class="pf-gh"><span>${esc(c.label)}</span>` +
+        `<span>goal ${esc(finMoney(c.goal, false))}</span></div><div class="fin-note">No counted month yet.</div></div>`;
+      const over = lt.amount > c.goal + 0.004;
+      const pct = c.goal > 0 ? Math.min(100, lt.amount / c.goal * 100) : 100;
+      return '<div class="pf-goal">' +
+        `<div class="pf-gh"><span>${esc(c.label)}</span><span>${esc(finMoney(lt.amount, false))} / ` +
+        `${esc(finMoney(c.goal, false))}</span></div>` +
+        `<div class="pf-meter${over ? " over" : ""}" role="img" aria-label="${finAttr(c.label)}: ` +
+        `${finAttr(finMoney(lt.amount, false))} of a ${finAttr(finMoney(c.goal, false))} goal">` +
+        `<span style="width:${pct.toFixed(1)}%"></span></div>` +
+        `<div class="fin-rs">${over ? "⚠ " + esc(finMoney(lt.amount - c.goal, false)) + " over"
+          : "✓ " + esc(finMoney(c.goal - lt.amount, false)) + " under"} in ${esc(finMonth(lt.month))}` +
+        (c.avg != null ? " · usually " + esc(finMoney(c.avg, false)) : "") + "</div></div>";
+    }).join("") + (g.saves > 0.5 ? `<div class="fin-note">Hit every goal and you spend about ` +
+      `<b>${esc(finMoney(g.saves, false))} a month</b> less than usual — money the Budget tab puts on the ` +
+      "Mastercard first.</div>" : ""));
+  }
+
+  /* BY CATEGORY */
+  const rows = cats.slice().sort((a, b) => (b.months[mk] ?? -1) - (a.months[mk] ?? -1));
+  const top = Math.max(1, ...rows.map(c => c.months[mk] || 0));
+  h += `<div class="section-label">By category — ${esc(finMonth(mk))}</div><div class="card"><div class="fin-rows">` +
+    rows.map(c => pfCatRow(s, c, mk, top)).join("") + "</div></div>";
+  h += '<div class="fin-note">Tap a category to see its payments and set a goal. "Not counted" means a ' +
+    "statement it depends on is missing that month.</div>";
+
+  /* UNSORTED */
+  const uns = (s.txns || []).filter(t => t.category === "unsorted");
+  if(uns.length){
+    const shown = PF.unsAll ? uns : uns.slice(0, 15);
+    h += `<div class="section-label">Unsorted — ${esc(uns.length)} need a category</div>` +
+      '<div class="card"><div class="fin-rows">' + shown.map(t => pfTxnRow(s, t)).join("") +
+      (uns.length > 15 ? `<button type="button" class="fin-more" data-pf="unsall">` +
+        `${PF.unsAll ? "Show the latest 15" : "Show all " + uns.length}</button>` : "") + "</div></div>" +
+      '<div class="fin-note">Sorting one with "every payment…" ticked sorts all of that payee at once.</div>';
+  }
+  return h + pfAdviceNote();
+}
+function pfCatRow(s, c, mk, top){
+  const v = c.months[mk];
+  const open = PF.cat === c.id;
+  const sub = [c.avg != null ? "usually " + finMoney(c.avg, false) : "",
+               c.goal != null ? "goal " + finMoney(c.goal, false) : ""].filter(Boolean).join(" · ");
+  const tone = c.goal != null && v != null ? (v > c.goal + 0.004 ? "lv-bad" : "") : "";
+  let h = `<button type="button" class="fin-row" data-pf="cat" data-id="${finAttr(c.id)}" aria-expanded="${open}">` +
+    `<div><div class="fin-rt">${esc(c.label)}${c.goal != null ? '<span class="fin-tag">goal</span>' : ""}</div>` +
+    `<div class="fin-rs">${esc(sub || "from " + c.accounts.join(", "))}</div></div>` +
+    `<div><div class="fin-ra ${tone}">${v == null ? "not counted" : esc(finMoney(v, false))}</div></div>` +
+    (v != null ? `<div class="pf-bar"><span style="width:${(v / top * 100).toFixed(1)}%"></span></div>` : "") +
+    "</button>";
+  if(!open) return h;
+  const f = PF.form && PF.form.kind === "goal" && PF.form.category === c.id ? PF.form : null;
+  const months = Object.keys(c.months).sort().reverse();
+  h += '<div class="fin-form">' +
+    '<table class="fin-tbl"><tr><th>Month</th><th>Spent</th><th>vs goal</th></tr>' +
+    months.map(x => {
+      const a = c.months[x];
+      return `<tr><td>${esc(finMonth(x))}</td><td>${a == null ? "not counted" : esc(finMoney(a, false))}</td>` +
+        `<td>${a == null || c.goal == null ? "" : a > c.goal + 0.004 ? "⚠ over" : "✓ under"}</td></tr>`;
+    }).join("") + "</table>" +
+    (c.avg != null ? `<div class="fin-note">Usually <b>${esc(finMoney(c.avg))}</b> a month ` +
+      `(${esc(c.avg_months.map(finMonth).join(", "))}).</div>` : "");
+  if(f){
+    h += pfFormField("Monthly goal", "monthly", f.monthly) +
+      '<div class="fin-acts">' +
+      `<button type="button" class="fin-btn gold" data-pf="goalsave"${PF.busy ? " disabled" : ""}>Save goal</button>` +
+      '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button>' +
+      (c.goal != null ? `<button type="button" class="fin-btn bad" data-pf="goalremove">Remove goal</button>` : "") +
+      "</div>";
+  }else{
+    h += `<div class="fin-acts"><button type="button" class="fin-btn" data-pf="goal" data-id="${finAttr(c.id)}">` +
+      `${c.goal != null ? "Change the goal" : "Set a goal"}</button></div>`;
+  }
+  h += "</div>";
+  const txns = (s.txns || []).filter(t => t.category === c.id && t.date.slice(0, 7) === mk);
+  h += txns.length ? txns.map(t => pfTxnRow(s, t)).join("")
+    : `<div class="fin-note" style="padding:10px 13px">No ${esc(c.label.toLowerCase())} in ${esc(finMonth(mk))}.</div>`;
+  return h;
+}
+
 function pfAdviceNote(){
   return '<div class="fin-note">Arithmetic on your own statements, with interest estimated from their ' +
     "rates — a planning tool, not financial advice.</div>";
@@ -17960,6 +18143,42 @@ document.addEventListener("click", e => {
     if(PF.confirm !== "rm|" + PF.form.id){ PF.confirm = "rm|" + PF.form.id; }
     else{ pfSend({op: "bill", id: PF.form.id, remove: true}, () => { PF.form = null; }); return; }
   }
+  /* the Spending tab */
+  else if(act === "month"){ PF.month = mo; PF.cat = ""; PF.form = null; }
+  else if(act === "cat"){
+    PF.cat = PF.cat === id ? "" : id;
+    if(PF.form && PF.form.kind === "goal") PF.form = null;
+  }
+  else if(act === "goal"){
+    const c = ((d.spending || {}).categories || []).find(x => x.id === id);
+    if(!c) return;
+    /* A first goal starts 10% under the usual month -- a nudge, typed over freely. */
+    PF.form = {kind: "goal", category: id, monthly: c.goal != null ? String(c.goal)
+      : c.avg ? String(Math.round(c.avg * 0.9 / 10) * 10) : ""};
+  }
+  else if(act === "goalsave" && PF.form){
+    pfSend({op: "goal", category: PF.form.category, monthly: PF.form.monthly}, () => { PF.form = null; });
+    return;
+  }
+  else if(act === "goalremove" && PF.form){
+    pfSend({op: "goal", category: PF.form.category, monthly: ""}, () => { PF.form = null; });
+    return;
+  }
+  else if(act === "tagopen"){
+    const t = ((d.spending || {}).txns || []).find(x => x.id === id);
+    if(!t) return;
+    PF.form = {kind: "tag", id: t.id, category: t.category === "unsorted" ? "" : t.category,
+               rule: t.category === "unsorted", rule_text: t.rule_text.includes("•") ? "" : t.rule_text,
+               note: t.note || ""};
+  }
+  else if(act === "tagsave" && PF.form){
+    const f = PF.form;
+    if(!f.category) return;
+    pfSend({op: "tag", id: f.id, category: f.category, note: f.note || "",
+            rule_text: f.rule ? f.rule_text : ""}, () => { PF.form = null; });
+    return;
+  }
+  else if(act === "unsall"){ PF.unsAll = !PF.unsAll; }
   finRender();
 });
 document.addEventListener("input", e => {
@@ -17968,7 +18187,11 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const f = e.target.closest && e.target.closest("[data-pff]");
-  if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+  if(f && PF.form){
+    PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+    /* the tag form's Save waits for a category, and its match count follows the words */
+    if(PF.form.kind === "tag" && ["category", "rule", "rule_text"].includes(f.dataset.pff)) finRender();
+  }
   const up = e.target.closest && e.target.closest("[data-pffile]");
   if(up){
     const files = up.files;
