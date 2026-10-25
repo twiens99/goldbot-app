@@ -2039,7 +2039,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261024-204125";
+const APP_BUILD = "20261024-210558";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7427,8 +7427,9 @@ const NR_ACTION = {
 };
 /* Why a variable sweeps the count it does -- task_detail._why's codes. */
 const NR_WHY = {
-  lower:    "Won inside its range last round (a first round always counts as that), so it sweeps fewer values at the same step (3 fewer from 8 or more, 2 from 5–7, 1 from 4) — a narrower range around where it landed.",
-  raise:    "Won at an edge last round, so it gets 2 values back — a wider range.",
+  /* 2026-10-25 -- the ladder (10-17) and the shape learner (10-20); these still read the 09-28 rule. */
+  lower:    "Won inside its range last round (a first round always counts as that), so it steps down the ladder 15 → 11 → 8 → 5 → 3 — a narrower range around where it landed. A FLAT reading takes one step more.",
+  raise:    "Won at an edge last round, so it keeps the count it planned; a hard limit trimmed the one it ran.",
   floor:    "At 3 values, the fewest a range goes.",
   own:      "Its own count, brought down by earlier wins inside its range.",
   cap:      "Its own count is above the group's, so it sweeps the group's.",
