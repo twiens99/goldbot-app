@@ -699,6 +699,10 @@ button.chip[disabled]{opacity:.4;cursor:default;}
    streak is real; quieter, because the evidence behind it is not. */
 .tst.pinned.weak{background:rgba(224,139,74,.09);color:rgba(240,160,94,.62);}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+/* 2026-10-25 -- FLAT / STEEP, the shape learner's reading of how much the setting moved the Result. Outlined, not
+   filled: it is a measurement beside the state, not a sixth place in the lifecycle. */
+.tst.flat{background:transparent;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(140,160,172,.38);}
+.tst.steep{background:transparent;color:#E592AA;box-shadow:inset 0 0 0 1px rgba(229,146,170,.45);}
 /* 2026-09-23 -- a variable this task did NOT sweep, listed so the whole group
    is on the card; quieter than the ticked ones. */
 .tvar.isheld{opacity:.62;}
@@ -2035,7 +2039,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261024-124407";
+const APP_BUILD = "20261024-204125";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8639,12 +8643,29 @@ function stateChip(v){
                    + "back to 0 on a Pinned. Shown only -- it decides nothing.";
   }
   return `<span class="tst ${stateClass(st)}${weak ? " weak" : ""}"${
-    tip ? ` title="${esc(tip)}"` : ""}>${label}</span>` +
+    tip ? ` title="${esc(tip)}"` : ""}>${label}</span>` + shapeChip(v) +
     /* CHASED -- a first-pass pin the round's own second pass took over in the
        same apply. The PINNED beside it is what this task left it in; where it
        ended up is on the second pass's chip. */
     (v.chased_by ? `<span class="tst chased" title="The second pass in this `
       + `round swept it next.">→ ${esc(v.chased_by)}</span>` : "");
+}
+
+/* 2026-10-25 -- FLAT / STEEP. Trevor: "if they land Flat, then lets label them Flat. And then also Steep." The
+   publisher's `shape` (shape_learner.label: under 3 % / over 25 %) and `sens_pm`, the share of the round's best
+   Result between the setting's best and weakest values in tenths of a percent (304 = 30.4 %). Absent on rows from before the shape learner (10-20). */
+const SHAPE_TEXT = {
+  FLAT: "The Result barely moved across this setting's values (under 3 %). Next round it gets one extra step "
+        + "fewer values, and a Center takes a whole step level.",
+  STEEP: "The Result moved over 25 % between this setting's best and weakest values. A Floating at 8 values or "
+         + "fewer keeps its count; at 15 or 11 it still steps down."};
+function shapeChip(v){
+  const sh = String((v || {}).shape || "").toUpperCase();
+  if(!SHAPE_TEXT[sh]) return "";
+  const pm = (v.sens_pm == null) ? NaN : Number(v.sens_pm);
+  const pct = isFinite(pm) ? ` (${(pm / 10).toFixed(1)} %)` : "";
+  return `<span class="tst ${sh.toLowerCase()}" title="${esc(sh.charAt(0) + sh.slice(1).toLowerCase() + pct
+    + ": " + SHAPE_TEXT[sh])}">${sh}</span>`;
 }
 
 /* WHOSE STATES THESE ARE -- task_detail.build's `states_at`. Rows of a sweep
@@ -8697,10 +8718,15 @@ function taskStateKey(list){
   ["PINNED", "CENTER", "FLOATING", "DEFAULT", "LOCKED"].forEach(st => {
     if((list || []).some(v => v.state === st) && STATE_TEXT[st]) seen.push(st);
   });
-  if(!seen.length) return "";
+  /* 2026-10-25 -- and the FLAT / STEEP chips on screen, after the states. */
+  const shapes = ["FLAT", "STEEP"].filter(sh => (list || []).some(v => String((v || {}).shape || "").toUpperCase() === sh));
+  if(!seen.length && !shapes.length) return "";
   return seen.map(st =>
     `<div class="tkey"><span class="tst ${stateClass(st)}">${esc(st)}</span>` +
-    `<span class="tkt">${esc(STATE_TEXT[st])}</span></div>`).join("");
+    `<span class="tkt">${esc(STATE_TEXT[st])}</span></div>`).join("") +
+    shapes.map(sh =>
+    `<div class="tkey"><span class="tst ${sh.toLowerCase()}">${sh}</span>` +
+    `<span class="tkt">${esc(SHAPE_TEXT[sh])}</span></div>`).join("");
 }
 
 /* 2026-10-17 -- EACH SETTING'S VALUES AND RANGE, on the queued and the live job. Trevor: "Let's add variable count
