@@ -1928,6 +1928,8 @@ button.pf-chip{cursor:pointer;}
 .pf-res.bad{color:var(--warn);}
 .pf-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px!important;}
 .pf-check input{width:auto!important;}
+.pf-once{text-transform:none!important;letter-spacing:0!important;font-size:.88rem!important;font-weight:400!important;
+  color:var(--text)!important;border:1px solid var(--line);border-radius:9px;padding:9px 10px;}
 .fin-tbl td.pf-short{color:var(--bad);}
 /* 2026-10-23 -- the Spending tab */
 .pf-months{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
@@ -2046,7 +2048,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-223851";
+const APP_BUILD = "20261026-224635";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -18235,6 +18237,12 @@ function pfTagForm(s, t){
     `<label>Category${f.who && f.who !== "me" ? ' <span class="fin-hint">(optional)</span>' : ""}` +
     `<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
     (f.category === "__new" ? pfNewCat() : "") +
+    /* 2026-10-27 -- Trevor: *"So I should actually give those large spending as one off's.
+       That was when I bought the truck."* Up here and in plain text: at the bottom, in the
+       labels' grey capitals, he couldn't find it. */
+    `<label class="pf-check pf-once"><input type="checkbox" data-pff="one_off"${f.one_off ? " checked" : ""}>` +
+    "<span><b>One-off</b> — it won't repeat (like the truck's down payment). Still spending, but left " +
+    "out of the monthly averages.</span></label>" +
     `<label class="pf-check"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}>` +
     "Every payment whose description has these words, from now on</label>" +
     `<input type="text" class="pf-in" data-pff="rule_text" value="${finAttr(f.rule_text)}" autocomplete="off" ` +
@@ -18250,11 +18258,6 @@ function pfTagForm(s, t){
       " match " + these + " today." : "No other unsorted payment matches " + these + " today."} ` +
     "A rule also sorts every future statement.</div>" +
     `<label>Note<input type="text" data-pff="note" value="${finAttr(f.note)}" maxlength="200"></label>` +
-    /* 2026-10-27 -- Trevor: *"So I should actually give those large spending as one off's.
-       That was when I bought the truck."* */
-    `<label class="pf-check"><input type="checkbox" data-pff="one_off"${f.one_off ? " checked" : ""}>` +
-    "One-off — it won't repeat (a truck's down payment). Still counted as spending, but left out " +
-    "of the monthly averages: Pay vs spending and the chequing buffer.</label>" +
     '<div class="fin-acts">' +
     `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || f.category === "__new" ||
       (!f.category && (!f.who || f.who === "me")) ? " disabled" : ""}>` +
@@ -18688,9 +18691,11 @@ document.addEventListener("change", e => {
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form){
     PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+    /* a one-off won't repeat: no rule for it (a "CAD DRAFT" rule would sort every future draft) */
+    if(f.dataset.pff === "one_off" && f.checked) PF.form.rule = false;
     /* the tag form's Save waits for a category, and its match count follows the words */
     if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp",
-                                  "who", "kid", "dir"].includes(f.dataset.pff))
+                                  "who", "kid", "dir", "one_off"].includes(f.dataset.pff))
       finRender();
   }
   const up = e.target.closest && e.target.closest("[data-pffile]");
