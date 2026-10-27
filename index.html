@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-205310";
+const APP_BUILD = "20261026-210557";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17896,13 +17896,20 @@ function pfSchedule(d){
   const s = d.schedule || {};
   if(!s.ready) return finCard(`<div class="fin-note">${esc(s.why || "Not enough to plan with yet.")}</div>`);
   const g = s.goldbot || {}, c = s.crypto || {}, od = s.overdraft || {};
+  /* 2026-10-26 -- THE BUFFER. Trevor: *"We're going to have to leave a buffer in the chequing
+     account ... that way we don't accidentally dip into the Overdraft Protection."* */
+  const bf = s.buffer || {amount: 0};
+  const bfFrom = bf.typed != null ? "your own number"
+    : bf.budget_keep > bf.auto ? "the Budget tab's kept-in-chequing"
+    : "your average unusual spending" + ((bf.months || []).length ? ", " + finMonth(bf.months[0]) + "–" +
+      finMonth(bf.months[bf.months.length - 1]) : "");
   let h = "";
   (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
   h += finStats([
     ["Plan day", finDate(s.plan_date, true), "", s.card.name + " due"],
     ["Pay the card", finMoney(s.card.due), "", "in full — " + s.card.rate + "% otherwise"],
-    ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < -0.004 ? "lv-bad" : "lv-good",
-     "on " + finDate(s.lowest.date) + ", before " + finDate(s.next_plan)],
+    ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < bf.amount - 0.004 ? "lv-bad" : "lv-good",
+     "on " + finDate(s.lowest.date) + " · buffer " + finMoney(bf.amount, false)],
     ["GOLDbot", g.live ? g.return_pct + "% a year" : "not on real money", g.beats_loc ? "lv-good" : "",
      g.live ? "vs the line of credit's " + g.loc_rate + "%" : "about " + c.months + " months away"],
   ]);
@@ -17915,14 +17922,16 @@ function pfSchedule(d){
         (x.rate ? " · " + x.rate + "% a year until it's paid back" : ""))}</div></div>` +
       `<div><div class="fin-ra">${esc(finMoney(x.amount))}</div></div></div>`).join("")
       : '<div class="fin-note" style="padding:10px 13px">Nothing to move this month.</div>') + "</div></div>";
-  h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))} for the bills until the next pay ` +
-    `covers them. Balances are from ${esc(s.chequing.from)} — type today's below on the day for exact numbers.</div>`;
+  h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))}: ${esc(finMoney(s.need))} for the bills ` +
+    `until the next pay covers them, plus a <b>${esc(finMoney(bf.amount))} buffer</b> (${esc(bfFrom)}) so ` +
+    `nothing dips into the overdraft. Balances are from ${esc(s.chequing.from)} — type today's below on the day ` +
+    "for exact numbers.</div>";
   /* CHEQUING, DAY BY DAY */
   if((s.calendar || []).length)
     h += `<div class="section-label">${esc(s.chequing.name)} until ${esc(finDate(s.next_plan))}</div>` + finCard(
       '<table class="fin-tbl"><tr><th>Day</th><th>What</th><th>Amount</th><th>Left</th></tr>' +
       s.calendar.map(e => `<tr><td>${esc(finDate(e.date))}</td><td>${esc(e.what)}</td>` +
-        `<td>${esc(finMoney(e.amount))}</td><td class="${e.balance < -0.004 ? "pf-short" : ""}">` +
+        `<td>${esc(finMoney(e.amount))}</td><td class="${e.balance < bf.amount - 0.004 ? "pf-short" : ""}">` +
         `${esc(finMoney(e.balance))}</td></tr>`).join("") + "</table>");
   /* PAY COMING IN */
   if((s.income || []).length)
@@ -17936,6 +17945,8 @@ function pfSchedule(d){
       '<div class="fin-note">Type what each account shows today (blank = its last statement).</div>' +
       s.balances.map(b => pfFormField(esc(b.name), "bal:" + b.id, f["bal:" + b.id] || "",
         `inputmode="decimal" placeholder="${finAttr(finNum(b.balance))}"`)).join("") +
+      pfFormField(`Chequing buffer (blank = automatic: ${esc(finMoney(bf.auto, false))})`, "buffer", f.buffer) +
+      '<div class="fin-note">Type one when you know something\'s coming up; clear it to go back to the automatic one.</div>' +
       pfFormField("Overdraft interest, % a year", "overdraft_rate", f.overdraft_rate) +
       pfFormField("Months until GOLDbot trades real money", "goldbot_months", f.goldbot_months) +
       pfFormField("Crypto fee, % each way (blank = from your own trades)", "crypto_fee_pct", f.crypto_fee_pct) +
@@ -18522,14 +18533,16 @@ document.addEventListener("click", e => {
   }
   else if(act === "schededit"){
     const s = d.schedule || {}, od = s.overdraft || {}, c = s.crypto || {};
+    const bf = s.buffer || {};
     PF.form = {kind: "sched", overdraft_rate: String(od.rate ?? ""), goldbot_months: String(c.months ?? ""),
-               crypto_fee_pct: c.sell_pct === c.buy_pct && c.typed ? String(c.sell_pct) : ""};
+               crypto_fee_pct: c.sell_pct === c.buy_pct && c.typed ? String(c.sell_pct) : "",
+               buffer: bf.typed != null ? String(bf.typed) : ""};
   }
   else if(act === "schedsave" && PF.form && PF.form.kind === "sched"){
     const f = PF.form, bal = {};
     Object.keys(f).filter(k => k.startsWith("bal:") && String(f[k]).trim()).forEach(k => { bal[k.slice(4)] = f[k]; });
     pfSend({op: "schedule", balances: bal, overdraft_rate: f.overdraft_rate, goldbot_months: f.goldbot_months,
-            crypto_fee_pct: f.crypto_fee_pct}, () => { PF.form = null; });
+            crypto_fee_pct: f.crypto_fee_pct, buffer: f.buffer}, () => { PF.form = null; });
     return;
   }
   else if(act === "catcancel" && PF.form){
