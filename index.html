@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-200427";
+const APP_BUILD = "20261026-201431";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17828,7 +17828,7 @@ function pfBudget(d){
       h += '<div class="section-label">What you owe</div>' + finCard(finKv(b.debts.map(x =>
         [x.name + " · " + x.rate + "%", finMoney(x.owed), "",
          "minimum " + finMoney(x.min) + (x.due_date ? " · due " + finDate(x.due_date) : "")])));
-    return h + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
+    return h + pfLoansCard(b) + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
   }
   const t = b.this_month, p = b.plan, inc = b.inputs.income;
   const incSub = inc.typed != null ? "the amount you typed"
@@ -17878,7 +17878,22 @@ function pfBudget(d){
     `${esc(finMoney(p.minimums_interest, false))} in interest instead of ${esc(finMoney(p.interest, false))}, ` +
     "because the debts cost more than GOLDbot pays. The card's spending is taken as " +
     `${esc(finMoney(b.inputs.card_spend.value, false))} a month, paid off with each statement.</div>`);
-  return h + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
+  return h + pfLoansCard(b) + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
+}
+/* 2026-10-26 -- LOANS NO STATEMENT SHOWS. Trevor: *"it should be on the personal Side
+   as a loan @3%. As soon as Goldbot owns it, It will pay the Interest rate to Crux."* */
+function pfLoansCard(b){
+  const ls = b.loans || [];
+  if(!ls.length) return "";
+  return '<div class="section-label">Loans</div>' + finCard(finKv(ls.map(x =>
+    [x.name + " · " + x.rate + "%", finMoney(x.owed), "",
+     finMoney(x.principal) + " + " + finMoney(x.interest) + " interest since " + finDate(x.since, true) +
+     (x.paid ? " · you've paid " + finMoney(x.paid) : "")])) +
+    ls.map(x => `<div class="fin-note">${esc(x.goldbot_since
+      ? x.name + ": " + finMoney(x.to_goldbot) + " went into PU Prime on " + finDate(x.goldbot_since, true) +
+        " — GOLDbot owes that part now and pays its interest. What's above is what's still yours."
+      : "Yours until its money goes into PU Prime. Then GOLDbot takes it on and pays " + x.name +
+        " the interest. It isn't in the payoff plan.")}</div>`).join(""));
 }
 /* ---------- the Spending tab (2026-10-23) ----------
    Trevor: *"Certain personal Spending we will track and shoot for a goal to
@@ -17941,7 +17956,12 @@ function pfWhoNote(t, f){
       : kid + "'s account covers it: their balance goes down. Not your spending.";
   }
   if(f.who && f.who.startsWith("loan:")){
-    const l = pfPartyName(pa.lenders, f.who.slice(5));
+    const lid = f.who.slice(5), l = pfPartyName(pa.lenders, lid);
+    const since = ((pa.lenders || []).find(x => x.id === lid) || {}).since;
+    /* still HIS loan on this date: it pays his own loan down (2026-10-26) */
+    if(!since || t.date < since)
+      return out ? "Pays down your " + l + " loan (interest first) — it's yours until it goes into PU Prime."
+        : l + " lent you more — your " + l + " loan goes up.";
     return out ? "Pays the " + l + " loan back for GOLDbot — GOLDbot then owes you that instead."
       : l + " lent more, through you — GOLDbot owes " + l + " that much more, and you that much less.";
   }
