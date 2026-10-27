@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-210557";
+const APP_BUILD = "20261026-212420";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17846,7 +17846,11 @@ function pfBudget(d){
              t.goldbot > 0.004 ? "What's left. Record it in the GOLDbot tab as a deposit from you — it's " +
              "your loan to GOLDbot, at " + b.inputs.goldbot_rate_pct + "%." : "Nothing left over this month — " +
              "every spare dollar is earning more on the debts.", t.goldbot > 0.004 ? "lv-good" : ""]);
-  h += `<div class="section-label">${esc(finMonth(t.month))} — what to pay</div>` + finCard(finKv(rows) +
+  /* 2026-10-26: "what to pay" is the money to move RIGHT NOW, from the balances you have
+     (the Schedule's plan) -- the month's pay-and-bills view is the plan's starting point */
+  const sch = d.schedule || {};
+  if(sch.ready) h += pfNowCard(sch, "What to pay — right now");
+  h += `<div class="section-label">Each month, from pay — ${esc(finMonth(t.month))}</div>` + finCard(finKv(rows) +
     (t.short > 0.004 ? `<div class="fin-warn">⚠ ${esc(finMoney(t.short))} short of the minimum payments. ` +
       "Pay the minimums before anything else — a missed one costs a fee and your credit score.</div>" : ""));
 
@@ -17892,6 +17896,31 @@ function pfStepText(x){
   if(x.do === "overdraft") return "Let the overdraft cover " + a + " in " + x.to;
   return "Move " + a + " from " + x.from + " to " + x.to;
 }
+/* 2026-10-26 -- RIGHT NOW. Trevor: *"I'm not looking for a monthly payment plan ... How much
+   should I put into the mastercard right now, how much to put into the line of credit ... where
+   it says What to pay, it should take the current balance."* One card, on the Budget tab (as
+   its "what to pay") and here. */
+function pfNowCard(s, title){
+  const typedAll = String((s.chequing || {}).from || "").startsWith("typed");
+  const kept = s.crypto_kept;
+  return `<div class="section-label">${esc(title)}</div>` +
+    '<div class="card"><div class="fin-rows">' + (s.steps.length ? s.steps.map((x, i) =>
+      '<div class="fin-row" style="cursor:default">' +
+      `<div><div class="fin-rt">${esc((i + 1) + ". " + pfStepText(x))}</div>` +
+      `<div class="fin-rs">${esc(x.why + (x.fee ? " · crypto fee about " + finMoney(x.fee) : "") +
+        (x.rate ? " · " + x.rate + "% a year until it's paid back" : ""))}</div></div>` +
+      `<div><div class="fin-ra">${esc(finMoney(x.amount))}</div></div></div>`).join("")
+      : '<div class="fin-note" style="padding:10px 13px">Nothing to move — no spare money beyond what the ' +
+        "bills and the buffer need.</div>") + "</div></div>" +
+    (kept ? `<div class="fin-note">Your crypto could pay ${esc(finMoney(kept.amount))} more off the ${esc(kept.debt)}: ` +
+      `it would save about ${esc(finMoney(kept.saves))} interest over ${esc(kept.months)} months, but selling now and ` +
+      `buying back for GOLDbot costs about ${esc(finMoney(kept.costs))} — so it stays.</div>` : "") +
+    /* Trevor: *"I'll actually do this when the Mastercard statement comes out. And i'll also
+       update all the statements"* -- so it says which statement each balance is from */
+    (typedAll ? "" : '<div class="fin-note">From your newest statements: ' +
+      esc((s.balances || []).map(b => b.name + " " + finDate(String(b.from).replace(/^\D+/, ""))).join(" · ")) +
+      ". Upload the newest ones first; anything that moved since, type it on the Schedule tab.</div>");
+}
 function pfSchedule(d){
   const s = d.schedule || {};
   if(!s.ready) return finCard(`<div class="fin-note">${esc(s.why || "Not enough to plan with yet.")}</div>`);
@@ -17905,27 +17934,22 @@ function pfSchedule(d){
       finMonth(bf.months[bf.months.length - 1]) : "");
   let h = "";
   (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
+  const card = s.card || {}, loc = s.loc;
   h += finStats([
-    ["Plan day", finDate(s.plan_date, true), "", s.card.name + " due"],
-    ["Pay the card", finMoney(s.card.due), "", "in full — " + s.card.rate + "% otherwise"],
+    [card.name || "Card", finMoney(-card.due), card.due > 0.004 ? "lv-bad" : "lv-good",
+     card.due > 0.004 ? card.rate + "% · " + (card.balance_from || "") : "paid off"],
+    [loc ? loc.name : "Line of credit", loc ? finMoney(-loc.owed) : "—", loc && loc.owed > 0.004 ? "lv-bad" : "",
+     loc ? loc.rate + "% a year" : ""],
     ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < bf.amount - 0.004 ? "lv-bad" : "lv-good",
      "on " + finDate(s.lowest.date) + " · buffer " + finMoney(bf.amount, false)],
     ["GOLDbot", g.live ? g.return_pct + "% a year" : "not on real money", g.beats_loc ? "lv-good" : "",
      g.live ? "vs the line of credit's " + g.loc_rate + "%" : "about " + c.months + " months away"],
   ]);
-  /* WHAT TO DO, IN ORDER */
-  h += `<div class="section-label">On ${esc(finDate(s.plan_date))} — in this order</div>` +
-    '<div class="card"><div class="fin-rows">' + (s.steps.length ? s.steps.map((x, i) =>
-      '<div class="fin-row" style="cursor:default">' +
-      `<div><div class="fin-rt">${esc((i + 1) + ". " + pfStepText(x))}</div>` +
-      `<div class="fin-rs">${esc(x.why + (x.fee ? " · crypto fee about " + finMoney(x.fee) : "") +
-        (x.rate ? " · " + x.rate + "% a year until it's paid back" : ""))}</div></div>` +
-      `<div><div class="fin-ra">${esc(finMoney(x.amount))}</div></div></div>`).join("")
-      : '<div class="fin-note" style="padding:10px 13px">Nothing to move this month.</div>') + "</div></div>";
+  /* WHAT TO DO, RIGHT NOW, IN ORDER */
+  h += pfNowCard(s, "Right now — move these, in order");
   h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))}: ${esc(finMoney(s.need))} for the bills ` +
     `until the next pay covers them, plus a <b>${esc(finMoney(bf.amount))} buffer</b> (${esc(bfFrom)}) so ` +
-    `nothing dips into the overdraft. Balances are from ${esc(s.chequing.from)} — type today's below on the day ` +
-    "for exact numbers.</div>";
+    "nothing dips into the overdraft. Everything above that goes to the debts — the highest rate first.</div>";
   /* CHEQUING, DAY BY DAY */
   if((s.calendar || []).length)
     h += `<div class="section-label">${esc(s.chequing.name)} until ${esc(finDate(s.next_plan))}</div>` + finCard(
@@ -17942,8 +17966,9 @@ function pfSchedule(d){
   h += '<div class="section-label">Balances and rules</div>';
   if(f){
     h += '<div class="card"><div class="fin-form">' +
-      '<div class="fin-note">Type what each account shows today (blank = its last statement).</div>' +
-      s.balances.map(b => pfFormField(esc(b.name), "bal:" + b.id, f["bal:" + b.id] || "",
+      '<div class="fin-note">Type what each account shows today (blank = its last statement). For the card ' +
+      "and the line of credit, type what you owe.</div>" +
+      s.balances.map(b => pfFormField(esc(b.name + (b.owed ? " — owed" : "")), "bal:" + b.id, f["bal:" + b.id] || "",
         `inputmode="decimal" placeholder="${finAttr(finNum(b.balance))}"`)).join("") +
       pfFormField(`Chequing buffer (blank = automatic: ${esc(finMoney(bf.auto, false))})`, "buffer", f.buffer) +
       '<div class="fin-note">Type one when you know something\'s coming up; clear it to go back to the automatic one.</div>' +
@@ -17954,7 +17979,7 @@ function pfSchedule(d){
       `<button type="button" class="fin-btn gold" data-pf="schedsave"${PF.busy ? " disabled" : ""}>Save</button>` +
       '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div></div>';
   }else{
-    h += finCard(finKv(s.balances.map(b => [b.name, finMoney(b.balance), "", b.from])) +
+    h += finCard(finKv(s.balances.map(b => [b.name, finMoney(b.owed ? -Math.abs(b.balance) : b.balance), "", b.from])) +
       `<div class="fin-note">Overdraft: ${esc(finMoney(od.limit, false))} at about ${esc(od.rate)}% — its ` +
       `${esc(finMoney(od.fee))} O.D.P. fee is charged every month anyway, so only its interest counts. ` +
       `Crypto: ${esc(c.sell_pct)}% to sell and ${esc(c.buy_pct)}% to buy back for GOLDbot (your own last trades); ` +
