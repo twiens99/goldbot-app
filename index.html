@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-201431";
+const APP_BUILD = "20261026-205310";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17475,7 +17475,7 @@ let PF = {data: null, at: 0, loading: false, err: "", busy: false, msg: null, fo
 const PF_KEY = "gb.personal.v1";
 const PF_TAB_KEY = "gb.fintab.v1";
 const PF_TABS = [["goldbot", "GOLDbot"], ["statements", "Statements"], ["budget", "Budget"],
-                 ["spending", "Spending"]];
+                 ["spending", "Spending"], ["schedule", "Schedule"]];
 const PF_LINK_RE = /^(https:\/\/[^\s"'<>\/]+|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)\/[A-Za-z0-9_-]{8,64}$/i;
 
 function finTab(){
@@ -17644,7 +17644,8 @@ function pfRender(tab){
   if(PF.err) out += `<div class="fin-warn">${esc(PF.err)}</div>`;
   if(PF.formErr) out += `<div class="fin-err">${esc(PF.formErr)}</div>`;
   (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
-  out += tab === "statements" ? pfStatements(d) : tab === "spending" ? pfSpending(d) : pfBudget(d);
+  out += tab === "statements" ? pfStatements(d) : tab === "spending" ? pfSpending(d)
+    : tab === "schedule" ? pfSchedule(d) : pfBudget(d);
   return out + pfLinkFoot() + "</div>";
 }
 function pfLinkCard(){
@@ -17880,6 +17881,82 @@ function pfBudget(d){
     `${esc(finMoney(b.inputs.card_spend.value, false))} a month, paid off with each statement.</div>`);
   return h + pfLoansCard(b) + pfInputsCard(b) + pfBillsCard(b) + pfAdviceNote();
 }
+/* 2026-10-26 -- THE SCHEDULE. Trevor: *"This is where the program needs to inform me
+   when and how much to allocate to the various Accounts ... We'll do this once a month
+   which should coincide the mastercard statement pay off date."* The Laptop works the
+   plan out (personal.schedule); this page lists it, and takes today's real balances. */
+function pfStepText(x){
+  const a = finMoney(x.amount);
+  if(x.do === "pay") return "Pay " + a + " to " + x.to + " from " + x.from;
+  if(x.do === "borrow") return "Draw " + a + " from the " + x.from + " into " + x.to;
+  if(x.do === "overdraft") return "Let the overdraft cover " + a + " in " + x.to;
+  return "Move " + a + " from " + x.from + " to " + x.to;
+}
+function pfSchedule(d){
+  const s = d.schedule || {};
+  if(!s.ready) return finCard(`<div class="fin-note">${esc(s.why || "Not enough to plan with yet.")}</div>`);
+  const g = s.goldbot || {}, c = s.crypto || {}, od = s.overdraft || {};
+  let h = "";
+  (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
+  h += finStats([
+    ["Plan day", finDate(s.plan_date, true), "", s.card.name + " due"],
+    ["Pay the card", finMoney(s.card.due), "", "in full — " + s.card.rate + "% otherwise"],
+    ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < -0.004 ? "lv-bad" : "lv-good",
+     "on " + finDate(s.lowest.date) + ", before " + finDate(s.next_plan)],
+    ["GOLDbot", g.live ? g.return_pct + "% a year" : "not on real money", g.beats_loc ? "lv-good" : "",
+     g.live ? "vs the line of credit's " + g.loc_rate + "%" : "about " + c.months + " months away"],
+  ]);
+  /* WHAT TO DO, IN ORDER */
+  h += `<div class="section-label">On ${esc(finDate(s.plan_date))} — in this order</div>` +
+    '<div class="card"><div class="fin-rows">' + (s.steps.length ? s.steps.map((x, i) =>
+      '<div class="fin-row" style="cursor:default">' +
+      `<div><div class="fin-rt">${esc((i + 1) + ". " + pfStepText(x))}</div>` +
+      `<div class="fin-rs">${esc(x.why + (x.fee ? " · crypto fee about " + finMoney(x.fee) : "") +
+        (x.rate ? " · " + x.rate + "% a year until it's paid back" : ""))}</div></div>` +
+      `<div><div class="fin-ra">${esc(finMoney(x.amount))}</div></div></div>`).join("")
+      : '<div class="fin-note" style="padding:10px 13px">Nothing to move this month.</div>') + "</div></div>";
+  h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))} for the bills until the next pay ` +
+    `covers them. Balances are from ${esc(s.chequing.from)} — type today's below on the day for exact numbers.</div>`;
+  /* CHEQUING, DAY BY DAY */
+  if((s.calendar || []).length)
+    h += `<div class="section-label">${esc(s.chequing.name)} until ${esc(finDate(s.next_plan))}</div>` + finCard(
+      '<table class="fin-tbl"><tr><th>Day</th><th>What</th><th>Amount</th><th>Left</th></tr>' +
+      s.calendar.map(e => `<tr><td>${esc(finDate(e.date))}</td><td>${esc(e.what)}</td>` +
+        `<td>${esc(finMoney(e.amount))}</td><td class="${e.balance < -0.004 ? "pf-short" : ""}">` +
+        `${esc(finMoney(e.balance))}</td></tr>`).join("") + "</table>");
+  /* PAY COMING IN */
+  if((s.income || []).length)
+    h += '<div class="section-label">Pay coming in</div>' + finCard(finKv(s.income.map(x =>
+      [x.name, finMoney(x.amount), "", x.every + (x.next.length ? " · next " + x.next.map(finDate).join(", ") : "")])));
+  /* TODAY'S BALANCES + THE RULES */
+  const f = PF.form && PF.form.kind === "sched" ? PF.form : null;
+  h += '<div class="section-label">Balances and rules</div>';
+  if(f){
+    h += '<div class="card"><div class="fin-form">' +
+      '<div class="fin-note">Type what each account shows today (blank = its last statement).</div>' +
+      s.balances.map(b => pfFormField(esc(b.name), "bal:" + b.id, f["bal:" + b.id] || "",
+        `inputmode="decimal" placeholder="${finAttr(finNum(b.balance))}"`)).join("") +
+      pfFormField("Overdraft interest, % a year", "overdraft_rate", f.overdraft_rate) +
+      pfFormField("Months until GOLDbot trades real money", "goldbot_months", f.goldbot_months) +
+      pfFormField("Crypto fee, % each way (blank = from your own trades)", "crypto_fee_pct", f.crypto_fee_pct) +
+      '<div class="fin-acts">' +
+      `<button type="button" class="fin-btn gold" data-pf="schedsave"${PF.busy ? " disabled" : ""}>Save</button>` +
+      '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div></div>';
+  }else{
+    h += finCard(finKv(s.balances.map(b => [b.name, finMoney(b.balance), "", b.from])) +
+      `<div class="fin-note">Overdraft: ${esc(finMoney(od.limit, false))} at about ${esc(od.rate)}% — its ` +
+      `${esc(finMoney(od.fee))} O.D.P. fee is charged every month anyway, so only its interest counts. ` +
+      `Crypto: ${esc(c.sell_pct)}% to sell and ${esc(c.buy_pct)}% to buy back for GOLDbot (your own last trades); ` +
+      `sold only for a debt whose interest over ${esc(c.months)} months beats that` +
+      `${(c.worth_for || []).length ? " (" + esc(c.worth_for.join(", ")) + ")" : " (none now)"}.` +
+      (s.kids_resp ? ` ${esc(finMoney(s.kids_resp))} of Wealthsimple is the kids' RESP money — never used.` : "") +
+      (g.beats_loc ? " GOLDbot is earning more than the line of credit costs: drawing on it for GOLDbot now pays."
+        : "") + "</div>" +
+      '<div class="fin-acts"><button type="button" class="fin-btn" data-pf="schededit">Type today\'s balances</button></div>');
+  }
+  return h + pfAdviceNote();
+}
+
 /* 2026-10-26 -- LOANS NO STATEMENT SHOWS. Trevor: *"it should be on the personal Side
    as a loan @3%. As soon as Goldbot owns it, It will pay the Interest rate to Crux."* */
 function pfLoansCard(b){
@@ -18442,6 +18519,18 @@ document.addEventListener("click", e => {
       });
       return;
     }
+  }
+  else if(act === "schededit"){
+    const s = d.schedule || {}, od = s.overdraft || {}, c = s.crypto || {};
+    PF.form = {kind: "sched", overdraft_rate: String(od.rate ?? ""), goldbot_months: String(c.months ?? ""),
+               crypto_fee_pct: c.sell_pct === c.buy_pct && c.typed ? String(c.sell_pct) : ""};
+  }
+  else if(act === "schedsave" && PF.form && PF.form.kind === "sched"){
+    const f = PF.form, bal = {};
+    Object.keys(f).filter(k => k.startsWith("bal:") && String(f[k]).trim()).forEach(k => { bal[k.slice(4)] = f[k]; });
+    pfSend({op: "schedule", balances: bal, overdraft_rate: f.overdraft_rate, goldbot_months: f.goldbot_months,
+            crypto_fee_pct: f.crypto_fee_pct}, () => { PF.form = null; });
+    return;
   }
   else if(act === "catcancel" && PF.form){
     const f = PF.form;
