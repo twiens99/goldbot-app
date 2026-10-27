@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-220041";
+const APP_BUILD = "20261026-222027";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17833,6 +17833,8 @@ function pfBudget(d){
   }
   const t = b.this_month, p = b.plan, inc = b.inputs.income;
   const incSub = inc.typed != null ? "the amount you typed"
+    : inc.months.length > 3 ? `average of the ${inc.months.length} months ${finMonth(inc.months[0])} – ` +
+      `${finMonth(inc.months[inc.months.length - 1])} in chequing`
     : "average of " + inc.months.map(finMonth).join(", ") + " in chequing";
 
   /* THIS MONTH -- top to bottom is the order the money goes. */
@@ -17994,11 +17996,11 @@ function pfSchedule(d){
   const fl = s.flow;
   if(fl){
     h += '<div class="section-label">Pay vs spending, a month</div>' + finCard(finKv([
-      ["Pay in", finMoney(fl.income), "", "your average, from the chequing statements"],
+      ["Pay in", finMoney(fl.income), "", "your average over the last year of chequing statements"],
       ["Bills", finMoney(-fl.bills), "", "the Budget tab's monthly bills"],
       ...(fl.keep > 0.005 ? [["Kept in chequing", finMoney(-fl.keep), "", "from the Budget tab"]] : []),
       ["Card spending", finMoney(-fl.card), "", "new spending on the card each month"],
-      ["Other chequing spending", finMoney(-fl.other), "", "not a bill — the same average the buffer uses"],
+      ["Other chequing spending", finMoney(-fl.other), "", "not a bill or a one-off — the same average the buffer uses"],
       ["Left for the debts", finMoney(fl.spare), "sum",
         fl.spare < 0 ? "spending is more than pay" : "what your pay clears each month", finTone(fl.spare)]]));
   }
@@ -18069,9 +18071,10 @@ function pfTxnRow(s, t){
   if(PF.form && PF.form.kind === "split" && PF.form.row === t.id) return pfSplitForm(s, t);
   const tag = t.category === "unsorted" ? "" : `<span class="fin-tag">${esc(pfLabel(s, t.category))}</span>`;
   const part = t.part_of ? " · part of " + finMoney(Math.abs(t.total)) : "";
+  const once = t.one_off ? " · one-off" : "";
   return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
     `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + once + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
 }
 /* 2026-10-26: a "PAYPAL MSP" row on TD shows who was paid, from PayPal's own history */
@@ -18241,6 +18244,11 @@ function pfTagForm(s, t){
       " match " + these + " today." : "No other unsorted payment matches " + these + " today."} ` +
     "A rule also sorts every future statement.</div>" +
     `<label>Note<input type="text" data-pff="note" value="${finAttr(f.note)}" maxlength="200"></label>` +
+    /* 2026-10-27 -- Trevor: *"So I should actually give those large spending as one off's.
+       That was when I bought the truck."* */
+    `<label class="pf-check"><input type="checkbox" data-pff="one_off"${f.one_off ? " checked" : ""}>` +
+    "One-off — it won't repeat (a truck's down payment). Still counted as spending, but left out " +
+    "of the monthly averages: Pay vs spending and the chequing buffer.</label>" +
     '<div class="fin-acts">' +
     `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || f.category === "__new" ||
       (!f.category && (!f.who || f.who === "me")) ? " disabled" : ""}>` +
@@ -18567,7 +18575,8 @@ document.addEventListener("click", e => {
       PF.form = {kind: "tag", id: t.id, category: t.category === "unsorted" ? "" : t.category,
                  rule: t.category === "unsorted", rule_text: t.rule_text.includes("•") ? "" : t.rule_text,
                  rule_cmp: "any", rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || "",
-                 who: pfWhoFrom(t.for), kid: (t.for || {}).kid || "", dir: (t.for || {}).dir || ""};
+                 who: pfWhoFrom(t.for), kid: (t.for || {}).kid || "", dir: (t.for || {}).dir || "",
+                 one_off: !!t.one_off};
     }
   }
   else if(act === "tagsave" && PF.form){
@@ -18577,7 +18586,7 @@ document.addEventListener("click", e => {
     const body = {op: "tag", id: f.id, category: f.category || "", note: f.note || "",
                   rule_text: f.rule ? f.rule_text : "",
                   rule_amount: f.rule && f.rule_cmp && f.rule_cmp !== "any" ? f.rule_amount : "",
-                  rule_cmp: !f.rule_cmp || f.rule_cmp === "any" ? "eq" : f.rule_cmp};
+                  rule_cmp: !f.rule_cmp || f.rule_cmp === "any" ? "eq" : f.rule_cmp, one_off: !!f.one_off};
     if(party) body.party = party;
     pfSend(body, () => { PF.form = null; });
     return;
