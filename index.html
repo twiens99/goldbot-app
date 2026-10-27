@@ -1901,6 +1901,8 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 }
 .fin-tabs button[aria-selected="true"]{background:var(--gold);color:#17130a;}
 .fin-tabs button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+/* 2026-10-27 -- six tabs (Kids) don't fit one phone row: two rows of three */
+@media (max-width:560px){ .fin-tabs{display:grid;grid-template-columns:repeat(3,1fr);} }
 .fin-tabn{
   display:inline-block;margin-left:5px;min-width:17px;padding:0 5px;border-radius:9px;font-size:.66rem;
   line-height:17px;background:var(--bad);color:#fff;vertical-align:1px;
@@ -2048,7 +2050,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261027-084911";
+const APP_BUILD = "20261027-091453";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17511,7 +17513,7 @@ let PF = {data: null, at: 0, loading: false, err: "", busy: false, msg: null, fo
 const PF_KEY = "gb.personal.v1";
 const PF_TAB_KEY = "gb.fintab.v1";
 const PF_TABS = [["goldbot", "GOLDbot"], ["statements", "Statements"], ["budget", "Budget"],
-                 ["spending", "Spending"], ["schedule", "Schedule"]];
+                 ["spending", "Spending"], ["schedule", "Schedule"], ["kids", "Kids"]];
 const PF_LINK_RE = /^(https:\/\/[^\s"'<>\/]+|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)\/[A-Za-z0-9_-]{8,64}$/i;
 
 function finTab(){
@@ -17681,7 +17683,7 @@ function pfRender(tab){
   if(PF.formErr) out += `<div class="fin-err">${esc(PF.formErr)}</div>`;
   (d.notes || []).forEach(n => { out += `<div class="fin-warn">${esc(n)}</div>`; });
   out += tab === "statements" ? pfStatements(d) : tab === "spending" ? pfSpending(d)
-    : tab === "schedule" ? pfSchedule(d) : pfBudget(d);
+    : tab === "schedule" ? pfSchedule(d) : tab === "kids" ? pfKids(d) : pfBudget(d);
   return out + pfLinkFoot() + "</div>";
 }
 function pfLinkCard(){
@@ -17990,6 +17992,40 @@ function pfNowCard(s, title){
     (typedAll ? "" : '<div class="fin-note">From your newest statements: ' +
       esc((s.balances || []).map(b => b.name + " " + finDate(String(b.from).replace(/^\D+/, ""))).join(" · ")) +
       ". Upload the newest ones first; anything that moved since, type it on the Schedule tab.</div>");
+}
+/* 2026-10-27 -- THE KIDS TAB. Trevor: *"I need a spot where I can see the Kids RESP Balances
+   and Transactions."* GOLDbot's REAL books, read on the Laptop -- the demo hides the RESPs on
+   the GOLDbot tab. A row's `change` is what it did to the balance (a move into GOLDbot: none). */
+function pfKids(d){
+  const k = d.kids;
+  if(!k || k.why || !(k.kids || []).length)
+    return finCard(`<div class="fin-note">${esc((k && k.why) || (k ? "There are no RESP accounts in GOLDbot's books yet."
+      : "GOLDbot's books aren't on the Laptop, so the RESPs can't be shown."))}</div>`);
+  let h = finStats(k.kids.map(x => [x.name, finMoney(x.balance), "",
+      x.per_month > 0.005 ? "+" + finMoney(x.per_month) + " a month" : ""]).concat(
+    k.kids.length > 1 ? [["All " + k.kids.length + " together", finMoney(k.total), "", ""]] : []));
+  k.kids.forEach(x => {
+    const key = "kid:" + x.id, all = !!PF.all[key];
+    const rows = all ? x.rows : x.rows.slice(0, 8);
+    const split = Math.abs(x.inside) >= 0.005;
+    h += `<div class="section-label">${esc(x.name)}</div>` + '<div class="card"><div class="card-in">' + finKv([
+      ["Balance", finMoney(x.balance), "sum", split
+        ? finMoney(x.outside) + " held by you · " + finMoney(x.inside) + " in GOLDbot" : "held by you — not GOLDbot's"],
+      ...(split || Math.abs(x.earned) >= 0.005 ? [["Its share of GOLDbot's trading", finMoney(x.earned), "",
+        "gains and losses on what's in GOLDbot", finTone(x.earned)]] : []),
+      ...(x.per_month > 0.005 ? [["Each month", finMoney(x.per_month), "", x.next ? "next on " + finDate(x.next) : ""]] : [])]) +
+      '<table class="fin-tbl"><tr><th>What</th><th>Amount</th></tr>' + rows.map(r =>
+        `<tr><td>${esc(r.what)}<span class="fin-sub">${esc(finDate(r.date) + " · " + r.where +
+          (r.statement ? " · from your statements" : ""))}</span></td>` +
+        `<td class="${finTone(r.change)}">${esc(Math.abs(r.change) < 0.005 ? finMoney(r.amount)
+          : (r.change > 0 ? "+" : "") + finMoney(r.change))}</td></tr>`).join("") + "</table>" +
+      (x.rows.length > 8 ? `<button type="button" class="fin-more" style="padding:8px 0 0" data-pf="all" ` +
+        `data-id="${finAttr(key)}">${all ? "Show the latest 8" : "Show all " + x.rows.length}</button>` : "") +
+      "</div></div>";
+  });
+  return h + '<div class="fin-note">From GOLDbot\'s books, not the demo. Money you hold for a kid is theirs, not ' +
+    "GOLDbot's; moved into GOLDbot, it's owed to them and shares every trading day, gains and losses. A payment " +
+    "marked for a kid's RESP on the Spending tab shows here too.</div>";
 }
 function pfSchedule(d){
   const s = d.schedule || {};
