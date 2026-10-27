@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-222027";
+const APP_BUILD = "20261026-223851";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17836,9 +17836,13 @@ function pfBudget(d){
     : inc.months.length > 3 ? `average of the ${inc.months.length} months ${finMonth(inc.months[0])} – ` +
       `${finMonth(inc.months[inc.months.length - 1])} in chequing`
     : "average of " + inc.months.map(finMonth).join(", ") + " in chequing";
+  /* 2026-10-27: a week off without pay counts at the average (Trevor's vacation weeks) */
+  const missed = inc.typed == null ? (inc.missed || []) : [];
+  const incSubAll = incSub + (missed.length ? `, counting ${missed.length} week${missed.length > 1 ? "s" : ""} off ` +
+    `without pay (${missed.map(m => finDate(m.date)).join(", ")}) at your average pay` : "");
 
   /* THIS MONTH -- top to bottom is the order the money goes. */
-  const rows = [["Pay coming in", finMoney(t.income), "", incSub]];
+  const rows = [["Pay coming in", finMoney(t.income), "", incSubAll]];
   rows.push(["Bills from chequing", finMoney(-t.bills), "",
              b.bills.filter(x => !x.off).length + " monthly bills — listed below"]);
   if(t.keep > 0.004) rows.push(["Kept in chequing", finMoney(-t.keep), "", "your buffer"]);
@@ -17996,10 +18000,12 @@ function pfSchedule(d){
   const fl = s.flow;
   if(fl){
     h += '<div class="section-label">Pay vs spending, a month</div>' + finCard(finKv([
-      ["Pay in", finMoney(fl.income), "", "your average over the last year of chequing statements"],
+      ["Pay in", finMoney(fl.income), "", "your average over the last year of chequing statements" +
+        ((fl.missed || []).length ? ` (${fl.missed.length} week${fl.missed.length > 1 ? "s" : ""} off without ` +
+          "pay counted at your average)" : "")],
       ["Bills", finMoney(-fl.bills), "", "the Budget tab's monthly bills"],
       ...(fl.keep > 0.005 ? [["Kept in chequing", finMoney(-fl.keep), "", "from the Budget tab"]] : []),
-      ["Card spending", finMoney(-fl.card), "", "new spending on the card each month"],
+      ["Card spending", finMoney(-fl.card), "", "new card spending a month, over the last year"],
       ["Other chequing spending", finMoney(-fl.other), "", "not a bill or a one-off — the same average the buffer uses"],
       ["Left for the debts", finMoney(fl.spare), "sum",
         fl.spare < 0 ? "spending is more than pay" : "what your pay clears each month", finTone(fl.spare)]]));
@@ -18406,7 +18412,8 @@ function pfInputsCard(b){
   return h + finCard(finKv([
     ["Monthly take-home pay", inc.value != null ? finMoney(inc.value) : "—", "",
      inc.typed != null ? "you typed it" : inc.statements != null ? "from chequing statements" : "not known yet"],
-    ["Card spending a month", finMoney(cs.value), "", cs.typed != null ? "you typed it" : "from the card statements"],
+    ["Card spending a month", finMoney(cs.value), "", cs.typed != null ? "you typed it"
+      : "average of the last 12 card statements — flights bought ahead even out"],
     ["Kept in chequing", finMoney(i.keep || 0)],
     ["One-off extra this month", finMoney(i.extra_now || 0)],
     ["GOLDbot pays you", (i.goldbot_rate_pct ?? 5) + "% a year"],
