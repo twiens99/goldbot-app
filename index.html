@@ -2050,7 +2050,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261027-091453";
+const APP_BUILD = "20261027-151304";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2471,6 +2471,14 @@ function bktOrder(ra, ia, rb, ib){
   const na = BKT_NAMES[bktKey(ra, Number(ia))], nb = BKT_NAMES[bktKey(rb, Number(ib))];
   if(na && nb) return na.rank - nb.rank;
   return Number(ia) - Number(ib);
+}
+/* 2026-10-27 -- THE WAY THE TRADES FLOW. Trevor: *"It needs to go Bull HIGH-mid-low-Bear Low-High... That's the
+   way the trades flow."* The D1 slope from its steepest rise down through 0 to its steepest fall. Ids run in slope
+   order inside a regime, so within BULL and within BEAR that is the highest id first -- named or not. */
+function bktFlow(ra, ia, rb, ib){
+  const reg = r => ({BULL: 0, BEAR: 1}[String(r || "").toUpperCase()] ?? 2);
+  if(reg(ra) !== reg(rb)) return reg(ra) - reg(rb);
+  return (Number(ib) || 0) - (Number(ia) || 0);
 }
 /* A sentence from the machines ("... BULL/800: PF ...") with its bucket named. Display only. */
 const bktText = s => String(s == null ? "" : s).replace(/\b(BULL|BEAR)([\/ ])(\d{3,4})\b/g,
@@ -14532,7 +14540,7 @@ function lvPaintTin(){
   }
   head += "</div>";
   // 2026-10-16 -- the armed list is the buckets that CAN trade: an off regime's old rows (RANGING 1600) stay out.
-  const rows = gates.filter(g => !regimeOff(g.regime)).map(g => {
+  const rows = gates.filter(g => !regimeOff(g.regime)).sort((a, b) => bktFlow(a.regime, a.bucket, b.regime, b.bucket)).map(g => {
     const cur = tin && g.regime === tin.regime && String(g.bucket) === String(tin.bucket);
     const pf = g.pf != null ? `PF <b>${Number(g.pf).toFixed(2)}</b> on ${esc(g.trades)}` : "not measured yet";
     const when = g.measured_at ? " · " + esc(fmtWhen(Number(g.measured_at)).slice(0, 5)) : "";
