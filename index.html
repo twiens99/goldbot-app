@@ -1952,6 +1952,8 @@ button.pf-chip{cursor:pointer;}
 .pf-part .pf-lnk{grid-column:1 / -1;justify-self:start;font-size:.8rem;}
 .pf-newcat{grid-column:1 / -1;display:flex;flex-direction:column;gap:8px;padding:10px;
   border:1px dashed var(--line);border-radius:9px;}
+.pf-who{display:flex;flex-direction:column;gap:7px;padding:10px;border:1px solid var(--line);border-radius:9px;}
+.pf-wk{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);}
 </style>
 
 <div class="app">
@@ -2044,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-190707";
+const APP_BUILD = "20261026-200427";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17092,6 +17094,7 @@ function finRowTitle(t){
       (t.from ? " · out of " + finName("loans", t.from) + "'s loan" : "");
     case "resp_payout": return "RESP payout · " + finName("earmarks", t.earmark);
     case "loan": return "Loan · " + finName("loans", t.loan);
+    case "loan_shift": return "Loan moved · " + finName("loans", t.from) + " → " + finName("loans", t.loan);
     case "balance": return "Balance check";
   }
   return String(t.kind);
@@ -17132,12 +17135,15 @@ function finRowAmount(t){
 }
 function finRow(t){
   if(FIN.form && FIN.form.mode === "edit" && FIN.form.id === t.id) return finFormHtml();
+  /* 2026-10-26: booked from a payment in the personal books -- changed there, not here */
+  const personal = String(t.id || "").startsWith("pf-");
   const tags = (t.live ? '<span class="fin-tag">live</span>' : "") +
     (t.sim ? '<span class="fin-tag">demo</span>' : "") +
+    (personal ? '<span class="fin-tag">from Spending</span>' : "") +
     (t.recurring ? '<span class="fin-tag">repeats</span>' : "") +
     (t.versions > 1 ? '<span class="fin-tag">edited</span>' : "");
   return `<button type="button" class="fin-row" data-fin="edit" data-id="${finAttr(t.id)}"` +
-    `${t.live || t.sim ? " disabled" : ""}>` +
+    `${t.live || t.sim || personal ? " disabled" : ""}>` +
     `<div><div class="fin-rt">${esc(finRowTitle(t))}${tags}</div>` +
     `<div class="fin-rs">${esc(finRowSub(t))}</div></div>` +
     `<div>${finRowAmount(t)}</div></button>`;
@@ -17896,12 +17902,74 @@ function pfTxnRow(s, t){
   const part = t.part_of ? " · part of " + finMoney(Math.abs(t.total)) : "";
   return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
     `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + part + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
 }
 /* 2026-10-26: a "PAYPAL MSP" row on TD shows who was paid, from PayPal's own history */
 function pfTitle(t){ return t.vendor || t.desc; }
 function pfVia(t){ return t.vendor ? " · via PayPal" : ""; }
+
+/* 2026-10-26 -- WHO IS RESPONSIBLE. Trevor: *"I need some checkboxes to be able to
+   assign Who is Responsible for a sorting spending transaction ... a checkbox for
+   Goldbot, RESP, and which kid. And one for a Crux Loan."* The kids and lenders come
+   from GOLDbot's books (data, never written here: this page is public). The Laptop
+   books each one into GOLDbot's books by which way the money moved. */
+function pfParties(){ return (PF.data || {}).parties || null; }
+function pfPartyName(list, id){ const x = (list || []).find(y => y.id === id); return x ? x.name : String(id || ""); }
+function pfFor(t){
+  const p = t.for, pa = pfParties() || {};
+  if(!p) return "";
+  if(p.party === "goldbot") return " · for GOLDbot";
+  if(p.party === "resp") return " · " + pfPartyName(pa.kids, p.kid) + (p.dir === "into" ? " (into)" : " (paid by it)");
+  return " · " + pfPartyName(pa.lenders, p.lender) + " loan";
+}
+function pfWhoFrom(p){
+  return !p ? "me" : p.party === "loan" ? "loan:" + p.lender : p.party;
+}
+function pfPartyOf(f){
+  if(!f.who || f.who === "me") return null;
+  if(f.who === "goldbot") return {party: "goldbot"};
+  if(f.who === "resp") return {party: "resp", kid: f.kid, dir: f.dir};
+  return {party: "loan", lender: f.who.slice(5)};
+}
+function pfWhoNote(t, f){
+  const pa = pfParties() || {}, out = t.amount < 0;
+  if(f.who === "goldbot") return "Booked in GOLDbot's books as an expense on your 5% loan, from this day. Not your spending.";
+  if(f.who === "resp"){
+    const kid = pfPartyName(pa.kids, f.kid);
+    return f.dir === "into" ? "A lump sum into " + kid + "'s account: their balance goes up. Not your spending."
+      : kid + "'s account covers it: their balance goes down. Not your spending.";
+  }
+  if(f.who && f.who.startsWith("loan:")){
+    const l = pfPartyName(pa.lenders, f.who.slice(5));
+    return out ? "Pays the " + l + " loan back for GOLDbot — GOLDbot then owes you that instead."
+      : l + " lent more, through you — GOLDbot owes " + l + " that much more, and you that much less.";
+  }
+  return "Your own money.";
+}
+function pfWhoBlock(t){
+  const pa = pfParties();
+  if(!pa) return "";
+  const f = PF.form, out = t.amount < 0;
+  if(f.who === "resp"){
+    if(!(pa.kids || []).some(k => k.id === f.kid)) f.kid = ((pa.kids || [])[0] || {}).id || "";
+    if(!out || !f.dir) f.dir = out ? (f.dir || "into") : "from";
+  }
+  const opts = [["me", "Me"]].concat(out ? [["goldbot", "GOLDbot"]] : [],
+    (pa.kids || []).length ? [["resp", "A kid's RESP"]] : [],
+    (pa.lenders || []).map(l => ["loan:" + l.id, l.name + " loan"]));
+  return '<div class="pf-who"><div class="pf-wk">Who\'s responsible</div>' +
+    opts.map(([v, l]) => `<label class="pf-check"><input type="radio" name="pf-who" data-pff="who" ` +
+      `value="${finAttr(v)}"${(f.who || "me") === v ? " checked" : ""}>${esc(l)}</label>`).join("") +
+    (f.who === "resp" ? '<div class="fin-two">' +
+      '<select class="pf-sel" data-pff="kid" aria-label="Which kid">' + pa.kids.map(k =>
+        `<option value="${finAttr(k.id)}"${f.kid === k.id ? " selected" : ""}>${esc(k.name)}</option>`).join("") +
+      '</select><select class="pf-sel" data-pff="dir" aria-label="Which way">' +
+      (out ? [["into", "Into their account"], ["from", "Paid by their account"]] : [["from", "Paid back by their account"]])
+        .map(([v, l]) => `<option value="${v}"${f.dir === v ? " selected" : ""}>${l}</option>`).join("") +
+      "</select></div>" : "") +
+    `<div class="fin-note">${esc(pfWhoNote(t, f))}</div></div>`;
+}
 function pfCatOptions(s, picked){
   const spend = (s.labels || []).filter(l => l.kind === "spend");
   const other = (s.labels || []).filter(l => l.kind !== "spend" && l.id !== "unsorted");
@@ -17965,9 +18033,11 @@ function pfSplitForm(s, t){
 function pfTagForm(s, t){
   const f = PF.form;
   const text = String(f.rule_text || "").trim().toUpperCase();
-  /* 2026-10-26: "exactly $1,200", then "above 100 bucks ... under 100 bucks" */
-  const amt = f.rule && f.rule_amt ? pfDollars(f.rule_amount) : 0;
-  const test = f.rule_cmp || "eq";
+  /* 2026-10-26: "exactly $1,200", then "above 100 bucks ... under 100 bucks" -- one
+     Amount line, always in view under the rule (it was behind a second checkbox, and
+     Trevor couldn't find it) */
+  const test = f.rule_cmp || "any";
+  const amt = f.rule && test !== "any" ? pfDollars(f.rule_amount) : 0;
   const amtOk = x => {
     const a = Math.abs(x.amount);
     return !amt || (test === "gt" ? a > amt + 0.004 : test === "lt" ? a < amt - 0.004 : Math.abs(a - amt) < 0.005);
@@ -17978,25 +18048,28 @@ function pfTagForm(s, t){
   return '<div class="fin-form">' +
     `<div class="fin-rt">${esc(pfTitle(t))}</div>` +
     `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + " · " + pfAmt(t.amount))}</div>` +
-    `<label>Category<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
+    pfWhoBlock(t) +
+    `<label>Category${f.who && f.who !== "me" ? ' <span class="fin-hint">(optional)</span>' : ""}` +
+    `<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
     (f.category === "__new" ? pfNewCat() : "") +
     `<label class="pf-check"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}>` +
     "Every payment whose description has these words, from now on</label>" +
     `<input type="text" class="pf-in" data-pff="rule_text" value="${finAttr(f.rule_text)}" autocomplete="off" ` +
     'autocapitalize="characters" spellcheck="false">' +
-    (f.rule ? `<label class="pf-check"><input type="checkbox" data-pff="rule_amt"${f.rule_amt ? " checked" : ""}>` +
-      "Only when the amount is</label>" +
-      (f.rule_amt ? '<div class="fin-two"><select class="pf-sel" data-pff="rule_cmp">' +
-        [["eq", "exactly"], ["gt", "more than"], ["lt", "less than"]]
-          .map(([v, l]) => `<option value="${v}"${test === v ? " selected" : ""}>${l}</option>`).join("") +
-        `</select><input type="text" class="pf-in" data-pff="rule_amount" value="${finAttr(f.rule_amount)}" ` +
-        'inputmode="decimal" autocomplete="off"></div>' : "") : "") +
+    (f.rule ? '<div class="pf-wk">Amount</div><div class="fin-two">' +
+      '<select class="pf-sel" data-pff="rule_cmp" aria-label="Amount">' +
+      [["any", "Any amount"], ["eq", "Exactly"], ["gt", "More than"], ["lt", "Less than"]]
+        .map(([v, l]) => `<option value="${v}"${test === v ? " selected" : ""}>${l}</option>`).join("") +
+      "</select>" + (test !== "any" ? `<input type="text" class="pf-in" data-pff="rule_amount" ` +
+        `value="${finAttr(f.rule_amount)}" inputmode="decimal" autocomplete="off" aria-label="Dollars">` : "") +
+      "</div>" : "") +
     `<div class="fin-note">${more ? esc(more) + " more unsorted payment" + (more === 1 ? "" : "s") +
       " match " + these + " today." : "No other unsorted payment matches " + these + " today."} ` +
     "A rule also sorts every future statement.</div>" +
     `<label>Note<input type="text" data-pff="note" value="${finAttr(f.note)}" maxlength="200"></label>` +
     '<div class="fin-acts">' +
-    `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || !f.category || f.category === "__new" ? " disabled" : ""}>` +
+    `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || f.category === "__new" ||
+      (!f.category && (!f.who || f.who === "me")) ? " disabled" : ""}>` +
     `${PF.busy ? "Saving…" : "Save"}</button>` +
     `<button type="button" class="fin-btn" data-pf="splitopen" data-id="${finAttr(t.id)}">Split…</button>` +
     '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div>';
@@ -18060,6 +18133,13 @@ function pfSpending(d){
   h += '<div class="fin-note">Tap a category to see its payments and set a goal. "Not counted" means a ' +
     "statement it depends on is missing that month.</div>";
 
+  /* FOR SOMEONE ELSE -- 2026-10-26: marked for GOLDbot, a kid's RESP or a loan; not
+     your spending, so in no category above -- here, to find and change */
+  const others = (s.txns || []).filter(t => t.for && t.date.slice(0, 7) === mk);
+  if(others.length)
+    h += `<div class="section-label">For someone else — ${esc(finMonth(mk))}</div>` +
+      '<div class="card"><div class="fin-rows">' + others.map(t => pfTxnRow(s, t)).join("") + "</div></div>";
+
   /* UNSORTED */
   const uns = (s.txns || []).filter(t => t.category === "unsorted");
   if(uns.length){
@@ -18108,7 +18188,7 @@ function pfCatRow(s, c, mk, top){
       `${c.goal != null ? "Change the goal" : "Set a goal"}</button></div>`;
   }
   h += "</div>";
-  const txns = (s.txns || []).filter(t => t.category === c.id && t.date.slice(0, 7) === mk);
+  const txns = (s.txns || []).filter(t => t.category === c.id && !t.for && t.date.slice(0, 7) === mk);
   h += txns.length ? txns.map(t => pfTxnRow(s, t)).join("")
     : `<div class="fin-note" style="padding:10px 13px">No ${esc(c.label.toLowerCase())} in ${esc(finMonth(mk))}.</div>`;
   return h;
@@ -18312,16 +18392,20 @@ document.addEventListener("click", e => {
     }else{
       PF.form = {kind: "tag", id: t.id, category: t.category === "unsorted" ? "" : t.category,
                  rule: t.category === "unsorted", rule_text: t.rule_text.includes("•") ? "" : t.rule_text,
-                 rule_amt: false, rule_cmp: "eq", rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || ""};
+                 rule_cmp: "any", rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || "",
+                 who: pfWhoFrom(t.for), kid: (t.for || {}).kid || "", dir: (t.for || {}).dir || ""};
     }
   }
   else if(act === "tagsave" && PF.form){
     const f = PF.form;
-    if(!f.category) return;
-    pfSend({op: "tag", id: f.id, category: f.category, note: f.note || "",
-            rule_text: f.rule ? f.rule_text : "", rule_amount: f.rule && f.rule_amt ? f.rule_amount : "",
-            rule_cmp: f.rule_cmp || "eq"},
-           () => { PF.form = null; });
+    const party = pfPartyOf(f);
+    if(!f.category && !party) return;
+    const body = {op: "tag", id: f.id, category: f.category || "", note: f.note || "",
+                  rule_text: f.rule ? f.rule_text : "",
+                  rule_amount: f.rule && f.rule_cmp && f.rule_cmp !== "any" ? f.rule_amount : "",
+                  rule_cmp: !f.rule_cmp || f.rule_cmp === "any" ? "eq" : f.rule_cmp};
+    if(party) body.party = party;
+    pfSend(body, () => { PF.form = null; });
     return;
   }
   else if(act === "catadd" && PF.form && PF.form.newcat){
@@ -18401,7 +18485,8 @@ document.addEventListener("change", e => {
   if(f && PF.form){
     PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
     /* the tag form's Save waits for a category, and its match count follows the words */
-    if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp"].includes(f.dataset.pff))
+    if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp",
+                                  "who", "kid", "dir"].includes(f.dataset.pff))
       finRender();
   }
   const up = e.target.closest && e.target.closest("[data-pffile]");
