@@ -2042,7 +2042,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-185507";
+const APP_BUILD = "20261026-190058";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17893,10 +17893,13 @@ function pfTxnRow(s, t){
   const tag = t.category === "unsorted" ? "" : `<span class="fin-tag">${esc(pfLabel(s, t.category))}</span>`;
   const part = t.part_of ? " · part of " + finMoney(Math.abs(t.total)) : "";
   return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
-    `<div><div class="fin-rt">${esc(t.desc)}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + part + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
+    `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + part + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
 }
+/* 2026-10-26: a "PAYPAL MSP" row on TD shows who was paid, from PayPal's own history */
+function pfTitle(t){ return t.vendor || t.desc; }
+function pfVia(t){ return t.vendor ? " · via PayPal" : ""; }
 function pfCatOptions(s, picked){
   const spend = (s.labels || []).filter(l => l.kind === "spend");
   const other = (s.labels || []).filter(l => l.kind !== "spend" && l.id !== "unsorted");
@@ -17921,8 +17924,8 @@ function pfSplitLeftText(){
 function pfSplitForm(s, t){
   const f = PF.form;
   return '<div class="fin-form">' +
-    `<div class="fin-rt">${esc(t.desc)}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + " · " + finMoney(Math.abs(f.total)))}</div>` +
+    `<div class="fin-rt">${esc(pfTitle(t))}</div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + " · " + finMoney(Math.abs(f.total)))}</div>` +
     '<div class="fin-note">Split it into parts, each with its own category.</div>' +
     f.parts.map((p, i) => '<div class="pf-part">' +
       `<label>Amount<input type="text" data-pfp="amount" data-i="${i}" value="${finAttr(p.amount)}" ` +
@@ -17948,8 +17951,8 @@ function pfTagForm(s, t){
     x.desc.toUpperCase().includes(text) && (!amt || Math.abs(Math.abs(x.amount) - amt) < 0.005)).length : 0;
   const these = amt ? "these words and this amount" : "these words";
   return '<div class="fin-form">' +
-    `<div class="fin-rt">${esc(t.desc)}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + " · " + pfAmt(t.amount))}</div>` +
+    `<div class="fin-rt">${esc(pfTitle(t))}</div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + " · " + pfAmt(t.amount))}</div>` +
     `<label>Category<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
     `<label class="pf-check"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}>` +
     "Every payment whose description has these words, from now on</label>" +
