@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-212837";
+const APP_BUILD = "20261026-220041";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17891,6 +17891,8 @@ function pfBudget(d){
    plan out (personal.schedule); this page lists it, and takes today's real balances. */
 function pfStepText(x){
   const a = finMoney(x.amount);
+  /* 2026-10-27: a payment that waits for a pay landing before the due date */
+  if(x.do === "pay" && x.when) return "On " + pfDay(x.when) + ", when your pay is in: pay " + a + " to " + x.to;
   if(x.do === "pay") return "Pay " + a + " to " + x.to + " from " + x.from;
   if(x.do === "borrow") return "Draw " + a + " from the " + x.from + " into " + x.to;
   if(x.do === "overdraft") return "Let the overdraft cover " + a + " in " + x.to;
@@ -17916,6 +17918,11 @@ function pfWhen(s){
     : `TD's and Wealthsimple's month-end statements are out by then (upload them first), and the ${esc(card)} ` +
       `payment still lands before its ${esc(finDate(al.card_due))} due date. Then every month on about the 3rd.`) + "</div>";
 }
+function pfSpan(months){
+  const m = Number(months) || 0;
+  if(m < 1) return Math.max(1, Math.round(m * 4.35)) + " week" + (Math.round(m * 4.35) > 1 ? "s" : "");
+  return (Math.round(m * 10) / 10) + " month" + (m >= 1.05 ? "s" : "");
+}
 function pfNowCard(s, title){
   const typedAll = String((s.chequing || {}).from || "").startsWith("typed");
   const kept = s.crypto_kept;
@@ -17928,9 +17935,14 @@ function pfNowCard(s, title){
       `<div><div class="fin-ra">${esc(finMoney(x.amount))}</div></div></div>`).join("")
       : '<div class="fin-note" style="padding:10px 13px">Nothing to move — no spare money beyond what the ' +
         "bills and the buffer need.</div>") + "</div></div>" +
-    (kept ? `<div class="fin-note">Your crypto could pay ${esc(finMoney(kept.amount))} more off the ${esc(kept.debt)}: ` +
-      `it would save about ${esc(finMoney(kept.saves))} interest over ${esc(kept.months)} months, but selling now and ` +
-      `buying back for GOLDbot costs about ${esc(finMoney(kept.costs))} — so it stays.</div>` : "") +
+    /* 2026-10-26: the interest crypto saves runs only until his pay would clear that debt anyway */
+    (kept ? `<div class="fin-note">Your crypto could pay ${esc(finMoney(kept.amount))} more off the ${esc(kept.debt)}. ` +
+      (kept.by_pay ? `Your pay clears that in about ${esc(pfSpan(kept.months))} anyway, so it would only save ` +
+        `about ${esc(finMoney(kept.saves))} of interest`
+        : `Your pay won't clear it before GOLDbot's real money (${esc(pfSpan(kept.months))}); until then it ` +
+          `would save about ${esc(finMoney(kept.saves))} of interest`) +
+      ` — selling now and buying back for GOLDbot costs about ${esc(finMoney(kept.costs))}. So it stays` +
+      (kept.by_pay ? ", and your pay does it.</div>" : ".</div>") : "") +
     /* Trevor: *"I'll actually do this when the Mastercard statement comes out. And i'll also
        update all the statements"* -- so it says which statement each balance is from */
     (typedAll ? "" : '<div class="fin-note">From your newest statements: ' +
@@ -17977,6 +17989,19 @@ function pfSchedule(d){
   if((s.income || []).length)
     h += '<div class="section-label">Pay coming in</div>' + finCard(finKv(s.income.map(x =>
       [x.name, finMoney(x.amount), "", x.every + (x.next.length ? " · next " + x.next.map(finDate).join(", ") : "")])));
+  /* 2026-10-27 -- INCOME VS EXPENSES. Trevor: "You need to look at income vs expenses." What
+     his pay leaves a month is how fast it clears a debt -- which decides if crypto is worth selling */
+  const fl = s.flow;
+  if(fl){
+    h += '<div class="section-label">Pay vs spending, a month</div>' + finCard(finKv([
+      ["Pay in", finMoney(fl.income), "", "your average, from the chequing statements"],
+      ["Bills", finMoney(-fl.bills), "", "the Budget tab's monthly bills"],
+      ...(fl.keep > 0.005 ? [["Kept in chequing", finMoney(-fl.keep), "", "from the Budget tab"]] : []),
+      ["Card spending", finMoney(-fl.card), "", "new spending on the card each month"],
+      ["Other chequing spending", finMoney(-fl.other), "", "not a bill — the same average the buffer uses"],
+      ["Left for the debts", finMoney(fl.spare), "sum",
+        fl.spare < 0 ? "spending is more than pay" : "what your pay clears each month", finTone(fl.spare)]]));
+  }
   /* TODAY'S BALANCES + THE RULES */
   const f = PF.form && PF.form.kind === "sched" ? PF.form : null;
   h += '<div class="section-label">Balances and rules</div>';
@@ -17999,7 +18024,7 @@ function pfSchedule(d){
       `<div class="fin-note">Overdraft: ${esc(finMoney(od.limit, false))} at about ${esc(od.rate)}% — its ` +
       `${esc(finMoney(od.fee))} O.D.P. fee is charged every month anyway, so only its interest counts. ` +
       `Crypto: ${esc(c.sell_pct)}% to sell and ${esc(c.buy_pct)}% to buy back for GOLDbot (your own last trades); ` +
-      `sold only for a debt whose interest over ${esc(c.months)} months beats that` +
+      `sold only for a debt whose interest — until your pay would clear it, at most ${esc(c.months)} months — beats that` +
       `${(c.worth_for || []).length ? " (" + esc(c.worth_for.join(", ")) + ")" : " (none now)"}.` +
       (s.kids_resp ? ` ${esc(finMoney(s.kids_resp))} of Wealthsimple is the kids' RESP money — never used.` : "") +
       (g.beats_loc ? " GOLDbot is earning more than the line of credit costs: drawing on it for GOLDbot now pays."
