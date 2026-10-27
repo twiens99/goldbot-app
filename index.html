@@ -2042,7 +2042,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-183321";
+const APP_BUILD = "20261026-185507";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -16763,7 +16763,7 @@ const FIN_KINDS = {
   profit:      {label: "Trading profit / loss", fields: ["currency", "account"]},
   copy_share:  {label: "Copy-trader share", fields: ["currency", "account"]},
   expense:     {label: "Expense", fields: ["paid_by", "currency", "category"]},
-  resp:        {label: "RESP contribution", fields: ["earmark"]},
+  resp:        {label: "RESP contribution", fields: ["earmark", "from"]},
   resp_payout: {label: "RESP payout", fields: ["earmark", "currency", "account"]},
   loan:        {label: "Loan (no cash moved)", fields: ["loan"]},
   balance:     {label: "Balance check", fields: ["currency", "account"]},
@@ -16955,13 +16955,13 @@ function finFormFrom(t){
              amount_to: t.amount_to != null ? String(t.amount_to) : "",
              source: t.source || "", to: t.to || "", paid_by: t.paid_by || "",
              category: t.category || "", earmark: t.earmark || "", loan: t.loan || "",
-             recurring: t.recurring || ""};
+             from: t.from || "", recurring: t.recurring || ""};
   return finFix(f);
 }
 function finFormData(f){
   const want = (FIN_KINDS[f.kind] || {fields: []}).fields;
   const d = {kind: f.kind, date: f.date, amount: String(f.amount).replace(/[,$\s]/g, "")};
-  ["account", "to_account", "source", "to", "paid_by", "earmark", "loan", "category"].forEach(k => {
+  ["account", "to_account", "source", "to", "paid_by", "earmark", "loan", "category", "from"].forEach(k => {
     if(want.includes(k) && f[k]) d[k] = f[k];
   });
   if(want.includes("currency")) d.currency = finCurrency(f);
@@ -17017,6 +17017,8 @@ function finFormHtml(){
   if(want.includes("source"))
     h += "<label>Where it came from" + finSelect("source", f.source,
       o.loans.map(l => [l.id, l.name + " — a loan to GOLDbot"]).concat(
+      /* 2026-10-26: a kid's RESP money moved into GOLDbot -- owed to the kid, earning their share */
+      o.earmarks.map(e => [e.id, e.name + " — the kid's money, into GOLDbot"]),
       [["opening", "Opening balance"], ["other", "Other — a gift, not owed back"]])) + "</label>";
   if(want.includes("to"))
     h += "<label>What it is" + finSelect("to", f.to,
@@ -17024,6 +17026,9 @@ function finFormHtml(){
       [["draw", "A draw — living expenses, not a repayment"]])) + "</label>";
   if(want.includes("earmark"))
     h += "<label>RESP" + finSelect("earmark", f.earmark, o.earmarks.map(e => [e.id, e.name])) + "</label>";
+  if(want.includes("from"))
+    h += "<label>Paid from" + finSelect("from", f.from || "", [["", "Your own money — not GOLDbot's"]].concat(
+      o.loans.map(l => [l.id, "Out of " + l.name + "'s loan, inside GOLDbot"]))) + "</label>";
   if(want.includes("loan"))
     h += "<label>Loan" + finSelect("loan", f.loan, o.loans.map(l => [l.id, l.name])) + "</label>";
   const amtLabel = f.kind === "balance" ? "Actual balance"
@@ -17072,14 +17077,17 @@ function finRowTitle(t){
   switch(t.kind){
     case "deposit":
       return "Deposit" + (t.source === "opening" ? " · opening balance"
-        : t.source === "other" ? " · gift" : " · from " + finName("loans", t.source));
+        : t.source === "other" ? " · gift"
+        : " · from " + (finOpts().earmarks.some(e => e.id === t.source) ? finName("earmarks", t.source)
+                                                                         : finName("loans", t.source)));
     case "withdrawal":
       return "Withdrawal" + (t.to === "draw" ? " · draw" : " · repays " + finName("loans", t.to));
     case "transfer": return "Transfer";
     case "profit": return Number(t.amount) < 0 ? "Trading loss" : "Trading profit";
     case "copy_share": return "Copy-trader share";
     case "expense": return "Expense · " + (t.category || "other");
-    case "resp": return "RESP · " + finName("earmarks", t.earmark);
+    case "resp": return "RESP · " + finName("earmarks", t.earmark) +
+      (t.from ? " · out of " + finName("loans", t.from) + "'s loan" : "");
     case "resp_payout": return "RESP payout · " + finName("earmarks", t.earmark);
     case "loan": return "Loan · " + finName("loans", t.loan);
     case "balance": return "Balance check";
@@ -17220,10 +17228,11 @@ function renderFinance(){
     ["Expenses paid from the accounts", finMoney(b.expenses_from_accounts)],
     ["Total P&L", finMoney(d.total_pnl), "sum"],
     ["Expenses you paid (owed back)", finMoney(b.expenses_paid_by_loan)],
-    ["Interest on the loans", finMoney(b.interest)],
+    ["Interest on the loans", finMoney(b.interest)]].concat(
+    b.kids_share ? [["Kids' share of trading", finMoney(b.kids_share)]] : []).concat([
     ["Net profit", finMoney(d.net_profit), "sum", "", finTone(d.net_profit)],
-  ]) + `<div class="fin-note">Counting from ${esc(finDate(d.books_open, true))}, the day the books ` +
-       "opened. GOLDbot owns = net profit − money set aside or drawn since then " +
+  ])) + `<div class="fin-note">Counting from ${esc(finDate(d.books_open, true))}, the day the books ` +
+       "opened. GOLDbot owns = net profit − money drawn since then " +
        `(${esc(finMoney(d.distributions))}).</div>`);
 
   /* PERFORMANCE */
@@ -17234,8 +17243,9 @@ function renderFinance(){
     out += finCard('<div class="fin-note">Starts on the first live trading day — there is no ' +
       "trading history yet. Until then GOLDbot's running costs are " +
       `<b>${esc(finMoney(r.cost_per_month))}/month</b> in bills and ` +
-      `<b>${esc(finMoney(r.interest_per_month))}/month</b> in interest, and ` +
-      `<b>${esc(finMoney(r.resp_per_month))}/month</b> is set aside for the RESPs.</div>`);
+      `<b>${esc(finMoney(r.interest_per_month))}/month</b> in interest` +
+      (r.resp_per_month ? `, and you put <b>${esc(finMoney(r.resp_per_month))}/month</b> into the ` +
+        "kids' RESP accounts" : "") + ".</div>");
   }else{
     const bm = p.best_month, b4 = p.best_4w;
     out += finStats([
@@ -17287,11 +17297,27 @@ function renderFinance(){
       a.currency === "CAD" ? finMoney(a.balance) : finNum(a.balance) + " " + a.currency, "",
       a.currency === "CAD" ? "" : "= " + finMoney(a.cad) + " CAD"]).concat(
     [["Current value", finMoney(d.value), "sum"]])));
-  out += '<div class="section-label">Owed</div>' + finCard(finKv(
-    (d.earmarks || []).map(e => [e.name, finMoney(e.balance), "", "set aside inside the account"]).concat(
+  /* 2026-10-26 -- Trevor: each kid's RESP is its own account. Money in his
+     Wealthsimple is his, not owed by GOLDbot; money moved into GOLDbot is owed
+     to the kid and earns their share. A report from before this (no `outside`)
+     still shows the old way: set aside inside the account, owed. */
+  const ears = d.earmarks || [];
+  const kidsSplit = ears.some(e => e.outside != null);
+  const owedEars = kidsSplit
+    ? ears.filter(e => Math.abs(e.inside || 0) >= 0.005).map(e => [e.name + " — in GOLDbot", finMoney(e.inside), "",
+        e.earned ? "incl. " + finMoney(e.earned) + " earned" : ""])
+    : ears.map(e => [e.name, finMoney(e.balance), "", "set aside inside the account"]);
+  out += '<div class="section-label">Owed</div>' + finCard(finKv(owedEars.concat(
     (d.loans || []).map(l => [l.name + " · " + l.rate_pct + "%", finMoney(l.total), "",
       finMoney(l.principal) + " + " + finMoney(l.interest) + " interest"])).concat(
     [["Owed in total", finMoney(d.owed), "sum"]])));
+  if(kidsSplit && ears.length)
+    out += '<div class="section-label">Kids\' RESP accounts</div>' + finCard(finKv(
+      ears.map(e => [e.name, finMoney(e.balance), "",
+        (e.inside ? finMoney(e.outside) + " yours to hold · " + finMoney(e.inside) + " in GOLDbot"
+                  : "held in your Wealthsimple — not GOLDbot's")])) +
+      '<div class="fin-note">Each kid\'s own account, paid from your money. Moved into GOLDbot, it is ' +
+      "owed to the kid and earns their share of every trading day.</div>");
 
   /* COMING UP */
   const recs = d.recurring || [];
