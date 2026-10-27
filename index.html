@@ -2046,7 +2046,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-212420";
+const APP_BUILD = "20261026-212837";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17900,10 +17900,26 @@ function pfStepText(x){
    should I put into the mastercard right now, how much to put into the line of credit ... where
    it says What to pay, it should take the current balance."* One card, on the Budget tab (as
    its "what to pay") and here. */
+function pfDay(iso){
+  const d = new Date(String(iso) + "T12:00:00");
+  return isNaN(d) ? String(iso || "") : d.toLocaleDateString("en-CA", {weekday: "short"}) + ", " + finDate(iso);
+}
+/* 2026-10-26 -- Trevor: *"You tell me what date this should be done on."* */
+function pfWhen(s){
+  const al = s.allocation;
+  if(!al) return "";
+  const card = (s.card || {}).name || "card";
+  const lead = al.date > s.as_of ? `📅 Do this on <b>${esc(pfDay(al.date))}</b>`
+    : al.date === s.as_of ? "📅 <b>Today's the day</b>" : `📅 The day was ${esc(pfDay(al.date))} — do it now`;
+  return `<div class="fin-note">${lead} — ` + (al.before_statements
+    ? `before the month-end statements are out, so the ${esc(card)} payment still lands by its ${esc(finDate(al.card_due))} due date. Type today's balances for the ones not in yet.`
+    : `TD's and Wealthsimple's month-end statements are out by then (upload them first), and the ${esc(card)} ` +
+      `payment still lands before its ${esc(finDate(al.card_due))} due date. Then every month on about the 3rd.`) + "</div>";
+}
 function pfNowCard(s, title){
   const typedAll = String((s.chequing || {}).from || "").startsWith("typed");
   const kept = s.crypto_kept;
-  return `<div class="section-label">${esc(title)}</div>` +
+  return `<div class="section-label">${esc(title)}</div>` + pfWhen(s) +
     '<div class="card"><div class="fin-rows">' + (s.steps.length ? s.steps.map((x, i) =>
       '<div class="fin-row" style="cursor:default">' +
       `<div><div class="fin-rt">${esc((i + 1) + ". " + pfStepText(x))}</div>` +
