@@ -2048,7 +2048,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-225914";
+const APP_BUILD = "20261026-230732";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17165,6 +17165,35 @@ function finKv(rows){
     (sub ? `<span class="fin-s">${esc(sub)}</span>` : "") + "</div>").join("");
 }
 function finCard(inner){ return '<div class="card"><div class="card-in">' + inner + "</div></div>"; }
+/* 2026-10-27 -- BACK TO ZERO, under what GOLDbot owes. Trevor: *"I would like to know when
+   goldbot can pay that back to me. Thats the Truly Back to Zero number"* ... *"only will get
+   there once Goldbot actually starts making real money"*. His old PU Prime trading loss comes
+   from the Laptop's own books (PF), never from GOLDbot's -- no Laptop link, no card. */
+function finZeroCard(){
+  const z = (PF.data || {}).zero;
+  if(!z){
+    if(!PF.data && !PF.loading && pfBase()) setTimeout(() => pfLoad(), 0);
+    return "";
+  }
+  const pu = z.pu_prime || {};
+  /* Trevor: *"we can still simulate it tho with the demo account"* -- the demo's date is
+     the answer until real money gives one, marked as simulated */
+  const mon = iso => finMonth(String(iso).slice(0, 7));          /* years out: a month, not a day */
+  const when = z.reached ? "Reached ✓"
+    : z.ready && (z.growing || z.flat) ? mon(z.growing || z.flat) + (z.demo ? " (demo)" : "")
+    : "Once GOLDbot has a trading history";
+  const pace = !z.reached && z.ready && (z.growing || z.flat)
+    ? (z.growing ? "If the profit grows with the account: about " + mon(z.growing) + ". " : "") +
+      (z.flat ? "At a flat pace: about " + mon(z.flat) + ". " : "") +
+      (z.demo ? "Simulated with the demo account's trading — real money will set the real date."
+              : "From GOLDbot's real trading so far.")
+    : "";
+  return '<div class="section-label">Back to Zero</div>' + finCard(finKv([
+      ["Your PU Prime trading loss", finMoney(z.target), "sum",
+       `${finDate(pu.from)} – ${finDate(pu.to)}: ${pu.out_count} sends, ${pu.in_count} back, at what you paid for the USDC`],
+      ["GOLDbot pays it back", when, "", "when its net profit — after the bills, interest and the kids' share — reaches it"]]) +
+    (pace ? `<div class="fin-note">${esc(pace)}</div>` : ""));
+}
 function finHorizon(m){
   return m < 12 ? m + (m === 1 ? " month" : " months") : (m / 12) + ((m / 12) === 1 ? " year" : " years");
 }
@@ -17320,7 +17349,7 @@ function renderFinance(){
   out += '<div class="section-label">Owed</div>' + finCard(finKv(owedEars.concat(
     (d.loans || []).map(l => [l.name + " · " + l.rate_pct + "%", finMoney(l.total), "",
       finMoney(l.principal) + " + " + finMoney(l.interest) + " interest"])).concat(
-    [["Owed in total", finMoney(d.owed), "sum"]])));
+    [["Owed in total", finMoney(d.owed), "sum"]]))) + finZeroCard();
   if(kidsSplit && ears.length)
     out += '<div class="section-label">Kids\' RESP accounts</div>' + finCard(finKv(
       ears.map(e => [e.name, finMoney(e.balance), "",
@@ -18011,6 +18040,21 @@ function pfSchedule(d){
       ["Other chequing spending", finMoney(-fl.other), "", "not a bill or a one-off — the same average the buffer uses"],
       ["Left for the debts", finMoney(fl.spare), "sum",
         fl.spare < 0 ? "spending is more than pay" : "what your pay clears each month", finTone(fl.spare)]]));
+    /* 2026-10-27 -- THE SPENDING RATIO. Trevor: *"I want to know when I can curb my spending to
+       to point where I'm saving extra money ... Right now we're in the negative. And I want to
+       work towards the positive"* */
+    if(fl.ratio != null){
+      const over = fl.ratio > 100.05;
+      h += '<div class="section-label">Spending ratio</div>' + finCard(finKv([
+        ["Spending is", fl.ratio + "% of pay", "sum",
+         over ? "more than comes in — from the averages above" : "under your pay — the rest is saved",
+         over ? "lv-bad" : "lv-good"],
+        ...(fl.to_even > 0.005 ? [["To break even", "cut " + finMoney(fl.to_even) + " a month", "",
+          fl.card > 0 ? "about " + Math.round(100 * fl.to_even / fl.card) + "% of your card spending" : ""]] : []),
+        ...(fl.recent != null ? [["Your last 3 months", fl.recent + "%", "",
+          "what you really spent ÷ what you were paid — it moves first when you cut back"]] : [])]) +
+        pfRatioBars((fl.months || []).filter(m => m.r3 != null)));
+    }
     /* 2026-10-27 -- Trevor: *"add a list of the biggest payments in each average to the Pay vs
        spending card, tappable so I can mark one-offs from there."* Ticked, one leaves the list. */
     const big = fl.big || {}, sp = d.spending || {};
@@ -18099,6 +18143,24 @@ function pfTxnRow(s, t){
     `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
     `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + once + adds + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
+}
+/* the spending ratio, three months at a time, month by month: under the dashed 100% line is saving */
+function pfRatioBars(ms){
+  if(ms.length < 2) return "";
+  const top = Math.max(150, ...ms.map(m => m.r3));
+  const line = (100 / top * 100).toFixed(1);
+  const cols = ms.map(m => {
+    const hgt = Math.max(3, Math.round(m.r3 / top * 100));
+    return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px">' +
+      `<div style="font-size:.62rem;color:var(--faint)">${Math.round(m.r3)}</div>` +
+      '<div style="position:relative;height:90px;width:100%;display:flex;align-items:flex-end;justify-content:center">' +
+      `<div style="position:absolute;left:0;right:0;bottom:${line}%;border-top:1px dashed var(--faint)"></div>` +
+      `<div style="width:62%;height:${hgt}%;border-radius:3px 3px 0 0;background:var(${m.r3 > 100 ? "--bad" : "--good"})"></div></div>` +
+      `<div style="font-size:.62rem;color:var(--faint)">${esc(finMonth(m.month).slice(0, 3))}</div></div>`;
+  }).join("");
+  return '<div class="fin-note" style="margin-top:10px">Spending ÷ pay, three months at a time, by the month ' +
+    "it ends — under the dashed 100% line, you're saving.</div>" +
+    `<div style="display:flex;margin-top:6px" role="img" aria-label="Spending ratio by month">${cols}</div>`;
 }
 /* a payment the phone can open: the Spending tab's rows, or the Schedule's biggest-in-the-averages lists */
 function pfFindTxn(d, id){
