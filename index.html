@@ -1950,6 +1950,8 @@ button.pf-chip{cursor:pointer;}
 /* 2026-10-26 -- one payment split into parts */
 .pf-part{display:grid;grid-template-columns:1fr 1.6fr;gap:8px;align-items:end;padding-top:8px;border-top:1px solid var(--line);}
 .pf-part .pf-lnk{grid-column:1 / -1;justify-self:start;font-size:.8rem;}
+.pf-newcat{grid-column:1 / -1;display:flex;flex-direction:column;gap:8px;padding:10px;
+  border:1px dashed var(--line);border-radius:9px;}
 </style>
 
 <div class="app">
@@ -2042,7 +2044,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-190058";
+const APP_BUILD = "20261026-190707";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -17906,7 +17908,23 @@ function pfCatOptions(s, picked){
   const opt = l => `<option value="${finAttr(l.id)}"${picked === l.id ? " selected" : ""}>${esc(l.label)}</option>`;
   return (picked ? "" : '<option value="" selected>Pick one…</option>') +
     '<optgroup label="Spending">' + spend.map(opt).join("") + "</optgroup>" +
-    '<optgroup label="Not spending">' + other.map(opt).join("") + "</optgroup>";
+    '<optgroup label="Not spending">' + other.map(opt).join("") + "</optgroup>" +
+    /* 2026-10-26 -- Trevor: *"add an option to make a new sorting Catagory"* */
+    `<option value="__new"${picked === "__new" ? " selected" : ""}>+ New category…</option>`;
+}
+function pfNewCat(){
+  const n = PF.form.newcat || (PF.form.newcat = {label: "", kind: "spend", err: ""});
+  return '<div class="pf-newcat">' +
+    `<label>New category<input type="text" class="pf-in" data-pfn="label" value="${finAttr(n.label)}" ` +
+    'maxlength="40" autocomplete="off" placeholder="e.g. Auto Repair"></label>' +
+    '<label>It is<select class="pf-sel" data-pfn="kind">' +
+    [["spend", "Spending"], ["transfer", "Not spending — moving my own money"], ["income", "Money coming in"]]
+      .map(([v, l]) => `<option value="${v}"${n.kind === v ? " selected" : ""}>${l}</option>`).join("") +
+    "</select></label>" +
+    (n.err ? `<div class="fin-err">${esc(n.err)}</div>` : "") +
+    '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-pf="catadd"${PF.busy ? " disabled" : ""}>Add category</button>` +
+    '<button type="button" class="fin-btn" data-pf="catcancel">Never mind</button></div></div>';
 }
 /* 2026-10-26 -- Trevor: *"My Rent is exactly 1200 a month ... The extra 86 is
    this one is for electricity. So it would be nice to be able to split a
@@ -17931,6 +17949,7 @@ function pfSplitForm(s, t){
       `<label>Amount<input type="text" data-pfp="amount" data-i="${i}" value="${finAttr(p.amount)}" ` +
       'inputmode="decimal" autocomplete="off"></label>' +
       `<label>Category<select class="pf-sel" data-pfp="category" data-i="${i}">${pfCatOptions(s, p.category)}</select></label>` +
+      (p.category === "__new" ? pfNewCat() : "") +
       (f.parts.length > 2 ? `<button type="button" class="pf-lnk" data-pf="splitrm" data-m="${i}">Remove this part</button>` : "") +
       "</div>").join("") +
     `<div class="fin-note" id="pf-split-left">${esc(pfSplitLeftText())}</div>` +
@@ -17946,28 +17965,38 @@ function pfSplitForm(s, t){
 function pfTagForm(s, t){
   const f = PF.form;
   const text = String(f.rule_text || "").trim().toUpperCase();
-  const amt = f.rule && f.rule_amt ? pfDollars(f.rule_amount) : 0;      /* 2026-10-26: "exactly $1,200" */
+  /* 2026-10-26: "exactly $1,200", then "above 100 bucks ... under 100 bucks" */
+  const amt = f.rule && f.rule_amt ? pfDollars(f.rule_amount) : 0;
+  const test = f.rule_cmp || "eq";
+  const amtOk = x => {
+    const a = Math.abs(x.amount);
+    return !amt || (test === "gt" ? a > amt + 0.004 : test === "lt" ? a < amt - 0.004 : Math.abs(a - amt) < 0.005);
+  };
   const more = text.length >= 3 ? (s.txns || []).filter(x => x.id !== t.id && x.category === "unsorted" &&
-    x.desc.toUpperCase().includes(text) && (!amt || Math.abs(Math.abs(x.amount) - amt) < 0.005)).length : 0;
-  const these = amt ? "these words and this amount" : "these words";
+    (x.desc + " " + (x.vendor || "")).toUpperCase().includes(text) && amtOk(x)).length : 0;
+  const these = amt ? "these words and that amount" : "these words";
   return '<div class="fin-form">' +
     `<div class="fin-rt">${esc(pfTitle(t))}</div>` +
     `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + " · " + pfAmt(t.amount))}</div>` +
     `<label>Category<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
+    (f.category === "__new" ? pfNewCat() : "") +
     `<label class="pf-check"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}>` +
     "Every payment whose description has these words, from now on</label>" +
     `<input type="text" class="pf-in" data-pff="rule_text" value="${finAttr(f.rule_text)}" autocomplete="off" ` +
     'autocapitalize="characters" spellcheck="false">' +
     (f.rule ? `<label class="pf-check"><input type="checkbox" data-pff="rule_amt"${f.rule_amt ? " checked" : ""}>` +
-      "Only when the amount is exactly</label>" +
-      (f.rule_amt ? `<input type="text" class="pf-in" data-pff="rule_amount" value="${finAttr(f.rule_amount)}" ` +
-        'inputmode="decimal" autocomplete="off">' : "") : "") +
+      "Only when the amount is</label>" +
+      (f.rule_amt ? '<div class="fin-two"><select class="pf-sel" data-pff="rule_cmp">' +
+        [["eq", "exactly"], ["gt", "more than"], ["lt", "less than"]]
+          .map(([v, l]) => `<option value="${v}"${test === v ? " selected" : ""}>${l}</option>`).join("") +
+        `</select><input type="text" class="pf-in" data-pff="rule_amount" value="${finAttr(f.rule_amount)}" ` +
+        'inputmode="decimal" autocomplete="off"></div>' : "") : "") +
     `<div class="fin-note">${more ? esc(more) + " more unsorted payment" + (more === 1 ? "" : "s") +
       " match " + these + " today." : "No other unsorted payment matches " + these + " today."} ` +
     "A rule also sorts every future statement.</div>" +
     `<label>Note<input type="text" data-pff="note" value="${finAttr(f.note)}" maxlength="200"></label>` +
     '<div class="fin-acts">' +
-    `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || !f.category ? " disabled" : ""}>` +
+    `<button type="button" class="fin-btn gold" data-pf="tagsave"${PF.busy || !f.category || f.category === "__new" ? " disabled" : ""}>` +
     `${PF.busy ? "Saving…" : "Save"}</button>` +
     `<button type="button" class="fin-btn" data-pf="splitopen" data-id="${finAttr(t.id)}">Split…</button>` +
     '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div>';
@@ -18283,16 +18312,38 @@ document.addEventListener("click", e => {
     }else{
       PF.form = {kind: "tag", id: t.id, category: t.category === "unsorted" ? "" : t.category,
                  rule: t.category === "unsorted", rule_text: t.rule_text.includes("•") ? "" : t.rule_text,
-                 rule_amt: false, rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || ""};
+                 rule_amt: false, rule_cmp: "eq", rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || ""};
     }
   }
   else if(act === "tagsave" && PF.form){
     const f = PF.form;
     if(!f.category) return;
     pfSend({op: "tag", id: f.id, category: f.category, note: f.note || "",
-            rule_text: f.rule ? f.rule_text : "", rule_amount: f.rule && f.rule_amt ? f.rule_amount : ""},
+            rule_text: f.rule ? f.rule_text : "", rule_amount: f.rule && f.rule_amt ? f.rule_amount : "",
+            rule_cmp: f.rule_cmp || "eq"},
            () => { PF.form = null; });
     return;
+  }
+  else if(act === "catadd" && PF.form && PF.form.newcat){
+    const n = PF.form.newcat;
+    if(String(n.label || "").trim().length < 2){ n.err = "Give it a name."; }
+    else{
+      /* made on the Laptop, then picked where "+ New category…" was chosen */
+      pfSend({op: "category", label: n.label, kind: n.kind || "spend"}, out => {
+        const f = PF.form;
+        if(!f) return;
+        if(f.kind === "tag") f.category = out.id;
+        else (f.parts || []).forEach(p => { if(p.category === "__new") p.category = out.id; });
+        f.newcat = null;
+      });
+      return;
+    }
+  }
+  else if(act === "catcancel" && PF.form){
+    const f = PF.form;
+    if(f.kind === "tag") f.category = "";
+    else (f.parts || []).forEach(p => { if(p.category === "__new") p.category = ""; });
+    f.newcat = null;
   }
   else if(act === "splitopen"){
     const t = ((d.spending || {}).txns || []).find(x => x.id === id);
@@ -18330,19 +18381,27 @@ function pfPartInput(e){
   if(part) part[p.dataset.pfp] = p.value;
   const el = document.getElementById("pf-split-left");
   if(el) el.textContent = pfSplitLeftText();
+  if(e.type === "change" && p.dataset.pfp === "category" && p.value === "__new") finRender();
+}
+/* the new-category box: kept on the form, no re-render while typing */
+function pfNewCatInput(e){
+  const n = e.target.closest && e.target.closest("[data-pfn]");
+  if(n && PF.form && PF.form.newcat) PF.form.newcat[n.dataset.pfn] = n.value;
 }
 document.addEventListener("input", e => {
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
   pfPartInput(e);
+  pfNewCatInput(e);
 });
 document.addEventListener("change", e => {
   pfPartInput(e);
+  pfNewCatInput(e);
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form){
     PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
     /* the tag form's Save waits for a category, and its match count follows the words */
-    if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount"].includes(f.dataset.pff))
+    if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp"].includes(f.dataset.pff))
       finRender();
   }
   const up = e.target.closest && e.target.closest("[data-pffile]");
