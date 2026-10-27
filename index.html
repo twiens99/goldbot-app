@@ -2048,7 +2048,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261026-224635";
+const APP_BUILD = "20261026-225914";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -18011,6 +18011,20 @@ function pfSchedule(d){
       ["Other chequing spending", finMoney(-fl.other), "", "not a bill or a one-off — the same average the buffer uses"],
       ["Left for the debts", finMoney(fl.spare), "sum",
         fl.spare < 0 ? "spending is more than pay" : "what your pay clears each month", finTone(fl.spare)]]));
+    /* 2026-10-27 -- Trevor: *"add a list of the biggest payments in each average to the Pay vs
+       spending card, tappable so I can mark one-offs from there."* Ticked, one leaves the list. */
+    const big = fl.big || {}, sp = d.spending || {};
+    const group = (title, rows) => rows && rows.length
+      ? `<div class="pf-wk" style="padding:10px 13px 0">${esc(title)}</div>` + rows.map(t => pfTxnRow(sp, t)).join("") : "";
+    if((big.other || []).length || (big.card || []).length){
+      const oo = fl.one_offs || {};
+      h += '<div class="section-label">Biggest in these averages</div>' +
+        '<div class="card"><div class="fin-rows">' +
+        '<div class="fin-note" style="padding:10px 13px 0">Tap one that won\'t repeat and tick One-off: it leaves the ' +
+        "average (and this list)." + (oo.count ? ` ${esc(oo.count)} one-off${oo.count > 1 ? "s" : ""} ` +
+          `(${esc(finMoney(oo.total))}) left out so far.` : "") + "</div>" +
+        group("Other chequing spending", big.other) + group("Card spending", big.card) + "</div></div>";
+    }
   }
   /* TODAY'S BALANCES + THE RULES */
   const f = PF.form && PF.form.kind === "sched" ? PF.form : null;
@@ -18080,10 +18094,16 @@ function pfTxnRow(s, t){
   const tag = t.category === "unsorted" ? "" : `<span class="fin-tag">${esc(pfLabel(s, t.category))}</span>`;
   const part = t.part_of ? " · part of " + finMoney(Math.abs(t.total)) : "";
   const once = t.one_off ? " · one-off" : "";
+  const adds = t.adds ? " · adds " + finMoney(t.adds) + " a month" : "";        /* the Schedule's biggest lists */
   return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
     `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
-    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + once + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
+    `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + once + adds + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
+}
+/* a payment the phone can open: the Spending tab's rows, or the Schedule's biggest-in-the-averages lists */
+function pfFindTxn(d, id){
+  const big = (((d.schedule || {}).flow || {}).big) || {};
+  return [...((d.spending || {}).txns || []), ...(big.other || []), ...(big.card || [])].find(x => x.id === id);
 }
 /* 2026-10-26: a "PAYPAL MSP" row on TD shows who was paid, from PayPal's own history */
 function pfTitle(t){ return t.vendor || t.desc; }
@@ -18575,7 +18595,7 @@ document.addEventListener("click", e => {
     return;
   }
   else if(act === "tagopen"){
-    const t = ((d.spending || {}).txns || []).find(x => x.id === id);
+    const t = pfFindTxn(d, id);
     if(!t) return;
     if(t.part_of){                      /* a part of a split: edit the whole split */
       PF.form = {kind: "split", id: t.part_of, row: t.id, total: t.total, was: true, err: "",
@@ -18637,7 +18657,7 @@ document.addEventListener("click", e => {
     f.newcat = null;
   }
   else if(act === "splitopen"){
-    const t = ((d.spending || {}).txns || []).find(x => x.id === id);
+    const t = pfFindTxn(d, id);
     if(!t) return;
     PF.form = {kind: "split", id: t.id, row: t.id, total: t.amount, was: false, err: "",
                parts: [{amount: "", category: (PF.form && PF.form.category) || "", note: ""},
