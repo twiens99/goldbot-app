@@ -1054,6 +1054,10 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .optr.ro:active{transform:none;}
 /* OUT OF BAND, on the pass itself, so it survives whichever columns are shown. */
 .optp.oob{color:var(--warn);}
+/* 2026-10-29 -- the Original row (the Original chip): ranked with the passes, tinted so it never reads as one. */
+.optr.orig{background:var(--tonal);}
+.optr.orig .optp{color:var(--dim);}
+.origcap{font-size:.62rem;color:var(--faint);padding:3px 3px 6px;overflow-wrap:anywhere;}
 .mglgr .nm{flex:1;min-width:0;color:var(--text);overflow-wrap:anywhere;}
 .mgdash{display:inline-block;width:11px;height:2px;border-radius:1px;flex:none;}
 /* The count of what is PLOTTED, on a group chip that is otherwise about what is
@@ -2050,7 +2054,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261027-151304";
+const APP_BUILD = "20261029-123443";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5654,7 +5658,8 @@ function pickCard(pk){
             since: pk.since})}
         </div>
       </div>
-    </article>` + ((pk.passes || []).length ? optimizeBadge(t, 1) : "");
+    </article>` + ((pk.passes || []).length
+      ? optimizeBadge(t, 1, {key: {regime: pk.regime, bucket_id: pk.bucket_id}}) : "");
 }
 
 /* 2026-10-17 -- WHICH BUCKET, AS A CHIP. Trevor: *"In the active tab. I want to know what bucket its in. Let's add Low
@@ -7055,7 +7060,8 @@ const OPT_COLS = [["result", "Result", 1, 3], ["pf", "PF", 1, 2],
                   ["payoff", "ExPayoff", 1, 2]];
 const OPT_SLICES = [["top", "Top 20"], ["bottom", "Bottom 20"],
                     ["target", "Closest to target"]];
-const OPTSTATE = { slice: "top", cols: ["result"], open: false };
+/* `orig` (2026-10-29): the Original chip -- the bucket's own pre-sweep numbers ranked in with the passes. */
+const OPTSTATE = { slice: "top", cols: ["result"], open: false, orig: false };
 /* The pass chosen on THIS card, until something sends it. Keyed by round so two
    jobs open in one session cannot inherit each other's choice. */
 let OPT_PICK = {};
@@ -7131,7 +7137,9 @@ function optCounts(d, split){
 const optSlices = cnt => OPT_SLICES.filter(([k]) => k !== "target" || !cnt.cut || cnt.cut.band);
 const optState = (st, cnt) => optSlices(cnt).some(([k]) => k === st.slice) ? st : Object.assign({}, st, {slice: "top"});
 
-function optPasses(valid, d, st){
+/* `full` (2026-10-29): the whole sheet in this slice's order, uncut -- where the Original row ranks when its place is
+   outside the 20 shown. */
+function optPasses(valid, d, st, full){
   st = st || OPTSTATE;      // 2026-10-19 -- the live table has its own (LIVEOPT)
   const rows = valid.slice();
   const cad = d.cadence || {};
@@ -7142,8 +7150,8 @@ function optPasses(valid, d, st){
     /* Nearest the middle of the band, and the columns are deliberately not
        consulted -- this slice IS a ranking, and it is the one the cadence gate
        actually cares about. */
-    return rows.sort((a, b) =>
-      Math.abs(Number(a.trades) - mid) - Math.abs(Number(b.trades) - mid)).slice(0, 20);
+    rows.sort((a, b) => Math.abs(Number(a.trades) - mid) - Math.abs(Number(b.trades) - mid));
+    return full ? rows : rows.slice(0, 20);
   }
   /* MASTER FIRST, THEN THE REST AS TIEBREAKS -- left to right, exactly as they
      are drawn. */
@@ -7159,6 +7167,7 @@ function optPasses(valid, d, st){
      Trevor: *"Bottom 20 would give the bottom 20 of the entire optimize sheet."*
      Worst first, because when you ask for the bottom the very worst is the row
      you came to see. */
+  if(full) return rows;     // best first, whichever slice -- a rank reads the same from either end
   return st.slice === "bottom" ? rows.slice(-20).reverse() : rows.slice(0, 20);
 }
 
@@ -7189,11 +7198,14 @@ const LIVEOPT = {slice: "top", cols: ["result", "pf"], open: false};
    that was a one-year test). The sweep's Result is the fitness and a bucket test reports none, so the two are compared
    on PF, trades and net. null when the bucket has none. */
 const PRIOR_MIN_DAYS = 450;
-function priorBucketTest(f){
+/* `before` (2026-10-29): a report stamp ("20261029-011339") -- only runs launched before it, so a finished sweep's
+   Original row is the test before IT, not the round's own bucket test after. */
+function priorBucketTest(f, before){
   if(!f || !f.regime || f.bucket_id == null) return null;
   const span = c => c.t && c.t.length > 1 ? (c.t[c.t.length - 1] - c.t[0]) / 1440 : 0;
   const mine = CURVES.filter(c => c.scope === "bucket" && String(c.regime).toUpperCase() === String(f.regime).toUpperCase()
-                                  && String(c.bucket) === String(f.bucket_id) && span(c) >= PRIOR_MIN_DAYS)
+                                  && String(c.bucket) === String(f.bucket_id) && span(c) >= PRIOR_MIN_DAYS
+                                  && (!before || String(c.stamp || "") < before))
     .sort((a, b) => String(a.stamp).localeCompare(String(b.stamp)));
   return mine.length ? mine[mine.length - 1] : null;
 }
@@ -7261,6 +7273,26 @@ function livePassesCard(f){
         the round measures when it ends.</div>`));
 }
 
+/* 2026-10-29 -- THE ORIGINAL, AS A ROW OF THE PASS TABLE (the Original chip). Trevor: *"I need a way to check what the
+   original values are in that results slide. It should be in the table somewhere ... I want the same info there as the
+   table info."* A genetic sweep need not try the cell the bucket started from -- BULL 2800's alignment round ran 167
+   of 38,416 cells and the original was not one of them, so the table had nothing to hold its best pass against. The
+   original's numbers are the bucket test before this sweep was launched (same 2-year window, same ticks), mapped onto
+   the table's own columns: Result is the run's recovery factor (the sweep's Result is net / equity drawdown) and
+   Drawdown its equity drawdown % (eddpct). null when this bucket has no such test. A sweep with no `at` (a pass still
+   to be picked) has applied nothing yet, so its original is simply the bucket's newest test. */
+function sweepOriginal(t, where){
+  const k = where || {};
+  const at = String((t || {}).at || "");
+  const before = at.replace(/[-:]/g, "").replace("T", "-").slice(0, 15);   // "2026-10-29T01:13:39" -> its report stamp
+  if((at && before.length < 15) || !k.regime || k.bucket_id == null) return null;
+  const c = priorBucketTest({regime: k.regime, bucket_id: k.bucket_id}, before || null);
+  if(!c) return null;
+  const m = c.m || {};
+  return {c: c, p: {result: m.rec, pf: m.pf != null ? m.pf : c.pf, profit: m.net,
+                    trades: m.trades != null ? m.trades : c.trades, dd: m.eddpct, payoff: m.payoff}};
+}
+
 function optimizeBadge(t, nth, picked){
   const two = nth >= 2;
   const d = (t || {}).detail || {};
@@ -7286,7 +7318,14 @@ function optimizeBadge(t, nth, picked){
       outside its band.`);
   }
   const ost = optState(OPTSTATE, cnt);
-  const rows = optPasses(split.valid, d, ost);
+  /* 2026-10-29 -- THE ORIGINAL, RANKED WITH THE PASSES. Trevor: *"Should have a button beside top 20 bottom 20.
+     Original. And the original gets sorted just like all the others."* On, the bucket's pre-sweep numbers
+     (sweepOriginal) join the sheet as one more row and take their place in whichever slice and column order is set. */
+  const where = (picked && picked.key) || {};
+  const orig = OPTSTATE.orig ? sweepOriginal(t, where) : null;
+  const origP = orig ? Object.assign({}, orig.p, {pass: "Orig", orig: true}) : null;
+  const ranked = origP ? split.valid.concat([origP]) : split.valid;
+  const rows = optPasses(ranked, d, ost);
 
   const cad = d.cadence || {};
   /* 2026-10-01 -- THE PASS THIS JOB APPLIED WINS, when it came from THIS sweep.
@@ -7329,9 +7368,13 @@ function optimizeBadge(t, nth, picked){
      is its own grid, so an auto pass column made a 2-digit pass shift its row's numbers off the column. */
   const grid = `grid-template-columns:3.6em repeat(${cols.length},minmax(0,1fr))`;
 
+  /* Original sits with the slices but is not one: it toggles, whichever slice is on. Only where the bucket is known. */
   const slices = '<div class="mgrp">' + optSlices(cnt).map(([k, label]) =>
     `<button type="button" class="gch${ost.slice === k ? " on" : ""}" ` +
-    `data-optslice="${k}">${esc(label)}</button>`).join("") + '</div>';
+    `data-optslice="${k}">${esc(label)}</button>`).join("") +
+    (where.regime && where.bucket_id != null
+      ? `<button type="button" class="gch${OPTSTATE.orig ? " on" : ""}" data-optorig>Original</button>` : "") +
+    '</div>';
 
   /* The chip shows its POSITION when it is on -- 1 is the master. Without that
      the only way to know which column is sorting is to read the table and infer
@@ -7346,7 +7389,27 @@ function optimizeBadge(t, nth, picked){
   const head = `<div class="optr opth" style="${grid}"><span>Pass</span>` +
     cols.map(k => `<span>${esc(optColDef(k)[1])}</span>`).join("") + `</div>`;
 
+  /* The Original row is not a button: it is not a pass of this sweep, so it cannot be picked. */
+  const origRow = p => `<div class="optr ro orig" style="${grid}"><span class="optp">Orig</span>` +
+    cols.map(k => `<span>${esc(optFmt(p, k))}</span>`).join("") + `</div>`;
+  /* Outside the 20 shown, it still shows -- after them, with where it ranks (a cut sheet carries only part of the
+     sheet, so there it says only that it is outside). */
+  let origOut = "";
+  if(OPTSTATE.orig && where.regime && where.bucket_id != null){
+    if(!origP){
+      origOut = `<div class="origcap">No bucket test of this bucket before this sweep, so there is no original to show.</div>`;
+    }else{
+      const all = rows.indexOf(origP) < 0 ? optPasses(ranked, d, ost, true) : null;
+      origOut = (all ? origRow(origP) : "") +
+        `<div class="origcap">${all ? (cnt.cut ? "Outside this slice. "
+            : `Ranks ${(all.indexOf(origP) + 1).toLocaleString()} of ${all.length.toLocaleString()}, outside this slice. `) : ""}` +
+        `Orig = the bucket test before this sweep · ${esc(eqWhen(orig.c))} · ${
+          esc(humanize(orig.c.group) || orig.c.group)}. Not a pass of this sweep, so it cannot be picked.</div>`;
+    }
+  }
+
   const body = rows.map(p => {
+    if(p.orig) return origRow(p);
     const n = Number(p.trades);
     const is = chosen != null && String(p.pass) === chosen;
     return `<button type="button" class="optr${is ? " on" : ""}" style="${grid}" ` +
@@ -7378,7 +7441,7 @@ function optimizeBadge(t, nth, picked){
            "Table" chip under the variable list did not read as the way in to the passes. */
         OPTSTATE.open ? "Hide table" : `Table · all ${cnt.total.toLocaleString()} passes ›`}</button></div>` +
     (!OPTSTATE.open ? "" :
-      slices + heldNote + colChips + head + body +
+      slices + heldNote + colChips + head + body + origOut +
       (assigned && !assignedHeld && !rows.some(p => String(p.pass) === assigned)
         ? `<div class="vhcap" style="margin-top:6px">Pass ${esc(assigned)}, the one
              this round assigned, is not in this slice.</div>`
@@ -19097,6 +19160,7 @@ document.addEventListener("click", e => {
   }
   const os = e.target.closest("[data-optslice]");
   if(os){ OPTSTATE.slice = os.getAttribute("data-optslice"); repaintCards(); return; }
+  if(e.target.closest("[data-optorig]")){ OPTSTATE.orig = !OPTSTATE.orig; repaintCards(); return; }
   const oc = e.target.closest("[data-optcol]");
   if(oc){
     const k = oc.getAttribute("data-optcol");
