@@ -2054,7 +2054,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261029-123443";
+const APP_BUILD = "20261029-202628";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7392,19 +7392,22 @@ function optimizeBadge(t, nth, picked){
   /* The Original row is not a button: it is not a pass of this sweep, so it cannot be picked. */
   const origRow = p => `<div class="optr ro orig" style="${grid}"><span class="optp">Orig</span>` +
     cols.map(k => `<span>${esc(optFmt(p, k))}</span>`).join("") + `</div>`;
-  /* Outside the 20 shown, it still shows -- after them, with where it ranks (a cut sheet carries only part of the
-     sheet, so there it says only that it is outside). */
-  let origOut = "";
+  /* Outside the 20 shown, it still shows, with where it ranks (a cut sheet carries only part of the sheet, so there it
+     says only that it is outside). 2026-10-30 -- AT THE TOP, under the header. Trevor: *"I tried to get the original
+     value on a different result ... I couldn't seem to bring that up"* -- it drew after the 20th pass, a screen below
+     the chip, so on 14 of 34 rounds the tap seemed to do nothing. Inside the slice it keeps its sorted place. */
+  let origTop = "", origOut = "";
   if(OPTSTATE.orig && where.regime && where.bucket_id != null){
     if(!origP){
-      origOut = `<div class="origcap">No bucket test of this bucket before this sweep, so there is no original to show.</div>`;
+      origTop = `<div class="origcap">No bucket test of this bucket before this sweep, so there is no original to show.</div>`;
     }else{
       const all = rows.indexOf(origP) < 0 ? optPasses(ranked, d, ost, true) : null;
-      origOut = (all ? origRow(origP) : "") +
-        `<div class="origcap">${all ? (cnt.cut ? "Outside this slice. "
+      const cap = `<div class="origcap">${all ? (cnt.cut ? "Outside this slice. "
             : `Ranks ${(all.indexOf(origP) + 1).toLocaleString()} of ${all.length.toLocaleString()}, outside this slice. `) : ""}` +
         `Orig = the bucket test before this sweep · ${esc(eqWhen(orig.c))} · ${
           esc(humanize(orig.c.group) || orig.c.group)}. Not a pass of this sweep, so it cannot be picked.</div>`;
+      if(all) origTop = origRow(origP) + cap;
+      else origOut = cap;
     }
   }
 
@@ -7441,7 +7444,7 @@ function optimizeBadge(t, nth, picked){
            "Table" chip under the variable list did not read as the way in to the passes. */
         OPTSTATE.open ? "Hide table" : `Table · all ${cnt.total.toLocaleString()} passes ›`}</button></div>` +
     (!OPTSTATE.open ? "" :
-      slices + heldNote + colChips + head + body + origOut +
+      slices + heldNote + colChips + head + origTop + body + origOut +
       (assigned && !assignedHeld && !rows.some(p => String(p.pass) === assigned)
         ? `<div class="vhcap" style="margin-top:6px">Pass ${esc(assigned)}, the one
              this round assigned, is not in this slice.</div>`
