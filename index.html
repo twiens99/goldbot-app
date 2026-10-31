@@ -1636,6 +1636,9 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-gst{font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
 .lv-gst.on{color:var(--good);}
 .lv-gst.off{color:var(--faint);}
+/* the performance dial (2026-10-31, paper only) */
+.lv-gst.warm{color:var(--good);}
+.lv-gst.cold{color:var(--warn);}
 
 /* how close to a trade (2026-10-01) */
 .lv-ent{padding:12px 13px 8px;gap:8px;}
@@ -2054,7 +2057,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261029-202628";
+const APP_BUILD = "20261031-083819";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14265,6 +14268,7 @@ function lvSkeleton(){
     + '<div class="card lv-tin" id="lvmkt"></div>'
     + '<div class="lv-stats" id="lvstats"></div>'
     + '<div class="card lv-tin" id="lvtin"></div>'
+    + '<div class="card lv-tin" id="lvpd"></div>'
     + '<div class="card lv-ent" id="lvent"></div>'
     + '<div class="card" id="lvchartcard">'
     +   '<div class="lv-chead" id="lvchead"></div>'
@@ -14389,6 +14393,7 @@ function lvPaint(){
   lvPaintMarket();
   lvPaintStats();
   lvPaintTin();
+  lvPaintPerf();
   lvPaintEntry();
   lvPaintHead();
   lvPaintOpen();
@@ -14616,6 +14621,77 @@ function lvPaintTin(){
   }).join("");
   el.innerHTML = head + `<div class="lv-line">${line}</div>` +
                  (rows ? `<div class="lv-gates">${rows}</div>` : "");
+}
+
+/* 2026-10-31 -- THE PERFORMANCE DIAL, PAPER ONLY (catalog H13). Trevor: "Yes, Live page". The dial: while a
+   regime's trades that closed over its window sum below its line in R, that regime's new trades would risk a fraction
+   of the normal %. This card applies it to the VPS's closed trades -- each regime's state now, and the paper record
+   on the trades since the dial was fixed -- and changes nothing: the EA still sizes in full. The rule is private
+   (perf_dial, in the snapshot), so nothing here names its numbers. A trade's R = its profit over the risk of its
+   entry stop, the R the screen used. */
+function lvTradeR(t){
+  const cs = Number(LV.data && LV.data.symbol && LV.data.symbol.contract_size) || 100;
+  const p = Number(t.profit), risk = Math.abs(Number(t.entry_price) - Number(t.sl)) * Number(t.volume) * cs;
+  return Number(t.sl) > 0 && risk > 0 && isFinite(p) ? p / risk : null;
+}
+function lvPerfDef(){
+  let p = null;
+  try{ p = LAST_SNAPSHOT && LAST_SNAPSHOT.perf_dial; }catch(e){}
+  if(!p) return null;
+  const w = Number(p.window_days), c = Number(p.cold_below_r), m = Number(p.cold_mult);
+  const since = Date.parse(String(p.since || "") + "T00:00:00Z") / 1000;
+  return w > 0 && isFinite(c) && m >= 0 && m <= 1 && isFinite(since)
+    ? {w: w, c: c, m: m, since: since, id: String(p.catalog || "")} : null;
+}
+/* A regime's state at server time t: its trades that closed in (t - window, t]. None closed = not cold. */
+function lvPerfAt(trades, regime, t, def){
+  let sum = 0, n = 0;
+  trades.forEach(x => {
+    const xt = Number(x.exit_time);
+    if(x.regime === regime && x._r != null && xt <= t && xt > t - def.w * 86400){ sum += x._r; n++; }
+  });
+  return {sum: sum, n: n, cold: n > 0 && sum < def.c};
+}
+function lvPerfCalc(trades, now, def, regimes){
+  const tr = trades.map(x => Object.assign({}, x, {_r: lvTradeR(x)}));
+  const state = regimes.map(g => Object.assign({regime: g}, lvPerfAt(tr, g, now, def)));
+  const rec = {n: 0, cut: 0, real: 0, dial: 0};
+  tr.filter(x => x._r != null && Number(x.entry_time) >= def.since && regimes.indexOf(x.regime) >= 0)
+    .forEach(x => {
+      const s = lvPerfAt(tr, x.regime, Number(x.entry_time), def);
+      rec.n++; rec.real += x._r; rec.dial += s.cold ? def.m * x._r : x._r;
+      if(s.cold) rec.cut++;
+    });
+  return {state: state, rec: rec};
+}
+function lvPaintPerf(){
+  const el = document.getElementById("lvpd");
+  if(!el) return;
+  const d = LV.data, def = lvPerfDef();
+  const head = '<div class="lv-tinhead"><span class="lv-k">Performance dial</span>'
+             + '<span class="lv-pill off">Paper only</span></div>';
+  if(!def){ el.innerHTML = head + '<div class="lv-line">Waiting for its rule from the fleet snapshot.</div>'; return; }
+  if(!d){ el.innerHTML = head + '<div class="lv-line">Waiting for the VPS.</div>'; return; }
+  const p2 = n => String(n).padStart(2, "0"), sd = new Date(def.since * 1000);
+  const since = p2(sd.getUTCMonth() + 1) + "-" + p2(sd.getUTCDate());
+  const res = lvPerfCalc(lvTrades(), lvNow(), def, onRegimes(["BULL", "BEAR"]));
+  const frac = Math.round(def.m * 100) + " %";
+  const rr = v => `<span class="${lvTone(v)}">${lvSigned(v, 1)}R</span>`;
+  const rows = res.state.map(s =>
+    `<div class="lv-grow">${lvRegTag(s.regime)}<span></span><span></span>` +
+    `<span class="lv-gst ${s.cold ? "cold" : "warm"}">${s.cold ? "Cold" : "Warm"}</span>` +
+    `<span class="lv-gpf">${rr(s.sum)} on ${s.n} closed trade${s.n === 1 ? "" : "s"} · ` +
+    `${s.cold ? "would risk " + frac : "full risk"}</span></div>`).join("");
+  const r = res.rec;
+  const rec = r.n
+    ? `Since ${since}: ${r.n} trade${r.n === 1 ? "" : "s"}, ${r.cut} at ${frac}. Actual <b>${lvSigned(r.real, 1)}R</b>, `
+      + `with the dial <b>${lvSigned(r.dial, 1)}R</b>.`
+    : `Its record starts ${since}: no trades since then yet.`;
+  el.innerHTML = head
+    + `<div class="lv-line">Each regime's closed trades over the last ${def.w} days, in R. Cold = below `
+    + `${lvSigned(def.c, 1)}R. It only watches: the EA still trades full size.</div>`
+    + `<div class="lv-gates">${rows}</div>`
+    + `<div class="lv-line">${rec}${def.id ? " (" + esc(def.id) + ")" : ""}</div>`;
 }
 
 /* HOW CLOSE TO A TRADE (2026-10-01). Trevor: "I want to see how close we are to
