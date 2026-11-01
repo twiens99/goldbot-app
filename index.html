@@ -2064,7 +2064,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261101-151851";
+const APP_BUILD = "20261101-175813";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11066,8 +11066,9 @@ function scheffNextCard(){
           : b && b.rounds ? `~${scNum(b.passes)} passes \u00b7 ~${scHours(b.hours)}<br><span class="dim">${b.rounds} round${
             b.rounds === 1 ? "" : "s"} this size measured</span>` : "not measured yet"}</td></tr>`;
   });
-  out += '</table></div><div class="trk-note">Settings \u00d7 values each. A group over the cap runs in blocks of up to '
-    + '4 settings, each its own round; the group counts once its last block is done. The order is the built-in rotation '
+  out += '</table></div><div class="trk-note">Settings \u00d7 values each. A group over the cap runs in blocks, as many '
+    + 'settings each as fit under the cap (fewer blocks as the values narrow), each its own round; the group counts once '
+    + 'its last block is done. The order is the built-in rotation '
     + 'until the efficiency order is live.</div>';
   return out + '</div></div>';
 }
