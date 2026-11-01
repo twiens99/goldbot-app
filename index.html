@@ -648,6 +648,10 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .ck-t tr.guard td:first-child{color:var(--warn);}
 .ck-t td{color:var(--dim);}
 .ck-t tr.pass td,.ck-t tr.guard td{color:var(--text);}
+/* 2026-11-01 -- the Checkpoints page (renderCheckpoints): the full table folded under each card. */
+.ck-more summary{font-size:.72rem;color:var(--dim);cursor:pointer;padding:2px 0;}
+.ck-more[open] summary{margin-bottom:6px;}
+.ck .lrow{font-size:.76rem;gap:6px;font-variant-numeric:tabular-nums;}
 .chip.ckok{background:rgba(95,190,149,.14);color:var(--good);}
 .chip.ckhold{background:rgba(140,160,172,.14);color:var(--dim);}
 .sw-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 8px;}
@@ -1995,6 +1999,9 @@ button.pf-chip{cursor:pointer;}
     <!-- STATUS (2026-09-29), no tab: a home badge under Results. Each bucket's
          epoch, its groups, their variables. See renderStatus. -->
     <section class="page" id="page-status" hidden></section>
+    <!-- CHECKPOINTS (2026-11-01), no tab: the home badge under Status. Every checkpoint -- its question, how close
+         it came to passing, the groups that start it, its allotment, cancel. See renderCheckpoints. -->
+    <section class="page" id="page-checkpoints" hidden></section>
     <!-- 🔴 NO TAB OF ITS OWN. Trevor, 2026-09-19: the Schedule is a badge under
          Results on the home screen, not a section of Settings. A fifth tab would
          buy a permanent seat in a four-icon bar for something you open when you
@@ -2028,7 +2035,7 @@ button.pf-chip{cursor:pointer;}
 </div>
 
 <script>
-const EPOCH = "V3.1.0";
+const EPOCH = "V3.2.0";
 /* 2026-10-15 -- WHAT V3.1 DOES NOT RUN. RANGING is switched off (its own build later; opt_schedule.RANGING_ENABLED,
    its trees untouched on disk) and GLOBALS has no group left (GLOBALS_EXIT_HANDOVER retired). Both read as "off in
    V3.1" -- one quiet line -- never as stalled, empty or 0 of N. `d.regimes_off` when the publisher sends it; until
@@ -2057,7 +2064,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261031-083819";
+const APP_BUILD = "20261101-151851";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7620,6 +7627,7 @@ function ckText(s){
    "auto" = a switch with nothing to optimize, simply turned on. */
 function ckDecided(d){
   if(!d) return "";
+  if(d.choice === "cancel") return "cancelled";                       // 2026-11-01 -- see renderCheckpoints
   if(d.choice === "trial") return "trialling " + ckArm(d.pick);
   if(d.by === "auto-trial") return d.choice === "accept" ? "kept " + ckArm(d.pick) + " after its trial"
     : d.trial === "closed" ? "trial of " + ckArm(d.pick) + " closed" : "reverted " + ckArm(d.pick) + " after its trial";
@@ -7648,6 +7656,7 @@ const CK_CHIP = {"FLIP SUGGESTED": ["gold", "Flip suggested"], "MIXED": ["warn",
 function ckVerdictChip(c){
   if(c.decision){
     const d = c.decision;
+    if(d.choice === "cancel") return '<span class="chip ckhold">Cancelled</span>';
     if(d.choice === "trial") return '<span class="chip gold">Trial</span>';
     if(d.by === "auto-trial") return d.choice === "accept" ? '<span class="chip ckok">Kept</span>'
       : '<span class="chip ckhold">' + (d.trial === "closed" ? "Trial closed" : "Reverted") + '</span>';
@@ -7688,11 +7697,12 @@ function ckAnswer(c){
   const sent = CK_UI.sent[c.id], req = c.request;
   let msg = ckTrial(c);      // a "Not trialled: ..." note -- the choice stays yours
   if(sent)
-    msg = '<div class="lmsg busy">Sent: ' + (sent.choice === "accept" ? "accept " + esc(ckArm(sent.tag)) : "reject")
-      + '. The tick applies it at its next boundary.</div>';
+    msg = '<div class="lmsg busy">Sent: ' + (sent.choice === "accept" ? "accept " + esc(ckArm(sent.tag))
+      : sent.choice === "cancel" ? "cancel" : "reject") + '. The tick applies it at its next boundary.</div>';
   else if(req && req.status === "requested")
-    msg = '<div class="lmsg busy">' + (req.choice === "accept" ? "Accept " + esc(ckArm(req.pick)) : "Reject")
-      + ' sent ' + esc(fmtWhen(req.requested_at)) + ', waiting for the tick.</div>';
+    msg = '<div class="lmsg busy">' + (req.choice === "accept" ? "Accept " + esc(ckArm(req.pick))
+      : req.choice === "cancel" ? "Cancel" : "Reject") + ' sent ' + esc(fmtWhen(req.requested_at))
+      + ', waiting for the tick.</div>';
   else if(req && (req.status === "refused" || req.status === "failed"))
     msg = '<div class="lmsg err">Not applied: ' + esc(ckText(req.message || req.status)) + '</div>';
   if(CK_UI.err[c.id]) msg += '<div class="lmsg err">' + esc(CK_UI.err[c.id]) + '</div>';
@@ -7746,7 +7756,8 @@ function ckOverview(){
     const wait = cs.filter(ckWaiting).length, run = cs.filter(function(c){ return c.status === "running"; }).length;
     const known = (STATUS.buckets || []).some(function(x){ return x.key === b.key; });
     const line = cs.map(function(c){
-      return c.switch + " " + (c.decision ? (c.decision.choice === "trial" ? "trial"
+      return c.switch + " " + (c.decision ? (c.decision.choice === "cancel" ? "cancelled"
+          : c.decision.choice === "trial" ? "trial"
           : c.decision.by === "auto-trial" ? (c.decision.choice === "accept" ? "kept" : "reverted")
           : c.decision.choice === "accept" ? "accepted" : "rejected")
         : c.status === "running" ? "running" : String(c.verdict || "").toLowerCase());
@@ -7788,7 +7799,7 @@ document.addEventListener("click", async function(e){
   const id = t.dataset.ckid, choice = t.dataset.ck, tag = t.dataset.cktag || "";
   const key = id + "|" + choice + "|" + tag;
   delete CK_UI.err[id];
-  if(CK_UI.arm !== key){ CK_UI.arm = key; return repaintStatus(); }
+  if(CK_UI.arm !== key){ CK_UI.arm = key; return ckRepaint(); }
   CK_UI.arm = "";
   const body = {checkpoint_id: id, choice: choice, by: "app"};
   if(choice === "accept" && tag) body.tag = tag;
@@ -7797,8 +7808,130 @@ document.addEventListener("click", async function(e){
   else CK_UI.err[id] = res.error === "read-only" ? "Read-only here: open the app on the tailnet to answer."
     : res.error === "unreachable" ? "The Laptop didn't answer, so nothing was sent."
     : "Not sent: " + res.error;
-  repaintStatus();
+  ckRepaint();
 }, true);
+function ckRepaint(){ repaintStatus(); repaintCheckpoints(); }
+
+/* 2026-11-01 -- THE CHECKPOINTS PAGE. Trevor: *"Let's add the checkpoints to the app. So I can see their progress. I
+   want it kinda kept simple, but informative. I want to know what the question was trying to answer and how close it
+   came to passing. I want to know what group their tied to and they're allotment to run. With options to cancel them
+   if they are not producing any good results."* One card per bucket and switch (its latest checkpoint): the question,
+   where it stands, the best alternative against the three checks of the Y2-led rule, the groups whose applied round
+   starts it, re-checks used of its allotment this epoch, and cancel (two taps; the tick drops its queued runs and
+   retires it on that bucket for the epoch). The full table is one tap down. RESULTS ONLY, as on Status. */
+function ckAll(){
+  const out = [];
+  (CHECKPOINTS.buckets || []).forEach(function(b){
+    (b.checkpoints || []).forEach(function(c){ out.push({b: b, c: c}); });
+  });
+  return out;
+}
+const CK_ORDER = {awaiting: 0, running: 1, done: 2, decided: 3, failed: 4, cancelled: 5};
+function ckSummary(){
+  const all = ckAll();
+  if(!all.length) return "None yet";
+  const wait = all.filter(function(x){ return ckWaiting(x.c); }).length;
+  const run = all.filter(function(x){ return x.c.status === "running"; }).length;
+  const parts = [];
+  if(wait) parts.push('<span class="hcount">' + wait + '</span> waiting on you');
+  if(run) parts.push('<span class="hcount">' + run + '</span> running');
+  parts.push(all.length + " in all");
+  return parts.join(" · ");
+}
+function ckTriggers(c){
+  const t = c.triggers || [];
+  if(!t.length) return "";
+  return t.map(function(s){
+    s = String(s);
+    if(s.indexOf("@sibling") > 0) return humanize(s.split("@")[0]) + " tuned on a sibling";
+    if(s.indexOf("LANE:") === 0) return "the " + s.slice(5) + " lane's pass";
+    return humanize(s);
+  }).join(", ");
+}
+function ckClose(c){
+  const k = c.closest;
+  if(!k) return '<div class="tnote">Closest: waiting for results (' + esc(c.runs_in || 0) + ' of '
+    + esc(c.runs_of || 0) + ' runs in).</div>';
+  const line = function(ch){
+    const money = ch.name === "Y2 net";
+    const v = function(x){ return money ? recurMoney(x) : ckPf(x); };
+    const extra = ch.drop != null ? ' <span class="ck-sub">(' + (ch.drop > 0 ? "−" : "+")
+      + Math.abs(Math.round(ch.drop * 100)) + '%, limit −' + Math.round((ch.limit || 0.15) * 100) + '%)</span>' : "";
+    return '<div class="lrow"><span class="' + (ch.ok ? "stup" : "stdn") + '">' + (ch.ok ? "✓" : "✗") + '</span><span>'
+      + esc(ch.name) + '</span><span class="sp"></span><span>' + v(ch.current) + ' → ' + v(ch.alt) + extra
+      + '</span></div>';
+  };
+  return '<div class="tnote">Closest: <b>' + esc(ckArm(k.setting)) + '</b> passes ' + esc(k.passed) + ' of '
+    + esc(k.of) + ' checks' + (k.passed === k.of ? " — it beats the current setting" : "") + '</div>'
+    + (k.checks || []).map(line).join("");
+}
+function ckCancel(c){
+  if(!c.cancellable || c.status === "cancelled") return "";
+  const sent = CK_UI.sent[c.id], req = c.request;
+  if((sent && sent.choice === "cancel") || (req && req.choice === "cancel" && req.status === "requested"))
+    return '<div class="lmsg busy">Cancel sent. The tick applies it at its next boundary.</div>';
+  const armed = CK_UI.arm === c.id + "|cancel|";
+  /* ckAnswer shows a send error only on a card waiting on you; every other card shows its own here */
+  const err = c.status !== "awaiting" && CK_UI.err[c.id] ? '<div class="lmsg err">' + esc(CK_UI.err[c.id]) + '</div>' : "";
+  return err + '<div class="chips"><button type="button" class="chip' + (armed ? " on" : "") + '" data-ck="cancel"'
+    + ' data-cktag="" data-ckid="' + esc(c.id) + '">'
+    + (armed ? "Tap again to cancel and stop its re-checks here" : "Cancel") + '</button></div>';
+}
+/* 2026-11-01 -- EVERY RUN OF THIS CHECKPOINT ON THIS BUCKET, newest first (Trevor: "Checkpoints gonna need a history
+   of each run also"): when, what it said, how close its best alternative came, what was decided. */
+function ckRunLine(x, now){
+  const v = x.decision ? ckDecided(x.decision)
+    : x.status === "running" ? "running (" + (x.runs_in || 0) + " of " + (x.runs_of || 0) + " in)"
+    : x.status === "failed" ? "incomplete" : x.status === "cancelled" ? "cancelled"
+    : (CK_CHIP[x.verdict] || ["", String(x.verdict || "").toLowerCase()])[1].toLowerCase();
+  const k = x.closest;
+  const close = k ? "best: " + ckArm(k.setting) + ", " + k.passed + " of " + k.of + " checks" : "";
+  return '<div class="lrow"><span>' + esc(fmtWhen(x.at)) + '</span><span class="sp"></span><span>'
+    + esc([v, close].filter(Boolean).join(" · ")) + (now ? ' <span class="ck-sub">(this one)</span>' : "")
+    + (x.this_epoch === false ? ' <span class="ck-sub">earlier epoch</span>' : "") + '</span></div>';
+}
+function ckRuns(c){
+  const all = [Object.assign({}, c, {verdict: c.verdict})].concat(c.history || []);
+  return '<div class="ck-sub">Runs on this bucket (' + all.length + ')</div>'
+    + all.map(function(x, i){ return ckRunLine(x, i === 0); }).join("");
+}
+function ckPageCard(b, c){
+  const a = c.allotment || {};
+  const allot = a.retired ? "cancelled on this bucket for the rest of the epoch"
+    : "re-check " + esc(a.used != null ? a.used : "–") + " of " + esc(a.allowed != null ? a.allowed : "–")
+      + " this epoch";
+  return '<div class="card"><div class="card-in"><div class="ck">'
+    + '<div class="ck-h"><span class="ck-n">' + esc(c.question || ckCap(c.title)) + '</span>' + ckVerdictChip(c)
+    + '</div>'
+    + '<div class="ck-sub"><span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span> '
+    + esc(bktTier(b.regime, b.bucket_id) || "Bucket " + b.bucket_id) + ' · ' + esc(c.switch) + ' '
+    + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
+    + ckClose(c)
+    + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
+    + '<div class="ck-sub">Tied to: ' + esc(ckTriggers(c) || "—") + '</div>'
+    + '<div class="ck-sub">Allotment: ' + allot + ' · runs ' + esc(c.runs_in || 0) + ' of ' + esc(c.runs_of || 0)
+    + ' in</div>'
+    + ckAnswer(c) + ckCancel(c) + ckRuns(c)
+    + '<details class="ck-more"><summary>Every setting, both years</summary>' + ckTable(c)
+    + '</details></div></div></div>';
+}
+function renderCheckpoints(){
+  const home = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
+  const all = ckAll().sort(function(x, y){
+    return (CK_ORDER[x.c.status] != null ? CK_ORDER[x.c.status] : 9) - (CK_ORDER[y.c.status] != null
+      ? CK_ORDER[y.c.status] : 9) || String(y.c.at || "").localeCompare(String(x.c.at || ""));
+  });
+  let h = '<div class="home">' + home + '<div class="section-label">Checkpoints</div>';
+  if(!all.length)
+    return h + '<div class="card"><div class="card-in"><div class="tnote">' + CK_NONE + '</div></div></div></div>';
+  h += '<div class="card"><div class="card-in"><div class="tnote">' + ckSummary() + '. '
+    + esc(CHECKPOINTS.rule || "") + '</div></div></div>';
+  return h + all.map(function(x){ return ckPageCard(x.b, x.c); }).join("") + '</div>';
+}
+function repaintCheckpoints(){
+  const el = document.getElementById("page-checkpoints");
+  if(el) el.innerHTML = renderCheckpoints();
+}
 
 function renderStatus(){
   const home = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
@@ -9689,6 +9822,9 @@ function renderHome(){
     /* STATUS, directly under Results. Trevor, 2026-09-29: *"Under results in
        the home screen, I want status bar."* */
     + homeButton("status", "▤", "Status", statusSummary(), "var(--dim)")
+    /* CHECKPOINTS, under Status. Trevor, 2026-11-01: *"Let's add the checkpoints to the app. So I can see their
+       progress. I want it kinda kept simple, but informative."* */
+    + homeButton("checkpoints", "◇", "Checkpoints", ckSummary(), "var(--gold)")
     /* SETTINGS, under Results. Trevor, 2026-09-18: *"On the homescreen. I
        want another Badge Here. Settings ... Each Number Can be it's own
        Badge."* -- so it is a PAGE OF BADGES rather than a form, and each
@@ -16393,6 +16529,7 @@ function paint(stamp){
   effRestoreTip();
   repaintSchedule();
   repaintStatus();
+  repaintCheckpoints();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
@@ -18986,7 +19123,7 @@ setTimeout(() => { if(apiBase()) finLoad(false); }, 1200);
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
 const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track",
-               "finance", "efficiency"];
+               "finance", "efficiency", "checkpoints"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
