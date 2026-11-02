@@ -2064,7 +2064,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261102-023226";
+const APP_BUILD = "20261102-141837";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -9419,6 +9419,8 @@ const BAND_WORD = { IN_BAND: "In band", UNDER: "Under", OVER: "Over",
    deliberately, because it measures where they all ended up. */
 const SWEPT_LABEL = {
   set: "Sweeping now",
+  /* 2026-11-02 -- a peer's running sweep, from its open round plan. */
+  plan: "Sweeping now",
   applied: "Swept last round",
   group: "Variables",
   undecided: "Variables",
