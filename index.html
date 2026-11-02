@@ -2064,7 +2064,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261101-175813";
+const APP_BUILD = "20261102-023226";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7853,10 +7853,12 @@ function ckClose(c){
   if(!k) return '<div class="tnote">Closest: waiting for results (' + esc(c.runs_in || 0) + ' of '
     + esc(c.runs_of || 0) + ' runs in).</div>';
   const line = function(ch){
-    const money = ch.name === "Y2 net";
+    /* 2026-11-02 -- the market-weighted rule: the lead year may be Y1, and its guard may be 0 */
+    const money = / net$/.test(String(ch.name || ""));
     const v = function(x){ return money ? recurMoney(x) : ckPf(x); };
     const extra = ch.drop != null ? ' <span class="ck-sub">(' + (ch.drop > 0 ? "−" : "+")
-      + Math.abs(Math.round(ch.drop * 100)) + '%, limit −' + Math.round((ch.limit || 0.15) * 100) + '%)</span>' : "";
+      + Math.abs(Math.round(ch.drop * 100)) + '%, limit −' + Math.round((ch.limit != null ? ch.limit : 0.15) * 100)
+      + '%)</span>' : "";
     return '<div class="lrow"><span class="' + (ch.ok ? "stup" : "stdn") + '">' + (ch.ok ? "✓" : "✗") + '</span><span>'
       + esc(ch.name) + '</span><span class="sp"></span><span>' + v(ch.current) + ' → ' + v(ch.alt) + extra
       + '</span></div>';
