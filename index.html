@@ -2076,7 +2076,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261103-153834";
+const APP_BUILD = "20261103-161738";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -15521,27 +15521,40 @@ function lvPaintHistory(){
     ? `<b>${rows.length}</b> trades · <b>${won.length}</b> won ` +
       `(${Math.round(won.length / rows.length * 100)}%) · PF <b>${gl > 0 ? (gw / gl).toFixed(2) : "—"}</b>` +
       ` · net <b class="${lvTone(net)}">${lvMoney(net)}</b>`
-    : (lvTrades().length ? "Nothing closed in this range." : "No closed trades on this account yet.");
+    : (lvTrades().length ? "Nothing closed in this range."
+       : LV.data.history_from != null ? "No trades closed since it started." : "No closed trades on this account yet.");
+  /* 2026-11-03 (feed 1.9) -- V3.3 STARTS A CLEAN HISTORY. Trevor: "Version 3 is gonna reset the live trade history...
+     Balance can stay... Just the history can go." The feed's list starts at that version's first heartbeat on the VPS;
+     the balance is the broker's, and every older trade stays in the record. */
+  if(LV.data.history_from != null){
+    const ver = String(LV.data.history_tag || "").replace(/^GoldBot_/, "").replace(/\.0$/, "");
+    sum.innerHTML += `<div class="lv-line">${esc(ver || "This version")}'s trades only, since it went live ` +
+                     `${lvWhen(LV.data.history_from)}. Earlier trades stay in the record.</div>`;
+  }
   /* 2026-10-13 -- WHAT EACH REGIME IS MAKING, in the same range (Trevor: "I'd like to know what this regime
-     is making"). Grouped by the trade's own regime label -- SWING gets its row the day its trades carry
-     one; a trade the feed could not label is "unlabelled", never guessed. */
+     is making"). 2026-11-03 -- by BUCKET (Trevor: "That should show all trades in their respective buckets"):
+     the trade's own regime and bucket labels, High first; a trade the feed could not label is "unlabelled",
+     never guessed. */
   if(rows.length){
     const by = {};
     rows.forEach(t => {
-      const k = t.regime || "";
-      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0});
+      const k = (t.regime || "") + "|" + (t.bucket != null ? t.bucket : "");
+      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0, regime: t.regime || "", bucket: t.bucket});
       const p = Number(t.profit) || 0;
       g.n++; if(p > 0) g.gw += p; else g.gl -= p;
     });
     const order = ["BULL", "BEAR", "SWING", "RANGING"];
     const keys = Object.keys(by).sort((a, b) => {
-      const ia = order.indexOf(a), ib = order.indexOf(b);
-      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || a.localeCompare(b);
+      const A = by[a], B = by[b], ia = order.indexOf(A.regime), ib = order.indexOf(B.regime);
+      const hi = A.regime === "BEAR" ? 1 : -1;          // High first: BULL's highest id, BEAR's lowest
+      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || A.regime.localeCompare(B.regime)
+             || hi * ((Number(A.bucket) || 0) - (Number(B.bucket) || 0));
     });
-    if(keys.length > 1 || keys[0]){
+    if(keys.length > 1 || by[keys[0]].regime){
       sum.innerHTML += '<div class="lv-regsplit">' + keys.map(k => {
         const g = by[k], n = g.gw - g.gl;
-        return `<span>${k ? lvRegTag(k) : '<span class="chip">unlabelled</span>'} <b>${g.n}</b> · PF ` +
+        return `<span>${g.regime ? lvRegTag(g.regime) + (g.bucket != null ? bktEl(g.bucket, false, null, g.regime) : "")
+                                 : '<span class="chip">unlabelled</span>'} <b>${g.n}</b> · PF ` +
                `<b>${g.gl > 0 ? (g.gw / g.gl).toFixed(2) : "—"}</b> · <b class="${lvTone(n)}">${lvMoney(n)}</b></span>`;
       }).join("") + '</div>';
     }
