@@ -2076,7 +2076,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261102-201811";
+const APP_BUILD = "20261103-144018";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -18128,17 +18128,41 @@ function pfFormField(label, field, value, attrs){
 }
 
 /* ---------- the Statements tab ---------- */
-function pfImportLine(x){
+function pfImportLine(x, accts){
   const when = x.end ? finMonth(String(x.end).slice(0, 7)) : "";
   if(x.status === "new" || x.status === "replaced")
     return `<div class="pf-res ok">✓ ${esc(x.name)} · ${esc(when)} — added, ${esc(x.txns)} transactions, ` +
            "and it adds up to the cent.</div>";
-  if(x.status === "duplicate")
-    return `<div class="pf-res">Already in: ${esc(x.name)} · ${esc(when)}.</div>`;
+  if(x.status === "duplicate"){
+    /* 2026-11-03: a re-download of a month already in -- say which one is still needed */
+    const a = (accts || []).find(a => a.name === x.name);
+    const need = a ? (a.months || []).filter(r => r.state === "missing").reverse() : [];
+    const span = x.start && x.end ? ` (${esc(finDate(x.start))} – ${esc(finDate(x.end))})` : "";
+    return `<div class="pf-res">Already in: ${esc(x.name)} · ${esc(when)}${span} — the same statement as before.` +
+      (need.length ? ` Still needed: <b>${esc(finMonth(need[0].month))}</b>, posted about ` +
+        `${esc(finDate(need[0].ready))}${need.length > 1 ? " (and " + (need.length - 1) + " more)" : ""}.` : "") + "</div>";
+  }
   return `<div class="pf-res bad">⚠ Couldn't use it: ${esc(x.why || "unreadable")}` +
     (x.status === "error" ? " It waits in the Laptop's inbox."
       : x.status === "rejected" ? " Kept aside on the Laptop (PersonalFinance\\rejected), not filed." : "") +
     "</div>";
+}
+/* 2026-11-03: the Laptop reads the inbox by itself, so the Import button often finds it
+   empty -- show what the last import did (kept on the Laptop, no file names) */
+function pfStamp(at){
+  const t = String(at || "").slice(11, 16).split(":").map(Number);
+  if(t.length < 2 || isNaN(t[0]) || isNaN(t[1])) return finDate(at);
+  return finDate(at) + ", " + ((t[0] + 11) % 12 + 1) + ":" + String(t[1]).padStart(2, "0") + (t[0] < 12 ? " AM" : " PM");
+}
+function pfLastImport(d, accts, asked){
+  const last = (d.inbox || {}).last;
+  const ok = last && (last.results || []).length && last.at;
+  const recent = ok && Date.now() - Date.parse(String(last.at).slice(0, 10)) < 3 * 864e5;
+  let h = asked ? `<div class="fin-note">Nothing new in the Laptop's inbox${ok ? " just now" : ""}.</div>` : "";
+  if(ok && (asked || recent))
+    h += `<div class="fin-note">${last.by === "inbox" ? "The Laptop read the inbox by itself" : "The last import"}, ` +
+      `${esc(pfStamp(last.at))}:</div>` + last.results.map(x => pfImportLine(x, accts)).join("");
+  return h;
 }
 function pfStatements(d){
   const s = d.statements || {};
@@ -18165,8 +18189,7 @@ function pfStatements(d){
     /* 2026-10-26: always there -- the inbox count is only as fresh as the last refresh */
     `<button type="button" class="fin-btn" data-pf="import"${PF.busy ? " disabled" : ""}>` +
     `Import from the inbox${(d.inbox || {}).files ? " (" + esc(d.inbox.files) + ")" : ""}</button></div>` +
-    (m && m.items.length ? m.items.map(pfImportLine).join("")
-      : m && m.inbox ? '<div class="fin-note">Nothing new in the Laptop\'s inbox.</div>' : ""));
+    (m && m.items.length ? m.items.map(x => pfImportLine(x, accts)).join("") : pfLastImport(d, accts, m && m.inbox)));
 
   /* MISSING */
   const missing = accts.filter(a => (a.missing || []).length);
@@ -18218,8 +18241,11 @@ function pfStatements(d){
       `<button type="button" class="fin-btn gold" data-pf="historysave"${PF.busy ? " disabled" : ""}>Save</button>` +
       '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div></div>';
   }else{
+    /* 2026-11-03: some accounts' statements come out later than the rest */
+    const later = accts.filter(a => a.ready_days && a.ready_days !== s.ready_days);
     h += `<div class="fin-note">Missing counts from <b>${esc(finMonth(s.history_from))}</b>. A statement ` +
-      `counts as ready ${esc(s.ready_days)} days after it closes. ` +
+      `counts as ready ${esc(s.ready_days)} days after it closes` +
+      (later.length ? " (" + later.map(a => esc(a.name) + ": " + esc(a.ready_days)).join(", ") + " days)" : "") + ". " +
       '<button type="button" class="pf-lnk" data-pf="history">Change</button></div>';
   }
   return h;
@@ -18228,9 +18254,12 @@ function pfMissRow(a){
   const rows = a.months.filter(r => r.state === "missing").slice().reverse();     // oldest first
   const open = PF.open === a.id;
   const lastIn = String(a.last_in || "").slice(0, 7);
+  /* 2026-11-03: a bank lists a statement by the day it POSTED, a few days after it
+     closes; the chips name the month it covers -- so say both */
   let h = '<div class="pf-acct"><div class="pf-ah"><div>' +
     `<div class="fin-rt">${esc(a.name)}</div>` +
-    `<div class="fin-rs">${esc(rows.length)} statement${rows.length === 1 ? "" : "s"} · oldest first</div></div>` +
+    `<div class="fin-rs">${esc(rows.length)} statement${rows.length === 1 ? "" : "s"} · oldest first` +
+    `${a.last_in ? " · newest in ends " + esc(finDate(a.last_in)) : ""}</div></div>` +
     `<button type="button" class="fin-btn" data-pf="open" data-id="${finAttr(a.id)}" ` +
     `aria-expanded="${open}">${open ? "Done" : "Edit"}</button></div>` +
     '<div class="pf-chips">' + rows.map(r => {
@@ -18240,6 +18269,9 @@ function pfMissRow(a){
           `data-m="${finAttr(r.month)}">${esc(PF.confirm === key ? "Tap again: none that month" : finMonth(r.month))}</button>`
         : `<span class="pf-chip miss">${esc(finMonth(r.month))}</span>`;
     }).join("") + "</div>";
+  if(!open && rows.length <= 3)
+    h += '<div class="fin-rs">' + rows.map(r => `${esc(finMonth(r.month))}: closes about ${esc(finDate(r.end))} · ` +
+      `posted about ${esc(finDate(r.ready))}`).join("<br>") + "</div>";
   if(open){
     const before = rows.some(r => r.month < a.first_in);
     const after = rows.some(r => r.month > lastIn);
@@ -18379,8 +18411,9 @@ function pfWhen(s){
     : al.date === s.as_of ? "📅 <b>Today's the day</b>" : `📅 The day was ${esc(pfDay(al.date))} — do it now`;
   return `<div class="fin-note">${lead} — ` + (al.before_statements
     ? `before the month-end statements are out, so the ${esc(card)} payment still lands by its ${esc(finDate(al.card_due))} due date. Type today's balances for the ones not in yet.`
-    : `TD's and Wealthsimple's month-end statements are out by then (upload them first), and the ${esc(card)} ` +
-      `payment still lands before its ${esc(finDate(al.card_due))} due date. Then every month on about the 3rd.`) + "</div>";
+    : `TD's and Wealthsimple Chequing's month-end statements are out by then (upload them first), and the ${esc(card)} ` +
+      `payment still lands before its ${esc(finDate(al.card_due))} due date. The TFSA and Crypto ones come ` +
+      `later (about the 8th): type today's balances for those. Then every month on about the 3rd.`) + "</div>";
 }
 function pfSpan(months){
   const m = Number(months) || 0;
