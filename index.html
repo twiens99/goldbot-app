@@ -1684,7 +1684,7 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-gsw[aria-pressed="true"]{background:rgba(224,180,87,.22);border-color:var(--gold);}
 .lv-gsw[aria-pressed="true"]::after{left:13px;background:var(--gold);}
 .lv-gsw:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
-.lv-gline{color:var(--dim);}
+.lv-gline{color:var(--dim);white-space:normal;}
 .lv-gline b.ok{color:var(--good);}
 .lv-gline b.no{color:var(--bad);}
 
@@ -2076,7 +2076,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261102-200047";
+const APP_BUILD = "20261102-201811";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13585,9 +13585,12 @@ async function lvMaybeGates(force){
   finally{ LV.gatesAt = Date.now(); LV.gatesBusy = false; }
   lvGatesDraw();
 }
-/* One heartbeat row -> one gate's verdict: p pass, b block, n not checked, x not looking. */
+/* One heartbeat row -> one gate's verdict: p pass, b block, n not checked, x not looking. A minute the readout
+   aimed at the side its regime never trades (a long in BEAR, a short in BULL: it re-aims while armed) is "not
+   looking" -- that side can't fire, and counting it made the slope strip flicker. Older feeds send no regime. */
 function lvGateState(r, k){
   const block = r[2];
+  if((r[12] === "BEAR" && r[3] === "L") || (r[12] === "BULL" && r[3] === "S")) return "x";
   if(k === "armed") return r[1] === 1 ? "p" : "b";
   if(block === "na" || block == null || block === "") return "x";
   const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
@@ -13639,7 +13642,7 @@ function lvGateLine(bar){
   if(!rows.length) return `<div class="lv-gline">Gates: no readout for this candle</div>`;
   const r = rows[rows.length - 1];
   const parts = LV_GATES.filter(x => LV.gateOn.includes(x[0])).map(([k, label]) => {
-    const s = lvGateState(r, k), mix = lvGateBar(rows, k) === "m" ? " (both in this candle)" : "";
+    const s = lvGateState(r, k), mix = lvGateBar(rows, k) === "m" ? " (both)" : "";
     const mk = s === "p" ? '<b class="ok">✓</b>' : s === "b" ? '<b class="no">✗</b>' : "·";
     const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
     const val = at && r[at] != null ? ` ${lvEntryNum(r[at])}${r[at + 1] != null ? " / " + lvEntryNum(r[at + 1]) : ""}` : "";
