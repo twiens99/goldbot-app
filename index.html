@@ -1675,6 +1675,18 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-erow .ev small{color:var(--faint);font-size:.68rem;}
 .lv-erow .ed{grid-column:2 / -1;color:var(--faint);font-size:.7rem;line-height:1.4;}
 .lv-erow.skip{opacity:.55;}
+/* 2026-11-02 -- a gate's chart switch, beside its name (Trevor: "Each gate then on this card would be a switch that
+   could turn the visual signal on the chart."). On = its strip is drawn under the candles. */
+.lv-gsw{display:inline-block;vertical-align:-2px;margin-left:8px;width:26px;height:15px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card-2);position:relative;cursor:pointer;padding:0;}
+.lv-gsw::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;border-radius:50%;
+  background:var(--faint);transition:left .15s;}
+.lv-gsw[aria-pressed="true"]{background:rgba(224,180,87,.22);border-color:var(--gold);}
+.lv-gsw[aria-pressed="true"]::after{left:13px;background:var(--gold);}
+.lv-gsw:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.lv-gline{color:var(--dim);}
+.lv-gline b.ok{color:var(--good);}
+.lv-gline b.no{color:var(--bad);}
 
 /* chart */
 .lv-chead{display:flex;align-items:baseline;gap:9px;padding:12px 13px 8px;flex-wrap:wrap;}
@@ -2064,7 +2076,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261102-141837";
+const APP_BUILD = "20261102-200047";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13268,6 +13280,11 @@ let LV = {
   runsAt: 0,
   slopes: null,       // 2026-10-22 -- {points: [[server_time, slope], ...], last} from /slopes: the EA's own slope
   slopesAt: 0, slopesBusy: false,
+  /* 2026-11-02 -- the gate strips: /gates (each gate per minute), the gates switched on, and their series. */
+  gates: null, gatesAt: 0, gatesBusy: false,
+  gateOn: (() => { try{ const v = JSON.parse(localStorage.getItem("gb.live.gates") || "[]");
+                        return Array.isArray(v) ? v : []; }catch(e){ return []; } })(),
+  gser: {},
   tf: "M5", style: "candles", sel: [], hf: "all",   // sel: the trades toggled on (lvShown)
   built: false, editing: false, formErr: "", busy: false, timer: null, runsBusy: false,
   liveAt: 0,          // Date.now() of the last /live (the joins); /now moves `at`
@@ -13506,6 +13523,7 @@ async function lvMaybeBars(force){
   if(await lvMaybeAxisBars()) lvStudiesSet();
   if(await lvMaybeStepBars()) lvStudiesSet();
   lvMaybeSlopes();
+  lvMaybeGates();
   const tf = LV.tf, c = LV.bars[tf];
   if(!force && c && Date.now() - c.at < 60000) return;
   try{
@@ -13542,6 +13560,95 @@ async function lvMaybeSlopes(){
   finally{ LV.slopesAt = Date.now(); LV.slopesBusy = false; }
   if(LV.slope) lvStudiesSet();
 }
+/* ---------- THE GATE STRIPS (2026-11-02) ----------
+   Trevor, on the "How close to a trade" card: "Each gate then on this card would be a switch that could turn the
+   visual signal on the chart." Each switched-on row draws a strip under the candles, in the card's order (top =
+   first row): green = the gate passed for the whole candle, red = it blocked for the whole candle, gold = both
+   happened inside the candle, grey = the EA never reached it (it stops at the first gate that fails), nothing = the EA
+   wasn't looking (in a trade, paused, a RANGING scalp) or the log doesn't reach. From /gates: the EA's own readout,
+   once a minute. An older feed server has no /gates: the switches then draw nothing. */
+const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"]];
+const LV_GATE_DAYS = {M1: 1, M5: 2, M15: 4, H1: 10, H4: 14, D1: 14};
+const LV_GATE_INK = {p: "rgba(95,190,149,.8)", b: "rgba(224,104,90,.8)", m: "rgba(224,180,87,.8)",
+                     n: "rgba(140,160,172,.35)"};
+const LV_GATE_H = 0.045;       // each strip's share of the candle pane's height
+async function lvMaybeGates(force){
+  if(!LV.gateOn.length || LV.gatesBusy) return;
+  const days = LV_GATE_DAYS[LV.tf] || 2;
+  const g = LV.gates;
+  if(!force && g && g.days >= days && Date.now() - LV.gatesAt < 60000) return;
+  LV.gatesBusy = true;
+  try{
+    const d = await lvGet("/gates?days=" + days);
+    LV.gates = {days, rows: Array.isArray(d.rows) ? d.rows : [], last: d.last != null ? Number(d.last) : null};
+  }catch(e){ /* no strips is better than wrong ones */ }
+  finally{ LV.gatesAt = Date.now(); LV.gatesBusy = false; }
+  lvGatesDraw();
+}
+/* One heartbeat row -> one gate's verdict: p pass, b block, n not checked, x not looking. */
+function lvGateState(r, k){
+  const block = r[2];
+  if(k === "armed") return r[1] === 1 ? "p" : "b";
+  if(block === "na" || block == null || block === "") return "x";
+  const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
+  const v = r[at], mn = r[at + 1];
+  if(v == null || mn == null) return "n";
+  return Number(v) >= Number(mn) ? "p" : "b";
+}
+function lvGateRowsIn(rows, t0, t1){
+  let lo = 0, hi = rows.length;
+  while(lo < hi){ const mid = (lo + hi) >> 1; if(rows[mid][0] < t0) lo = mid + 1; else hi = mid; }
+  const out = [];
+  for(let i = lo; i < rows.length && rows[i][0] < t1; i++) out.push(rows[i]);
+  return out;
+}
+/* A candle's verdict for one gate, from every minute inside it. */
+function lvGateBar(rows, k){
+  let p = 0, bl = 0, n = 0;
+  rows.forEach(r => { const s = lvGateState(r, k); if(s === "p") p++; else if(s === "b") bl++; else if(s === "n") n++; });
+  if(p && bl) return "m";
+  if(p) return "p";
+  if(bl) return "b";
+  return n ? "n" : null;
+}
+function lvGatesDraw(){
+  if(!LV.chart) return;
+  const on = LV_GATES.map(x => x[0]).filter(k => LV.gateOn.includes(k));
+  Object.keys(LV.gser).forEach(k => {
+    if(!on.includes(k)){ try{ LV.chart.removeSeries(LV.gser[k]); }catch(e){} delete LV.gser[k]; }
+  });
+  LV.chart.applyOptions({rightPriceScale: {scaleMargins: {top: 0.12, bottom: 0.11 + on.length * LV_GATE_H}}});
+  const rows = (LV.gates && LV.gates.rows) || [], bars = lvBars(), sec = LV_TF_SEC[LV.tf] || 300;
+  on.forEach((k, idx) => {
+    if(!LV.gser[k]) LV.gser[k] = LV.chart.addHistogramSeries({priceScaleId: "g_" + k, priceLineVisible: false,
+                                                              lastValueVisible: false, base: 0});
+    const j = on.length - 1 - idx;                  // the first row's strip sits highest
+    LV.chart.priceScale("g_" + k).applyOptions({visible: false,
+      scaleMargins: {top: 1 - (0.055 + (j + 1) * LV_GATE_H), bottom: 0.055 + j * LV_GATE_H + 0.006}});
+    LV.gser[k].setData(bars.map(bar => {
+      const s = lvGateBar(lvGateRowsIn(rows, bar.time, bar.time + sec), k);
+      return {time: bar.time, value: 1, color: s ? LV_GATE_INK[s] : "rgba(0,0,0,0)"};
+    }));
+  });
+  lvOhlc(lvLastBar());
+}
+/* The crosshair's candle: each switched-on gate at the candle's last minute. */
+function lvGateLine(bar){
+  if(!bar || !LV.gateOn.length || !LV.gates) return "";
+  const sec = LV_TF_SEC[LV.tf] || 300, rows = lvGateRowsIn(LV.gates.rows, bar.time, bar.time + sec);
+  if(!rows.length) return `<div class="lv-gline">Gates: no readout for this candle</div>`;
+  const r = rows[rows.length - 1];
+  const parts = LV_GATES.filter(x => LV.gateOn.includes(x[0])).map(([k, label]) => {
+    const s = lvGateState(r, k), mix = lvGateBar(rows, k) === "m" ? " (both in this candle)" : "";
+    const mk = s === "p" ? '<b class="ok">✓</b>' : s === "b" ? '<b class="no">✗</b>' : "·";
+    const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
+    const val = at && r[at] != null ? ` ${lvEntryNum(r[at])}${r[at + 1] != null ? " / " + lvEntryNum(r[at + 1]) : ""}` : "";
+    return `${label} ${mk}${val}${mix}`;
+  });
+  const side = r[3] === "L" ? "▲ " : r[3] === "S" ? "▼ " : "";
+  return `<div class="lv-gline">Gates ${side}${parts.join(" · ")}</div>`;
+}
+
 /* The finer bars the slope's definition is worked on, when the chart shows another timeframe. */
 async function lvMaybeStepBars(){
   const r = lvRolling(lvAxis());
@@ -14434,6 +14541,11 @@ function lvSkeleton(){
     +     '<span><span class="lv-band" style="background:var(--bull)"></span>'
     +       '<span class="lv-band" style="background:var(--bear)"></span>'
     +       '<span class="lv-band" style="background:var(--range)"></span>Bottom band: regime</span>'
+    +     '<span><span class="lv-band" style="background:var(--good)"></span>'
+    +       '<span class="lv-band" style="background:var(--bad)"></span>'
+    +       '<span class="lv-band" style="background:var(--gold)"></span>Gate strips above it, switched on in '
+    +       '&ldquo;How close to a trade&rdquo; (top = first row): passed / blocked / both in that candle; '
+    +       'grey = not reached (the EA stops at the first gate that fails)</span>'
     +     '<span><span style="color:var(--gold)">━</span>Bucket-slope average · 4H dotted = simulated</span>'
     +     '<span><span style="color:#A9DEC4">━</span><span style="color:#2E9F6E">━</span>'
     +       '<span style="color:#F2A79C">━</span><span style="color:#D8463A">━</span>'
@@ -14844,10 +14956,12 @@ function lvPaintPerf(){
    nothing here names an input. */
 const LV_SESS = {ASIAN: "Asian", LONDON: "London", LONDON_NY: "London/NY", NEW_YORK: "New York"};
 function lvEntryNum(v, d){ return v == null || !isFinite(Number(v)) ? "—" : Number(v).toFixed(d == null ? 3 : d); }
-function lvEntryRow(mark, label, val, need, note, skip){
+function lvEntryRow(mark, label, val, need, note, skip, gate){
   const mk = mark === true ? '<span class="mk ok">✓</span>' : mark === false ? '<span class="mk no">✗</span>'
                                                                    : '<span class="mk na">·</span>';
-  return `<div class="lv-erow${skip ? " skip" : ""}">${mk}<span>${label}</span>` +
+  const sw = gate ? `<button type="button" class="lv-gsw" data-lvgate="${gate}" ` +
+    `aria-pressed="${LV.gateOn.includes(gate)}" aria-label="Show ${esc(label)} on the chart"></button>` : "";
+  return `<div class="lv-erow${skip ? " skip" : ""}">${mk}<span>${label}${sw}</span>` +
          `<span class="ev">${val}${need ? ` <small>${need}</small>` : ""}</span>` +
          (note ? `<span class="ed">${note}</span>` : "") + `</div>`;
 }
@@ -14935,9 +15049,9 @@ function lvPaintEntry(){
   const stopAt = order.indexOf(e.block);
   const gRow = (k, label, what) => {
     const x = g[k] || {}, i = order.indexOf(k);
-    if(stopAt >= 0 && i > stopAt) return lvEntryRow(null, label, "not checked", "", "", true);
+    if(stopAt >= 0 && i > stopAt) return lvEntryRow(null, label, "not checked", "", "", true, k);
     const ok = x.value != null && x.min != null ? Number(x.value) >= Number(x.min) : null;
-    return lvEntryRow(ok, label, lvEntryNum(x.value), x.min != null ? "needs " + lvEntryNum(x.min) : "", what);
+    return lvEntryRow(ok, label, lvEntryNum(x.value), x.min != null ? "needs " + lvEntryNum(x.min) : "", what, false, k);
   };
   const armOk = armed ? true : (a.vel != null && a.vel_min != null && a.acc != null && a.acc_min != null
     && Number(a.vel) > Number(a.vel_min) && Number(a.acc) > Number(a.acc_min) ? null : false);
@@ -14973,7 +15087,7 @@ function lvPaintEntry(){
       (a.rev_need ? `Arms once the score has kept turning ${turn} for <b>${lvEntryNum(a.rev_need, 0)}</b> seconds ` +
                     `(a turn the other way starts the clock again): <b>${lvEntryNum(a.rev, 0)}</b> s so far. ` : "") +
       `Now: speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), ` +
-      `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`) +
+      `push <b>${lvEntryNum(a.acc)}</b> (needs over ${lvEntryNum(a.acc_min)}).`, false, "armed") +
     gRow("slope", "Slope gate", slopeWhat) +
     gRow("htf", "H1 trend", "The H1 trend agreeing with the trade (V3.1: H4 and D1 moved to the stop).") +
     gRow("health", "Health score", "Size of the score itself.") +
@@ -14986,7 +15100,7 @@ function lvPaintEntry(){
         /* 2026-10-15 (V3.1.0): the M15 MACD left BULL / BEAR (S25); confluence is applied once, inside the
            health score (S18). */
         : `Score ${lvEntryNum(e.blend, 4)} = slope, health (confluence inside it) and squeeze ` +
-          `${lvEntryNum(e.volc, 2)} blended.`));
+          `${lvEntryNum(e.volc, 2)} blended.`), false, "total");
   el.innerHTML = head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot +
                  `<div class="lv-esteps">${rows}</div>`;
 }
@@ -15458,7 +15572,7 @@ function lvDestroyChart(){
   if(LV.chart){ try{ LV.chart.remove(); }catch(e){} }
   [LV.slopeChart, LV.macdChart].forEach(c => { if(c){ try{ c.remove(); }catch(e){} } });
   LV.chart = LV.chartP = LV.series = LV.band = LV.path = LV.ma = null;
-  LV.tser = {};
+  LV.tser = {}; LV.gser = {};
   LV.slopeChart = LV.macdChart = LV.slope = LV.slopeNow = LV.macdH = LV.macdS = null;
   LV.slopeLines = []; LV.studyAxis = "";
   LV.lines = []; LV.sig = "";
@@ -16094,6 +16208,7 @@ function lvSetSeriesData(fit){
   const bars = lvBars();
   LV.series.setData(bars);
   LV.band.setData(lvBandData());
+  lvGatesDraw();
   lvStudiesSet();
   lvMarks(true);
   lvOhlc(lvLastBar());
@@ -16451,7 +16566,7 @@ function lvOhlc(bar){
     ? `<div><span style="color:${LV_C.gold}">${esc(a.tf)} ${esc(a.ma)} ${esc(a.period)}${
         LV.tf !== a.tf ? " sim" : ""}</span> <b>${lvPx(mv)}</b></div>` : "";
   el.innerHTML = `${lvBarWhen(bar.time)} O <b>${lvPx(bar.open)}</b> H <b>${lvPx(bar.high)}</b> ` +
-                 `L <b>${lvPx(bar.low)}</b> C <b class="${lvTone(ch)}">${lvPx(bar.close)}</b>` + ma;
+                 `L <b>${lvPx(bar.low)}</b> C <b class="${lvTone(ch)}">${lvPx(bar.close)}</b>` + ma + lvGateLine(bar);
 }
 async function lvSetTf(tf, keepView){
   LV.viewGen++;
@@ -16499,6 +16614,16 @@ document.addEventListener("click", e => {
   }
   const hf = e.target.closest("[data-lvhf]");
   if(hf){ LV.hf = hf.dataset.lvhf; lvPaintHistory(); return; }
+  /* 2026-11-02 -- a gate's chart switch on the entry card: its strip on or off, the others untouched. */
+  const gs = e.target.closest("[data-lvgate]");
+  if(gs){
+    const k = gs.dataset.lvgate, on = !LV.gateOn.includes(k);
+    LV.gateOn = on ? LV.gateOn.concat([k]) : LV.gateOn.filter(x => x !== k);
+    try{ localStorage.setItem("gb.live.gates", JSON.stringify(LV.gateOn)); }catch(err){ /* this visit only */ }
+    lvPaintEntry();
+    if(on) lvMaybeGates(true); else lvGatesDraw();
+    return;
+  }
   if(e.target.closest("[data-lvchange]")){ LV.editing = true; LV.formErr = ""; lvShow(); return; }
   if(e.target.closest("[data-lvcancel]")){ LV.editing = false; LV.formErr = ""; lvShow(); return; }
   if(e.target.closest("[data-lvsave]")){
