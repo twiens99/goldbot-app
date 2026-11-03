@@ -2076,7 +2076,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261103-144018";
+const APP_BUILD = "20261103-153834";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13567,7 +13567,13 @@ async function lvMaybeSlopes(){
    happened inside the candle, grey = the EA never reached it (it stops at the first gate that fails), nothing = the EA
    wasn't looking (in a trade, paused, a RANGING scalp) or the log doesn't reach. From /gates: the EA's own readout,
    once a minute. An older feed server has no /gates: the switches then draw nothing. */
-const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"]];
+/* 2026-11-03 (feed 1.8) -- THE V3.3 GATE STACK: no blended score; every gate its own row, a trade only when all agree.
+   The EA's own gate order (feed $StackGates, EA GateName). Their switches are "s_<gate>", and "stk_armed" for C's arm. */
+const LV_SGATES = [["slope", "Slope"], ["macd", "D1 MACD"], ["h1", "H1 trend"], ["ema", "EMA trend"],
+                   ["conf", "Confluence"], ["rsi", "RSI"], ["rng24", "24 h range"], ["vwap", "VWAP"],
+                   ["sqz", "Squeeze"], ["rvol", "Volume"]];
+const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"],
+                  ["stk_armed", "Armed (C)"]].concat(LV_SGATES.map(x => ["s_" + x[0], x[1]]));
 const LV_GATE_DAYS = {M1: 1, M5: 2, M15: 4, H1: 10, H4: 14, D1: 14};
 const LV_GATE_INK = {p: "rgba(95,190,149,.8)", b: "rgba(224,104,90,.8)", m: "rgba(224,180,87,.8)",
                      n: "rgba(140,160,172,.35)"};
@@ -13591,6 +13597,17 @@ async function lvMaybeGates(force){
 function lvGateState(r, k){
   const block = r[2];
   if((r[12] === "BEAR" && r[3] === "L") || (r[12] === "BULL" && r[3] === "S")) return "x";
+  /* 2026-11-03 (feed 1.8) -- a V3.3 minute with the stack on (trigger 1-3): the stack's gates decide, every one read
+     every minute (nothing "not checked"); V3.2's rows draw nothing then, except its arm under A (A's trigger). */
+  const trig = r.length > 13 && r[13] != null ? Number(r[13]) : 0;
+  if(k === "stk_armed" || k.startsWith("s_")){
+    if(trig < 1 || block === "na" || block == null || block === "") return "x";
+    if(k === "stk_armed") return trig === 3 ? (r[14] === 1 ? "p" : "b") : "x";
+    const at = LV_SIDX[k.slice(2)], mx = k === "s_sqz" ? r[35] : null;
+    if(at == null || r[at] == null || r[at + 1] == null) return "n";
+    return Number(r[at]) >= Number(r[at + 1]) && (mx == null || Number(r[at]) <= Number(mx)) ? "p" : "b";
+  }
+  if(trig >= 1 && !(k === "armed" && trig === 1)) return "x";
   if(k === "armed") return r[1] === 1 ? "p" : "b";
   if(block === "na" || block == null || block === "") return "x";
   const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
@@ -13598,6 +13615,9 @@ function lvGateState(r, k){
   if(v == null || mn == null) return "n";
   return Number(v) >= Number(mn) ? "p" : "b";
 }
+/* The stack's columns in a /gates row (feed 1.8): [13] trig, [14] stk_armed, then each gate's value and minimum in
+   LV_SGATES' order from [15], the squeeze's ceiling at [35]. */
+const LV_SIDX = {slope: 15, macd: 17, h1: 19, ema: 21, conf: 23, rsi: 25, rng24: 27, vwap: 29, sqz: 31, rvol: 33};
 function lvGateRowsIn(rows, t0, t1){
   let lo = 0, hi = rows.length;
   while(lo < hi){ const mid = (lo + hi) >> 1; if(rows[mid][0] < t0) lo = mid + 1; else hi = mid; }
@@ -13644,7 +13664,7 @@ function lvGateLine(bar){
   const parts = LV_GATES.filter(x => LV.gateOn.includes(x[0])).map(([k, label]) => {
     const s = lvGateState(r, k), mix = lvGateBar(rows, k) === "m" ? " (both)" : "";
     const mk = s === "p" ? '<b class="ok">✓</b>' : s === "b" ? '<b class="no">✗</b>' : "·";
-    const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
+    const at = k.startsWith("s_") ? LV_SIDX[k.slice(2)] : {slope: 4, htf: 6, health: 8, total: 10}[k];
     const val = at && r[at] != null ? ` ${lvEntryNum(r[at])}${r[at + 1] != null ? " / " + lvEntryNum(r[at + 1]) : ""}` : "";
     return `${label} ${mk}${val}${mix}`;
   });
@@ -15004,6 +15024,13 @@ function lvPaintEntry(){
                    `which this card doesn't read yet.${asOf}</div>`;
     return;
   }
+  /* 2026-11-03 (feed 1.8) -- V3.3: where this bucket's trigger is A, B or C the gate stack decides the entry, so the
+     card shows its gates; trigger 0 (V3.2's entry) keeps the card below. */
+  if(e.stack && Number(e.stack.trig) >= 1){
+    el.innerHTML = lvStackCard(e, head, asOf, OFF[off] || (off === "gate" ? `${esc(e.candidate)} isn't armed, so no ` +
+                               `trade opens whatever the gates say. These are the gates it would trade on.` : ""));
+    return;
+  }
   const a = e.arm || {}, g = e.gates || {};
   const total = Number(e.total), need = Number(e.total_min), w = Number(e.session_w);
   const have = isFinite(total) && isFinite(need) && need > 0;
@@ -15106,6 +15133,94 @@ function lvPaintEntry(){
           `${lvEntryNum(e.volc, 2)} blended.`), false, "total");
   el.innerHTML = head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot +
                  `<div class="lv-esteps">${rows}</div>`;
+}
+/* 2026-11-03 (feed 1.8) -- THE V3.3 GATE STACK's card. Trevor: "A trade only fires when all gates agree." Every gate
+   is read every minute (no "not checked"); a gate at its off value passes everything and shows as off. The trigger
+   says WHEN an all-agree minute trades: A = the score's turn arms it (V3.2's arm), B = the moment they all agree (once
+   per stretch of all-green), C = they all agree -> armed -> the next 1-minute EMA cross the trade's way. */
+const LV_SWHAT = {
+  slope: "The regime's D1 slope the trade's way, at least the bucket's minimum.",
+  macd: "The D1 MACD moving the trade's way since yesterday.",
+  h1: "The H1 trend agreeing with the trade.",
+  ema: "The EMA trend (the trend part of the old health score) the trade's way.",
+  conf: "The fast charts (M1 to M30) agreeing with the trade.",
+  rsi: "RSI the trade's way: below zero is buying into overbought or selling into oversold.",
+  rng24: "Where price sits in its last 24 hours: above zero is the cheap side for a buy, the rich side for a sell.",
+  vwap: "Price against VWAP: above zero is the cheap side for a buy, the rich side for a sell.",
+  sqz: "How tight volatility is, 0 to 1, inside the bucket's band.",
+  rvol: "This minute's ticks against the recent average."};
+const LV_STRIG = {1: "A", 2: "B", 3: "C"};
+function lvStackOff(x){
+  if(x.min == null) return false;
+  const mn = Number(x.min), mx = x.max == null ? null : Number(x.max);
+  if(x.name === "sqz") return mn <= 0 && (mx == null || mx >= 1);
+  if(x.name === "rvol") return mn <= 0;
+  if(x.name === "slope" || x.name === "h1") return false;
+  return mn <= -1 || (x.name === "macd" && mn < 0);
+}
+function lvStackPass(x){
+  if(x.value == null || x.min == null) return null;
+  const v = Number(x.value);
+  return v >= Number(x.min) && (x.max == null || v <= Number(x.max));
+}
+function lvStackCard(e, head, asOf, offSay){
+  const s = e.stack, trig = Number(s.trig), t = LV_STRIG[trig] || "?";
+  const gs = Array.isArray(s.gates) ? s.gates : [];
+  const label = n => (LV_SGATES.find(x => x[0] === n) || [n, n])[1];
+  const on = gs.filter(x => !lvStackOff(x));
+  const ok = on.filter(x => lvStackPass(x) === true), stop = on.find(x => lvStackPass(x) !== true);
+  const a = e.arm || {}, v32armed = a.armed === true, cArmed = s.armed === true;
+  const all = on.length > 0 && ok.length === on.length;
+  let pill, cls, say;
+  if(offSay){ pill = "Off"; cls = "off"; say = offSay; }
+  else if(!all){
+    pill = "Blocked"; cls = ok.length >= on.length - 1 ? "near" : "block";
+    say = `Stopped at the ${esc(label(stop ? stop.name : ""))} gate: every gate has to agree before trigger ${t} can trade.`;
+  } else if(trig === 1){
+    pill = v32armed ? "Ready" : "Waiting to arm"; cls = v32armed ? "on" : "near";
+    say = v32armed ? "Every gate agrees and the score's turn has armed it: a trade opens unless a check before it stops it."
+                   : "Every gate agrees. Trigger A trades once the score turns hard enough to arm (first row).";
+  } else if(trig === 2){
+    pill = "Ready"; cls = "on";
+    say = "Every gate agrees. Trigger B trades the moment they do, once per stretch of all-green: after a trade it " +
+          "waits for a gate to fail and come back.";
+  } else if(cArmed){
+    pill = "Armed"; cls = "on";
+    say = "Every gate agrees and trigger C is armed: it trades on the next 1-minute EMA cross the trade's way.";
+  } else {
+    pill = "Agree · spent"; cls = "near";
+    say = "Every gate agrees, but trigger C already traded or dropped this stretch: it arms again once a gate fails " +
+          "and comes back.";
+  }
+  const pct = on.length ? ok.length / on.length : 0;
+  const tot = `<div class="lv-etot"><span class="lv-v">${ok.length} of ${on.length}</span>` +
+    `<span class="lv-need">gates agree · trigger <b>${t}</b></span>` +
+    `<span class="lv-pct${all ? " ok" : ""}">${Math.round(pct * 100)}%</span></div>` +
+    `<div class="lv-meter" role="img" aria-label="${ok.length} of ${on.length} gates agree">` +
+    `<i class="${all ? "ok" : ""}" style="width:${(pct * 80).toFixed(1)}%"></i><b></b></div>`;
+  const turn = e.dir === "SHORT" ? "down" : "up";
+  let rows = "";
+  if(trig === 1)
+    rows += lvEntryRow(v32armed ? true : false, "Armed", v32armed ? "yes" : "no",
+      a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} s` : "",
+      `Trigger A: arms once the score has kept turning ${turn} for <b>${lvEntryNum(a.rev_need, 0)}</b> seconds. Now: ` +
+      `speed <b>${lvEntryNum(a.vel)}</b> (needs over ${lvEntryNum(a.vel_min)}), push <b>${lvEntryNum(a.acc)}</b> ` +
+      `(needs over ${lvEntryNum(a.acc_min)}).`, false, "armed");
+  if(trig === 3)
+    rows += lvEntryRow(cArmed, "Armed (C)", cArmed ? "yes" : "no", "",
+      "Trigger C arms the moment every gate agrees (once per stretch), then trades on the next 1-minute EMA cross " +
+      "the trade's way.", false, "stk_armed");
+  gs.forEach(x => {
+    const off = lvStackOff(x), pass = lvStackPass(x);
+    const dp = x.name === "rvol" || x.name === "sqz" ? 2 : 3;
+    const val = x.name === "macd" && x.value != null ? (Number(x.value) > 0 ? "yes" : "no") : lvEntryNum(x.value, dp);
+    const need = off ? "off" : x.name === "macd" ? "needs yes"
+      : x.max != null ? `needs ${lvEntryNum(x.min, 2)} to ${lvEntryNum(x.max, 2)}` : "needs " + lvEntryNum(x.min, dp);
+    rows += lvEntryRow(off ? null : pass, esc(label(x.name)), val, need,
+                       (LV_SWHAT[x.name] || "") + (off ? " Off in this bucket: it passes everything." : ""), off,
+                       "s_" + x.name);
+  });
+  return head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot + `<div class="lv-esteps">${rows}</div>`;
 }
 
 function lvPaintHead(){
