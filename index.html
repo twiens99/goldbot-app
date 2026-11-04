@@ -1981,6 +1981,29 @@ button.pf-chip{cursor:pointer;}
   border:1px dashed var(--line);border-radius:9px;}
 .pf-who{display:flex;flex-direction:column;gap:7px;padding:10px;border:1px solid var(--line);border-radius:9px;}
 .pf-wk{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);}
+/* 2026-11-03 -- PROGRESS: every live trade since the first version. See pgHtml. Six tabs now: the labels stay. */
+nav button{min-width:0;}
+.pg-svg{width:100%;height:auto;display:block;border-radius:7px;background:var(--bg);touch-action:pan-y;}
+.pg-dim{color:var(--faint);font-size:.78rem;}
+.pg-sep{width:8px;}
+.pg-vr{
+  width:100%;display:grid;grid-template-columns:minmax(0,1.35fr) repeat(5,minmax(0,1fr));gap:4px;
+  align-items:center;background:transparent;border:0;border-top:1px solid var(--line);padding:6px 3px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.64rem;color:var(--dim);text-align:right;
+  font-variant-numeric:tabular-nums;cursor:pointer;
+}
+.pg-vr > span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pg-vr.on{background:rgba(224,180,87,.09);}
+.pg-vr.none{opacity:.5;}
+.pg-vh{border-top:0;padding-top:0;cursor:default;font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);}
+.pg-vt{cursor:default;border-top:1px solid var(--dim);}
+.pg-vn{display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;line-height:1.25;}
+.pg-vn b{color:var(--text);font-weight:600;font-family:"Archivo","Segoe UI",system-ui,sans-serif;font-size:.74rem;}
+.pg-vn i{font-style:normal;font-size:.58rem;color:var(--faint);}
+.pg-mv{font-size:.5rem;margin-left:2px;vertical-align:1px;}
+.pg-mv.up{color:var(--good);}
+.pg-mv.dn{color:var(--bad);}
 </style>
 
 <div class="app">
@@ -2025,6 +2048,9 @@ button.pf-chip{cursor:pointer;}
          comes from the VPS, not the gist, so paint() never touches it -- the
          chart inside is built once and would be destroyed by a repaint. -->
     <section class="page" id="page-live" hidden></section>
+    <!-- PROGRESS (2026-11-03), a tab: every live trade since the first version, a line at each version. Its data
+         is the VPS feed's /history, so paint() never touches it -- see pgShow. -->
+    <section class="page" id="page-progress" hidden></section>
     <section class="page" id="page-track" hidden></section>
     <!-- EFFICIENCY (2026-10-06), no tab: the home badge under Track record. -->
     <section class="page" id="page-efficiency" hidden></section>
@@ -2042,6 +2068,9 @@ button.pf-chip{cursor:pointer;}
          with live data. And add finance. So that we have 5 buttons on the
          bottom."* -->
     <button role="tab" aria-selected="false" data-p="live"><span class="ic">◉</span>Live</button>
+    <!-- 2026-11-03 -- PROGRESS, beside Live. Trevor: *"We're gonna build another tab in the app. This is gonna be
+         overall app progress."* -->
+    <button role="tab" aria-selected="false" data-p="progress"><span class="ic">↗</span>Progress</button>
     <button role="tab" aria-selected="false" data-p="finance"><span class="ic">$</span>Finance</button>
   </nav>
 </div>
@@ -2076,7 +2105,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261103-161738";
+const APP_BUILD = "20261103-180842";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -19413,11 +19442,504 @@ document.addEventListener("change", e => {
    link exists, and none at all when it does not. */
 setTimeout(() => { if(apiBase()) finLoad(false); }, 1200);
 
+/* ==========================================================================
+   PROGRESS (2026-11-03) -- every live trade since the first version
+   ==========================================================================
+   Trevor: *"We're gonna build another tab in the app. This is gonna be overall app progress. I want a graph built
+   with live trading history. Ever since we went live with the earliest version ... I want vertical lines where we
+   version bumped it. Options to change the metrics of the graph. Similar to the bucket test graphs. Let's also have
+   options to see each bucket. The idea is as time goes on I want to see improvements (hopefully). The live card
+   will keep the current version history only."*
+
+   THE DATA is the VPS feed's /history (feed 1.10): every closed trade in the broker's deal list, the EA version that
+   opened it, when each version first ran on the VPS, and the deposits. The same address as Live, read when the tab
+   is shown and once a minute while it stays on screen -- trades close a few times a week, nothing faster is needed.
+   THE GRAPH is the bucket-test metrics graph on a TIME axis: a row per metric, a tap puts it on, each line scaled to
+   its own range (one line on: its real scale, with numbers). Steps, because every number here moves only when a
+   trade closes. A dashed line where each version first ran.
+   COUNT FROM: the whole record; each version from its own line (every line starts again there -- the view that asks
+   "is this version better than the last"); or the last 20 trades.
+   R AS WELL AS DOLLARS: live lots follow the balance and the risk setting, so a version's dollars are partly its lot
+   size. R -- the price move over the first stop's distance -- is one yardstick for every version. */
+const PG_KEY = "gb.prog", PG_LAST = 20, PG_MS = 60000;
+/* key, label, decimals, unit, what it is. Balance is the account's, so it is drawn for All only. */
+const PG_M = [
+  ["balance", "Balance", 0, "$", "The account: deposits plus every closed trade, swap and commission included. " +
+    "The whole account, so Count from does not cut it and a bucket cannot have one."],
+  ["net", "Net profit", 0, "$", "Closed-trade profit in dollars, counted from the start of the window."],
+  ["r", "Net R", 2, "R", "The same trades in R: each trade's price move over its first stop's distance. One " +
+    "yardstick for every version, whatever lot size it traded."],
+  ["pf", "Profit factor", 2, "", "Gross won over gross lost in the window. 1.00 breaks even; 1.50 is the live gate. " +
+    "No line until the window holds a loss."],
+  ["win", "Win rate", 0, "%", "The share of the window's trades that closed in profit."],
+  ["avgr", "Avg R / trade", 2, "R", "Net R over the window's trades: what a typical trade made against what it risked."],
+  ["dd", "Drawdown", 0, "$", "How far closed-trade profit sits below its own high in the window; 0 = at a new high."],
+  ["n", "Trades", 0, "", "Closed trades in the window."],
+];
+const PG_REFS = {pf: [1, 1.5], net: [0], r: [0], avgr: [0], dd: [0]};
+const PG_WINS = [["all", "Whole record"], ["ver", "Each version"], ["last", "Last " + PG_LAST + " trades"]];
+/* THE X AXIS. By date is the record as it happened -- including the weeks a version traded nothing; by trade spaces
+   the trades evenly, so a busy fortnight is not squeezed into a sliver beside an empty month. */
+const PG_AXES = [["date", "By date"], ["trade", "By trade"]];
+const PG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
+let PG_REG = null;      // the chart as drawn, for the crosshair
+const PG = (() => {
+  const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "all", filt: "all", axis: "date", vsel: ""};
+  try{
+    const v = JSON.parse(localStorage.getItem(PG_KEY) || "null");
+    if(v && Array.isArray(v.on)) s.on = v.on.filter(k => PG_M.some(m => m[0] === k));
+    if(v && PG_WINS.some(w => w[0] === v.win)) s.win = v.win;
+    if(v && typeof v.filt === "string") s.filt = v.filt;
+    if(v && PG_AXES.some(a => a[0] === v.axis)) s.axis = v.axis;
+  }catch(e){}
+  return s;
+})();
+function pgSave(){
+  try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis})); }catch(e){}
+}
+
+async function pgLoad(){
+  if(!liveUrl() || PG.busy) return;
+  PG.busy = true;
+  try{
+    const d = await lvGet("/history");
+    if(d && d.schema === 1 && Array.isArray(d.trades)){ PG.data = d; PG.at = Date.now(); PG.err = ""; }
+    else PG.err = "an answer this page does not understand";
+  }catch(e){ PG.err = lvErrText(e); }
+  finally{ PG.busy = false; }
+  if(pgVisible()) pgPaint();
+}
+function pgVisible(){
+  const el = document.getElementById("page-progress");
+  return !!el && !el.hidden && !document.hidden;
+}
+function pgShow(){
+  pgPaint();
+  if(!PG.data || Date.now() - PG.at > PG_MS) pgLoad();
+  clearInterval(PG.timer);
+  PG.timer = setInterval(() => {
+    if(pgVisible()) pgLoad();
+    else{ clearInterval(PG.timer); PG.timer = null; }
+  }, PG_MS);
+}
+
+/* ---------- the numbers ---------- */
+const pgVer = tag => String(tag || "").replace(/^GoldBot_/, "").replace(/\.0$/, "") || "?";
+const pgColour = i => VH_SERIES[i % VH_SERIES.length];
+/* Server time, like every time on Live. */
+function pgDate(t, year){
+  const d = new Date(Number(t) * 1000);
+  return PG_MON[d.getUTCMonth()] + " " + d.getUTCDate() + (year ? ", " + d.getUTCFullYear() : "");
+}
+function pgR(t){
+  const e = Number(t.entry_price), x = Number(t.exit_price), sl = Number(t.sl), risk = Math.abs(e - sl);
+  if(!(sl > 0) || !(risk > 0) || !isFinite(x)) return null;
+  return (t.dir === "buy" ? 1 : -1) * (x - e) / risk;
+}
+function pgMatch(t, f){
+  const r = String(t.regime || "").toUpperCase();
+  if(f === "all") return true;
+  if(f === "?") return !r;
+  return f.indexOf("|") < 0 ? r === f : f === r + "|" + t.bucket;
+}
+function pgStats(w){
+  let gw = 0, gl = 0, won = 0, rs = 0, rn = 0, cum = 0, peak = 0;
+  w.forEach(t => {
+    const p = Number(t.profit) || 0;
+    if(p > 0){ gw += p; won++; } else gl -= p;
+    if(t._r != null){ rs += t._r; rn++; }
+    cum += p;
+    if(cum > peak) peak = cum;
+  });
+  const n = w.length;
+  return {n: n, net: cum, r: rn ? rs : (n ? null : 0), pf: gl > 0 ? gw / gl : null,
+          win: n ? won / n * 100 : null, avgr: rn ? rs / rn : null, dd: cum - peak};
+}
+const pgVal = (p, k) => k === "balance" ? p.bal : p.s[k];
+function pgFmt(k, v){
+  if(v == null || !isFinite(v)) return "—";
+  const m = PG_M.find(x => x[0] === k) || [k, k, 2, ""], dp = m[2], u = m[3];
+  if(u === "$"){
+    const s = Math.abs(Math.round(v)).toLocaleString("en-US");
+    return k === "balance" ? "$" + s : (Math.round(v) < 0 ? "−" : Math.round(v) > 0 ? "+" : "") + "$" + s;
+  }
+  if(u === "R") return lvSigned(v, dp) + "R";
+  if(u === "%") return Math.round(v) + "%";
+  return Number(v).toFixed(dp);
+}
+function pgAxisFmt(k, v){
+  const u = (PG_M.find(x => x[0] === k) || [])[3];
+  if(u === "$"){
+    const a = Math.abs(v);
+    return (v < 0 ? "−" : "") + "$" + (a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 1 : 2) + "k" : Math.round(a));
+  }
+  if(u === "R") return Number(v.toFixed(2)) + "R";
+  if(u === "%") return Math.round(v) + "%";
+  return k === "n" ? String(Math.round(v)) : v.toFixed(2);
+}
+
+/* Every closed trade, oldest first, each with its R; the filters the record holds; the one in force. */
+function pgTrades(d){
+  const all = (d.trades || []).slice().sort((a, b) => Number(a.exit_time) - Number(b.exit_time));
+  all.forEach(t => { t._r = pgR(t); });
+  return all;
+}
+function pgFilters(all){
+  const out = [["all", "All", all.length]];
+  const regs = [];
+  all.forEach(t => { const r = String(t.regime || "").toUpperCase(); if(r && regs.indexOf(r) < 0) regs.push(r); });
+  regs.sort((a, b) => bktFlow(a, 0, b, 0) || a.localeCompare(b));
+  regs.forEach(r => out.push([r, r.charAt(0) + r.slice(1).toLowerCase(),
+                              all.filter(t => pgMatch(t, r)).length]));
+  const bk = [];
+  all.forEach(t => {
+    const r = String(t.regime || "").toUpperCase();
+    if(!r || t.bucket == null) return;
+    const k = r + "|" + t.bucket;
+    if(!bk.some(b => b[0] === k)) bk.push([k, r, t.bucket]);
+  });
+  bk.sort((a, b) => bktFlow(a[1], a[2], b[1], b[2]));
+  bk.forEach(b => out.push([b[0], bktName(b[1], b[2]), all.filter(t => pgMatch(t, b[0])).length]));
+  const none = all.filter(t => !t.regime).length;
+  if(none) out.push(["?", "Unlabelled", none]);
+  return out;
+}
+
+/* THE SERIES: one point per event -- a deposit, a version's first heartbeat, a trade closing -- carrying every
+   metric for the window in force at that moment, so a line on the graph and a value in the crosshair are the same
+   number. Balance runs on every trade; the window, on the filtered ones. */
+function pgSeries(d, all){
+  const tr = all.filter(t => pgMatch(t, PG.filt));
+  const vers = (d.versions || []).map(v => ({tag: v.tag, from: Number(v.from)})).sort((a, b) => a.from - b.from);
+  const cash = (d.cash || []).map(c => [Number(c[0]), Number(c[1])]).sort((a, b) => a[0] - b[0]);
+  const t1 = Number(d.served_gmt) + Number(d.gmt_offset || 0);
+  const t0 = Math.min.apply(null, [t1].concat(vers.map(v => v.from), cash.map(c => c[0]),
+                                              all.map(t => Number(t.exit_time))));
+  /* The balance the record opens on: 0 when the deposit is in the list; else what the account must have held
+     before the oldest deal the broker still lists. */
+  let open = d.balance != null ? Number(d.balance) - cash.reduce((s, c) => s + c[1], 0)
+                                   - all.reduce((s, t) => s + (Number(t.profit) || 0), 0) : 0;
+  if(Math.abs(open) < 1) open = 0;
+  const ev = [];
+  vers.forEach(v => ev.push({t: v.from, k: 0, v: v}));
+  cash.forEach(c => ev.push({t: c[0], k: 1, amt: c[1]}));
+  all.forEach(t => ev.push({t: Number(t.exit_time), k: 2, tr: t}));
+  ev.sort((a, b) => a.t - b.t || a.k - b.k);
+  /* `i` places a point on the by-trade axis: trade k sits at k, a version's line half a step after the trades
+     before it. `ver` marks a version's point, `brk` one where Each version starts every line again. */
+  let bal = open || null, win = [], k = 0;
+  const pts = [{t: t0, i: 0, s: pgStats([]), bal: bal}];
+  ev.forEach(e => {
+    const p = {t: e.t, i: k};
+    if(e.k === 1) bal = (bal || 0) + e.amt;
+    else if(e.k === 0){
+      e.v.i = p.i = k + 0.5; p.ver = true;
+      if(PG.win === "ver"){ win = []; p.brk = true; }
+    }
+    else{
+      if(bal != null) bal += Number(e.tr.profit) || 0;
+      if(!pgMatch(e.tr, PG.filt)) return;
+      win.push(e.tr);
+      if(PG.win === "last" && win.length > PG_LAST) win.shift();
+      p.i = ++k; p.tr = e.tr;
+    }
+    p.s = pgStats(win); p.bal = bal;
+    pts.push(p);
+  });
+  return {pts: pts, t0: t0, t1: Math.max(t1, t0 + 86400), vers: vers, tr: tr, n: k};
+}
+/* What is drawn: the rows switched on, less Balance under a bucket -- and Net in its place when Balance was the
+   only one, so picking a bucket never leaves the graph empty. */
+function pgOn(){
+  const on = PG.on.filter(k => k !== "balance" || PG.filt === "all");
+  return on.length || PG.filt === "all" || PG.on.indexOf("balance") < 0 ? on : ["net"];
+}
+
+/* ---------- the graph ---------- */
+function pgChart(S, on){
+  const single = on.length === 1, L = single ? 38 : 6, byTrade = PG.axis === "trade";
+  const t0 = byTrade ? 0 : S.t0, t1 = byTrade ? Math.max(1, S.n) + 0.5 : S.t1, yB = PG_H - PG_B;
+  const x = t => L + (PG_W - L - PG_R) * ((t - t0) / (t1 - t0));
+  const at = v => byTrade ? v.i : v.from;          // where a version's line sits on this axis
+  let bg = "", grid = "", vl = "", ln = "";
+  /* Each version's stretch, every other one faintly shaded; the one tapped in the table, gold. */
+  S.vers.forEach((v, i) => {
+    const a = x(Math.max(t0, at(v))), b = x(i + 1 < S.vers.length ? at(S.vers[i + 1]) : t1);
+    const fill = PG.vsel === v.tag ? "rgba(224,180,87,.10)" : i % 2 ? "rgba(140,160,172,.045)" : "";
+    if(fill) bg += `<rect x="${a.toFixed(1)}" y="${PG_TOP}" width="${Math.max(1, b - a).toFixed(1)}" ` +
+                   `height="${yB - PG_TOP}" fill="${fill}"></rect>`;
+  });
+  /* Along the foot: month marks by date, trade numbers by trade. */
+  const marks = [];
+  if(byTrade){
+    if(S.n) sgTicks(1, Math.max(2, S.n)).forEach(v => {
+      if(v >= 1 && v <= S.n && v === Math.round(v)) marks.push([v, "#" + v]);
+    });
+  } else {
+    const d0 = new Date(t0 * 1000);
+    let m = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1, 1) / 1000;
+    while(m < t1){
+      const dm = new Date(m * 1000);
+      marks.push([m, PG_MON[dm.getUTCMonth()] + (dm.getUTCMonth() === 0 ? " " + dm.getUTCFullYear() : "")]);
+      m = Date.UTC(dm.getUTCFullYear(), dm.getUTCMonth() + 1, 1) / 1000;
+    }
+  }
+  const every = Math.max(1, Math.ceil(marks.length / 7));
+  marks.forEach((mk, i) => {
+    const xx = x(mk[0]);
+    if(i % every || xx > PG_W - PG_R - 14) return;
+    grid += `<line x1="${xx.toFixed(1)}" x2="${xx.toFixed(1)}" y1="${yB}" y2="${yB + 3}" stroke="#5F727E" ` +
+            `stroke-width="0.8"></line><text x="${(xx + 2).toFixed(1)}" y="${PG_H - 4}" fill="#5F727E" ` +
+            `font-size="8">${esc(mk[1])}</text>`;
+  });
+  grid += `<line x1="${L}" x2="${PG_W - PG_R}" y1="${yB}" y2="${yB}" stroke="rgba(140,160,172,.25)" ` +
+          `stroke-width="0.8"></line>`;
+  /* THE VERSION LINES, labelled in up to three rows so close versions do not print over each other -- NEWEST FIRST,
+     so the version you are judging always has its name; an older one with no room left is unlabelled (its line
+     stays, and the table names it). */
+  const lefts = [Infinity, Infinity, Infinity];
+  S.vers.slice().reverse().forEach(v => {
+    if(at(v) < t0 || at(v) > t1) return;
+    const xv = x(at(v)), word = pgVer(v.tag), w = word.length * 5 + 3;
+    const right = xv + 2 + w > PG_W - PG_R, start = right ? xv - 2 - w : xv + 2;
+    const row = lefts.findIndex(l => start + w < l - 2);
+    const hot = PG.vsel === v.tag;
+    vl += `<line x1="${xv.toFixed(1)}" x2="${xv.toFixed(1)}" y1="${row < 0 ? PG_TOP : 3 + row * 9}" y2="${yB}" ` +
+          `stroke="${hot ? "rgba(224,180,87,.9)" : "rgba(140,160,172,.55)"}" stroke-width="0.9" ` +
+          `stroke-dasharray="3 2"></line>`;
+    if(row < 0) return;
+    lefts[row] = start;
+    vl += `<text x="${(right ? xv - 2 : xv + 2).toFixed(1)}" y="${9 + row * 9}" font-size="8.5" font-weight="600" ` +
+          `fill="${hot ? "#E0B457" : "#8CA0AC"}" text-anchor="${right ? "end" : "start"}">${esc(word)}</text>`;
+  });
+  /* The lines. */
+  const spans = {};
+  on.forEach((k, i) => {
+    const vals = S.pts.map(p => pgVal(p, k)).filter(v => v != null && isFinite(v));
+    if(!vals.length) return;
+    const sp = sgPadSpan(sgSpan(vals.concat(PG_REFS[k] || [])));
+    spans[k] = sp;
+    const y = v => PG_TOP + (yB - PG_TOP) * (1 - (v - sp[0]) / (sp[1] - sp[0]));
+    if(single){
+      sgTicks(sp[0], sp[1]).forEach(tk => {
+        const yy = y(tk).toFixed(1);
+        grid += `<line x1="${L}" x2="${PG_W - PG_R}" y1="${yy}" y2="${yy}" stroke="rgba(140,160,172,.14)" ` +
+                `stroke-width="0.6"></line><text x="${L - 3}" y="${(Number(yy) + 2.6).toFixed(1)}" fill="#5F727E" ` +
+                `font-size="7.5" text-anchor="end">${esc(pgAxisFmt(k, tk))}</text>`;
+      });
+      (PG_REFS[k] || []).forEach(rv => {
+        if(rv < sp[0] || rv > sp[1]) return;
+        const yy = y(rv).toFixed(1), gate = k === "pf" && rv === 1.5;
+        grid += `<line x1="${L}" x2="${PG_W - PG_R}" y1="${yy}" y2="${yy}" stroke="${k === "pf"
+                  ? "rgba(224,180,87,.55)" : "rgba(140,160,172,.45)"}" stroke-width="0.8" stroke-dasharray="3 2">` +
+                `</line><text x="${PG_W - PG_R}" y="${(Number(yy) - 2).toFixed(1)}" fill="${k === "pf" ? "#C8B78A"
+                  : "#8CA0AC"}" font-size="7" text-anchor="end">${gate ? "1.50 live gate" : "break-even"}</text>`;
+      });
+    }
+    /* By date, steps that hold until the next close and run on to now; by trade, one point per trade joined
+       straight, a version's restart a fresh start at its line. */
+    let d = "", open = false, last = null, lx = 0;
+    S.pts.forEach(p => {
+      if(byTrade && p.ver && !p.brk) return;
+      const v = pgVal(p, k), px = x(byTrade ? p.i : p.t).toFixed(1);
+      if(v == null || !isFinite(v)){ if(open && !byTrade) d += "H" + px; open = false; return; }
+      d += !open || (byTrade && p.brk) ? "M" + px + "," + y(v).toFixed(1)
+         : byTrade ? "L" + px + "," + y(v).toFixed(1) : "H" + px + "V" + y(v).toFixed(1);
+      open = true; last = v; lx = px;
+    });
+    if(open && !byTrade){ lx = x(t1).toFixed(1); d += "H" + lx; }
+    const c = pgColour(i);
+    ln += `<path d="${d}" fill="none" stroke="#0A1016" stroke-width="4" stroke-linejoin="round"></path>` +
+          `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"></path>` +
+          (last != null ? `<circle cx="${lx}" cy="${y(last).toFixed(1)}" r="2.6" fill="${c}"></circle>` : "");
+  });
+  if(!on.length)
+    ln = `<text x="${PG_W / 2}" y="${(PG_TOP + yB) / 2}" fill="#5F727E" font-size="10" text-anchor="middle">` +
+         `Tap a metric below to draw it.</text>`;
+  PG_REG = {pts: S.pts, t0: t0, t1: t1, L: L, on: on.slice(), vers: S.vers, byTrade: byTrade};
+  return `<div class="eqwrap" data-pgbox><svg class="pg-svg" viewBox="0 0 ${PG_W} ${PG_H}" role="img" ` +
+         `aria-label="Live trading since the first version, with a line at each version">` + bg + grid + ln + vl +
+         `<line class="eqx" x1="0" x2="0" y1="${PG_TOP}" y2="${yB}" stroke="#8CA0AC" stroke-width="1" ` +
+         `visibility="hidden"></line></svg><div class="eqtip" hidden></div></div>`;
+}
+
+/* THE CROSSHAIR: the date, the version running then, and each line's value. Built with textContent. */
+function pgHover(box, clientX){
+  const R = PG_REG, svg = box.querySelector("svg"), tip = box.querySelector(".eqtip");
+  if(!R || !svg || !tip) return;
+  const r = svg.getBoundingClientRect();
+  const vx = Math.max(R.L, Math.min(PG_W - PG_R, (clientX - r.left) / r.width * PG_W));
+  const t = R.t0 + (vx - R.L) / (PG_W - R.L - PG_R) * (R.t1 - R.t0);
+  const line = svg.querySelector(".eqx");
+  line.setAttribute("x1", vx.toFixed(1)); line.setAttribute("x2", vx.toFixed(1));
+  line.setAttribute("visibility", "visible");
+  let p = null;
+  if(R.byTrade){ for(const q of R.pts){ if(q.i > t + 0.5) break; if(!q.ver) p = q; } }
+  else for(const q of R.pts){ if(q.t <= t) p = q; else break; }
+  const when = R.byTrade ? (p ? p.t : R.pts[0].t) : t;
+  const ver = R.vers.filter(v => v.from <= when).pop();
+  tip.textContent = "";
+  const add = (colour, value, name) => {
+    const d = document.createElement("div");
+    if(colour){ const sw = document.createElement("span"); sw.className = "eqsw"; sw.style.background = colour; d.appendChild(sw); }
+    const b = document.createElement("b"); b.textContent = value; d.appendChild(b);
+    if(name) d.appendChild(document.createTextNode(" " + name));
+    tip.appendChild(d);
+  };
+  add(null, (R.byTrade && p && p.tr ? "Trade " + p.i + " · " : "") + pgDate(when, true),
+      ver ? pgVer(ver.tag) + " running" : "");
+  R.on.forEach((k, i) => add(pgColour(i), p ? pgFmt(k, pgVal(p, k)) : "—",
+                             (PG_M.find(m => m[0] === k) || [])[1] || k));
+  tip.hidden = false;
+  const bw = box.getBoundingClientRect().width, tw = tip.offsetWidth, px = vx / PG_W * bw;
+  tip.style.left = Math.max(0, Math.min(bw - tw, px > bw / 2 ? px - tw - 8 : px + 8)) + "px";
+}
+document.addEventListener("pointermove", e => {
+  const box = e.target.closest && e.target.closest("[data-pgbox]");
+  if(box) pgHover(box, e.clientX);
+});
+document.addEventListener("pointerdown", e => {
+  const box = e.target.closest && e.target.closest("[data-pgbox]");
+  if(box) pgHover(box, e.clientX);
+});
+document.addEventListener("pointerout", e => {
+  const box = e.target.closest && e.target.closest("[data-pgbox]");
+  if(!box || (e.relatedTarget && box.contains(e.relatedTarget))) return;
+  const tip = box.querySelector(".eqtip"), line = box.querySelector(".eqx");
+  if(tip) tip.hidden = true;
+  if(line) line.setAttribute("visibility", "hidden");
+});
+
+/* ---------- the page ---------- */
+/* BY VERSION: each version's own trades, whatever the Count from -- the row-by-row answer to "did it get better".
+   The arrow compares PF and R per trade with the last version before it that traded. */
+function pgByVersion(S){
+  const tags = S.vers.map(v => v.tag);
+  S.tr.forEach(t => { if(t.version && tags.indexOf(t.version) < 0) tags.push(t.version); });
+  const from = tag => (S.vers.find(v => v.tag === tag) || {}).from;
+  const rows = tags.map(tag => ({tag: tag, from: from(tag), s: pgStats(S.tr.filter(t => t.version === tag))}));
+  let prev = null;
+  const arrow = (a, b) => a == null || b == null || Math.abs(a - b) < 0.005 ? ""
+    : `<span class="pg-mv ${a > b ? "up" : "dn"}">${a > b ? "▲" : "▼"}</span>`;
+  const head = '<div class="pg-vr pg-vh"><span>Version</span><span>Trades</span><span>Won</span><span>PF</span>' +
+               '<span>Net</span><span>R/trade</span></div>';
+  const body = rows.map(r => {
+    const s = r.s, cmp = prev;
+    if(s.n) prev = s;
+    return `<button type="button" class="pg-vr${PG.vsel === r.tag ? " on" : ""}${s.n ? "" : " none"}" ` +
+      `data-pgv="${esc(r.tag)}" aria-pressed="${PG.vsel === r.tag}"><span class="pg-vn"><b>${esc(pgVer(r.tag))}</b>` +
+      `<i>${r.from != null ? pgDate(r.from) : ""}</i></span><span>${s.n || "—"}</span>` +
+      `<span>${s.n ? Math.round(s.win) + "%" : "—"}</span>` +
+      `<span>${s.pf != null ? s.pf.toFixed(2) : "—"}${s.n && cmp ? arrow(s.pf, cmp.pf) : ""}</span>` +
+      `<span class="${s.n ? lvTone(s.net) : ""}">${s.n ? pgFmt("net", s.net) : "—"}</span>` +
+      `<span class="${s.n ? lvTone(s.avgr) : ""}">${s.avgr != null ? lvSigned(s.avgr, 2) : "—"}` +
+      `${s.n && cmp ? arrow(s.avgr, cmp.avgr) : ""}</span></button>`;
+  }).join("");
+  const T = pgStats(S.tr);
+  const foot = `<div class="pg-vr pg-vt"><span class="pg-vn"><b>All</b></span><span>${T.n}</span>` +
+    `<span>${T.n ? Math.round(T.win) + "%" : "—"}</span><span>${T.pf != null ? T.pf.toFixed(2) : "—"}</span>` +
+    `<span class="${lvTone(T.net)}">${pgFmt("net", T.net)}</span>` +
+    `<span class="${lvTone(T.avgr)}">${T.avgr != null ? lvSigned(T.avgr, 2) : "—"}</span></div>`;
+  return head + body + foot;
+}
+function pgErrLine(){
+  const old = /^HTTP 404/.test(PG.err);
+  return `<div class="lv-line${old ? "" : " warn"}">` + (old
+    ? "The VPS feed is older than this tab: the full history arrives with feed 1.10, which the VPS loads by " +
+      "itself within about 5 minutes of its release."
+    : `Could not read the VPS (${esc(PG.err)}). It answers over Tailscale, so this phone needs Tailscale on.`) +
+    ` <button type="button" class="lv-link" data-pgre>Try again</button></div>`;
+}
+function pgHtml(){
+  const wrap = h => '<div class="home"><div class="section-label">Progress · every live trade, every version</div>' +
+                    h + '</div>';
+  const card = h => `<div class="card"><div class="card-in">${h}</div></div>`;
+  if(!liveUrl())
+    return wrap(card('<div class="lv-line">Progress reads the same VPS feed as Live. Set the feed’s address ' +
+                     'on the <button type="button" class="lv-link" data-go="live">Live</button> tab first.</div>'));
+  const d = PG.data;
+  if(!d) return wrap(card(PG.err ? pgErrLine() : '<div class="lv-line">Reading every trade from the VPS…</div>'));
+  const all = pgTrades(d);
+  const filters = pgFilters(all);
+  if(!filters.some(f => f[0] === PG.filt)) PG.filt = "all";
+  const S = pgSeries(d, all), on = pgOn(), T = pgStats(S.tr);
+  const fname = (filters.find(f => f[0] === PG.filt) || [])[1] || "All";
+  const tile = (k, v) => `<div class="lv-stat"><span class="lv-k">${k}</span><span class="lv-v">${v}</span></div>`;
+  const tiles = '<div class="lv-stats">' +
+    tile("Trades", T.n ? `${T.n} <span class="pg-dim">· ${Math.round(T.win)}% won</span>` : "0") +
+    tile("Net", `<span class="${lvTone(T.net)}">${lvMoney(T.net)}</span>`) +
+    tile("Profit factor", T.pf != null ? T.pf.toFixed(2) : "—") +
+    tile("R per trade", T.avgr != null ? `<span class="${lvTone(T.avgr)}">${lvSigned(T.avgr, 2)}R</span>` : "—") +
+    '</div>';
+  const chipRow = (list, key, cur) => '<div class="mgrp">' + list.map(f =>
+    `<button type="button" class="gch${cur === f[0] ? " on" : ""}" data-${key}="${esc(f[0])}">${esc(f[1])}` +
+    (f[2] != null ? `<span class="n">${f[2]}</span>` : "") + '</button>').join("") + '</div>';
+  const first = S.vers[0];
+  const last = S.pts[S.pts.length - 1];
+  const rows = PG_M.filter(m => m[0] !== "balance" || PG.filt === "all").map(([k, label, dp, u, what]) => {
+    const i = on.indexOf(k);
+    return `<button type="button" class="mrw${i >= 0 ? " open" : ""}" data-pgm="${k}"><span class="nm">` +
+      `<span class="mdot"${i >= 0 ? ` style="background:${pgColour(i)};border-color:${pgColour(i)}"` : ""}></span>` +
+      `${esc(label)}</span><span class="vv">${pgFmt(k, pgVal(last, k))}</span><span></span></button>` +
+      (i >= 0 ? `<div class="mdf">${esc(what)}</div>` : "");
+  }).join("");
+  const winSay = PG.win === "ver" ? " Each version: every line starts again at its version’s line."
+    : PG.win === "last" ? ` Last ${PG_LAST} trades: each point counts the ${PG_LAST} trades before it.` : "";
+  const dealsFrom = d.deals_from != null ? ` The broker’s list reaches back to ${pgDate(d.deals_from, true)}.` : "";
+  return wrap(tiles +
+    card(`<div class="tlab">${esc(fname)} · since ${first ? esc(pgVer(first.tag)) + ", " : ""}` +
+           `${esc(pgDate(S.t0, true))}</div>` +
+         chipRow(filters, "pgf", PG.filt) +
+         chipRow(PG_WINS, "pgw", PG.win).replace(/<\/div>$/, '<span class="pg-sep"></span>' +
+           PG_AXES.map(a => `<button type="button" class="gch${PG.axis === a[0] ? " on" : ""}" ` +
+                            `data-pgx="${a[0]}">${a[1]}</button>`).join("") + '</div>') +
+         pgChart(S, on) +
+         `<div class="vhcap">${PG.axis === "trade" ? "By trade: one point per closed trade, evenly spaced. " +
+           "Dashed lines: where each version starts" : "Steps: a number moves only when a trade closes. Dashed " +
+           "lines: the day each version first ran on the VPS"}; tap a version below to shade its stretch.${on.length > 1 ? " Each line is " +
+           "scaled to its own range, so compare a line with itself, not with the others — the rows hold the " +
+           "numbers." : ""}${winSay} Times are server time.</div>` +
+         `<div class="mhd"><span>Metric</span><span>${PG.win === "all" ? "Now" : PG.win === "ver"
+            ? "This version" : "Last " + PG_LAST}</span><span></span></div>` + rows) +
+    '<div class="section-label">By version</div>' +
+    card(pgByVersion(S) +
+         `<div class="vhcap">Each version’s own trades${PG.filt === "all" ? "" : " in " + esc(fname)}. ` +
+           `A trade belongs to the version that opened it. ▲ ▼: PF and R per trade against the last version ` +
+           `before it that traded. Net counts swap and commission; R is the price move over the trade’s ` +
+           `first stop distance. Buckets are each trade’s slope at entry placed in today’s buckets, ` +
+           `as on Live.${dealsFrom}</div>`) +
+    (PG.err ? card(pgErrLine()) : "") +
+    `<div class="lv-foot"><span>Feed: ${esc(lvHost())}, read ${PG.at ? lvAgo((Date.now() - PG.at) / 1000) : "never"}.` +
+      `</span></div>`);
+}
+function pgPaint(){
+  const page = document.getElementById("page-progress");
+  if(page) page.innerHTML = pgHtml();
+}
+document.addEventListener("click", e => {
+  const m = e.target.closest("[data-pgm]");
+  if(m){
+    const k = m.getAttribute("data-pgm"), on = pgOn(), i = on.indexOf(k);
+    if(i >= 0) on.splice(i, 1); else on.push(k);
+    PG.on = on; pgSave(); pgPaint(); return;
+  }
+  const ax = e.target.closest("[data-pgx]");
+  if(ax){ PG.axis = ax.getAttribute("data-pgx"); pgSave(); pgPaint(); return; }
+  const w = e.target.closest("[data-pgw]");
+  if(w){ PG.win = w.getAttribute("data-pgw"); pgSave(); pgPaint(); return; }
+  const f = e.target.closest("[data-pgf]");
+  if(f){ PG.filt = f.getAttribute("data-pgf"); pgSave(); pgPaint(); return; }
+  const v = e.target.closest("[data-pgv]");
+  if(v){ const tag = v.getAttribute("data-pgv"); PG.vsel = PG.vsel === tag ? "" : tag; pgPaint(); return; }
+  if(e.target.closest("[data-pgre]")){ PG.err = ""; pgPaint(); pgLoad(); }
+});
+
 /* Every page the tab bar can show. A section added to the markup and not
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
 const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track",
-               "finance", "efficiency", "checkpoints"];
+               "finance", "efficiency", "checkpoints", "progress"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
@@ -19431,6 +19953,7 @@ document.querySelectorAll("nav button").forEach(btn => {
        section measures zero wide); Finance loads the books from the Laptop. */
     if(btn.dataset.p === "live") lvShow();
     if(btn.dataset.p === "finance") finShow();
+    if(btn.dataset.p === "progress") pgShow();
   });
 });
 
@@ -19489,6 +20012,7 @@ function navShow(page){
   });
   if(page === "live") lvShow();
   if(page === "finance") finShow();
+  if(page === "progress") pgShow();
 }
 window.addEventListener("popstate", e => {
   const s = e.state && e.state.gb;
