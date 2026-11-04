@@ -2076,7 +2076,7 @@ nav button{min-width:0;}
 </div>
 
 <script>
-const EPOCH = "V3.2.0";
+const EPOCH = "V3.3.0";
 /* 2026-10-15 -- WHAT V3.1 DOES NOT RUN. RANGING is switched off (its own build later; opt_schedule.RANGING_ENABLED,
    its trees untouched on disk) and GLOBALS has no group left (GLOBALS_EXIT_HANDOVER retired). Both read as "off in
    V3.1" -- one quiet line -- never as stalled, empty or 0 of N. `d.regimes_off` when the publisher sends it; until
@@ -2105,7 +2105,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261103-180842";
+const APP_BUILD = "20261104-024309";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -13597,10 +13597,15 @@ async function lvMaybeSlopes(){
    wasn't looking (in a trade, paused, a RANGING scalp) or the log doesn't reach. From /gates: the EA's own readout,
    once a minute. An older feed server has no /gates: the switches then draw nothing. */
 /* 2026-11-03 (feed 1.8) -- THE V3.3 GATE STACK: no blended score; every gate its own row, a trade only when all agree.
-   The EA's own gate order (feed $StackGates, EA GateName). Their switches are "s_<gate>", and "stk_armed" for C's arm. */
-const LV_SGATES = [["slope", "Slope"], ["macd", "D1 MACD"], ["h1", "H1 trend"], ["ema", "EMA trend"],
-                   ["conf", "Confluence"], ["rsi", "RSI"], ["rng24", "24 h range"], ["vwap", "VWAP"],
-                   ["sqz", "Squeeze"], ["rvol", "Volume"]];
+   The EA's own gate order (feed $StackGates, EA GateName). Their switches are "s_<gate>", and "stk_armed" for C's arm.
+   2026-11-04 -- 21 gates: a trend gate per timeframe (M1 to D1), RSI on M5 and on M15, the session, the M5 MACD, the
+   stale clock (in hours), how far price already ran (in percent), the young regime and the bucket exit. */
+const LV_SGATES = [["slope", "Slope"], ["macd", "D1 MACD"], ["m1", "M1 trend"], ["m5", "M5 trend"],
+                   ["m15", "M15 trend"], ["m30", "M30 trend"], ["h1", "H1 trend"], ["h4", "H4 trend"],
+                   ["d1", "D1 trend"], ["rsi5", "RSI M5"], ["rsi15", "RSI M15"], ["rng24", "Range 24h"],
+                   ["vwap", "VWAP"], ["sqz", "Squeeze"], ["rvol", "Rel volume"], ["sess", "Session"],
+                   ["m5macd", "M5 MACD"], ["stale", "Stale clock"], ["str", "Ran far"], ["young", "Young regime"],
+                   ["bexit", "Bucket exit"]];
 const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"],
                   ["stk_armed", "Armed (C)"]].concat(LV_SGATES.map(x => ["s_" + x[0], x[1]]));
 const LV_GATE_DAYS = {M1: 1, M5: 2, M15: 4, H1: 10, H4: 14, D1: 14};
@@ -13632,7 +13637,7 @@ function lvGateState(r, k){
   if(k === "stk_armed" || k.startsWith("s_")){
     if(trig < 1 || block === "na" || block == null || block === "") return "x";
     if(k === "stk_armed") return trig === 3 ? (r[14] === 1 ? "p" : "b") : "x";
-    const at = LV_SIDX[k.slice(2)], mx = k === "s_sqz" ? r[35] : null;
+    const at = LV_SIDX[k.slice(2)], hi = LV_SHI[k.slice(2)], mx = hi != null ? r[hi] : null;
     if(at == null || r[at] == null || r[at + 1] == null) return "n";
     return Number(r[at]) >= Number(r[at + 1]) && (mx == null || Number(r[at]) <= Number(mx)) ? "p" : "b";
   }
@@ -13645,8 +13650,12 @@ function lvGateState(r, k){
   return Number(v) >= Number(mn) ? "p" : "b";
 }
 /* The stack's columns in a /gates row (feed 1.8): [13] trig, [14] stk_armed, then each gate's value and minimum in
-   LV_SGATES' order from [15], the squeeze's ceiling at [35]. */
-const LV_SIDX = {slope: 15, macd: 17, h1: 19, ema: 21, conf: 23, rsi: 25, rng24: 27, vwap: 29, sqz: 31, rvol: 33};
+   LV_SGATES' order from [15], then the ceilings (11-04): the squeeze's at [57], the stale clock's at [58], how far
+   price ran at [59] -- null in a minute whose ceiling is off, which reads as no ceiling. */
+const LV_SIDX = {slope: 15, macd: 17, m1: 19, m5: 21, m15: 23, m30: 25, h1: 27, h4: 29, d1: 31, rsi5: 33, rsi15: 35,
+                 rng24: 37, vwap: 39, sqz: 41, rvol: 43, sess: 45, m5macd: 47, stale: 49, str: 51, young: 53,
+                 bexit: 55};
+const LV_SHI = {sqz: 57, stale: 58, str: 59};
 function lvGateRowsIn(rows, t0, t1){
   let lo = 0, hi = rows.length;
   while(lo < hi){ const mid = (lo + hi) >> 1; if(rows[mid][0] < t0) lo = mid + 1; else hi = mid; }
@@ -13693,8 +13702,16 @@ function lvGateLine(bar){
   const parts = LV_GATES.filter(x => LV.gateOn.includes(x[0])).map(([k, label]) => {
     const s = lvGateState(r, k), mix = lvGateBar(rows, k) === "m" ? " (both)" : "";
     const mk = s === "p" ? '<b class="ok">✓</b>' : s === "b" ? '<b class="no">✗</b>' : "·";
-    const at = k.startsWith("s_") ? LV_SIDX[k.slice(2)] : {slope: 4, htf: 6, health: 8, total: 10}[k];
-    const val = at && r[at] != null ? ` ${lvEntryNum(r[at])}${r[at + 1] != null ? " / " + lvEntryNum(r[at + 1]) : ""}` : "";
+    let val = "";
+    if(k.startsWith("s_")){
+      /* 11-04: a stack gate reads on its own scale (yes / no, hours, percent) beside what it needs, ceiling included. */
+      const n = k.slice(2), at = LV_SIDX[n], hi = LV_SHI[n];
+      const x = {name: n, value: at ? r[at] : null, min: at ? r[at + 1] : null, max: hi != null ? r[hi] : null};
+      if(x.value != null) val = ` ${lvStackVal(n, x.value)}${x.min != null ? " / " + lvStackNeed(x) : ""}`;
+    } else {
+      const at = {slope: 4, htf: 6, health: 8, total: 10}[k];
+      val = at && r[at] != null ? ` ${lvEntryNum(r[at])}${r[at + 1] != null ? " / " + lvEntryNum(r[at + 1]) : ""}` : "";
+    }
     return `${label} ${mk}${val}${mix}`;
   });
   const side = r[3] === "L" ? "▲ " : r[3] === "S" ? "▼ " : "";
@@ -15170,27 +15187,65 @@ function lvPaintEntry(){
 const LV_SWHAT = {
   slope: "The regime's D1 slope the trade's way, at least the bucket's minimum.",
   macd: "The D1 MACD moving the trade's way since yesterday.",
+  m1: "The M1 trend agreeing with the trade.",
+  m5: "The M5 trend agreeing with the trade.",
+  m15: "The M15 trend agreeing with the trade.",
+  m30: "The M30 trend agreeing with the trade.",
   h1: "The H1 trend agreeing with the trade.",
-  ema: "The EMA trend (the trend part of the old health score) the trade's way.",
-  conf: "The fast charts (M1 to M30) agreeing with the trade.",
-  rsi: "RSI the trade's way: below zero is buying into overbought or selling into oversold.",
+  h4: "The H4 trend agreeing with the trade.",
+  d1: "The D1 trend agreeing with the trade.",
+  rsi5: "RSI on M5 the trade's way: below zero is buying into overbought or selling into oversold.",
+  rsi15: "RSI on M15 the trade's way: below zero is buying into overbought or selling into oversold.",
   rng24: "Where price sits in its last 24 hours: above zero is the cheap side for a buy, the rich side for a sell.",
   vwap: "Price against VWAP: above zero is the cheap side for a buy, the rich side for a sell.",
   sqz: "How tight volatility is, 0 to 1, inside the bucket's band.",
-  rvol: "This minute's ticks against the recent average."};
+  rvol: "This minute's ticks against the recent average.",
+  sess: "The session now is one this bucket trades in.",
+  m5macd: "The M5 MACD moving the trade's way.",
+  stale: "Hours since the trend last made a new extreme (a new high in BULL, a new low in BEAR). Past the bucket's " +
+         "limit it blocks new entries until the next new extreme.",
+  str: "How far price has already run from its recent H1 extreme, in percent. Past the bucket's limit it blocks an " +
+       "entry that would chase a move already made.",
+  young: "No entry while the regime is still young and its slope still close to the line it crossed.",
+  bexit: "No entry soon after the slope left the steeper bucket next to this one, once it is well past that " +
+         "bucket's edge."};
 const LV_STRIG = {1: "A", 2: "B", 3: "C"};
+/* 2026-11-04 -- the yes / no gates (+1 passes, -1 blocks; a minimum below zero is off), and the two that read on their
+   own scale: the stale clock in hours and how far price ran in percent, each held under a ceiling. */
+const LV_SSWITCH = ["macd", "sess", "m5macd", "young", "bexit"];
 function lvStackOff(x){
   if(x.min == null) return false;
   const mn = Number(x.min), mx = x.max == null ? null : Number(x.max);
   if(x.name === "sqz") return mn <= 0 && (mx == null || mx >= 1);
   if(x.name === "rvol") return mn <= 0;
+  if(x.name === "stale" || x.name === "str") return mx == null && mn <= 0;
   if(x.name === "slope" || x.name === "h1") return false;
-  return mn <= -1 || (x.name === "macd" && mn < 0);
+  return mn <= -1 || (LV_SSWITCH.includes(x.name) && mn < 0);
 }
 function lvStackPass(x){
   if(x.value == null || x.min == null) return null;
   const v = Number(x.value);
   return v >= Number(x.min) && (x.max == null || v <= Number(x.max));
+}
+function lvStackVal(n, v){
+  if(v == null || !isFinite(Number(v))) return "—";
+  if(LV_SSWITCH.includes(n)) return Number(v) > 0 ? "yes" : "no";
+  if(n === "stale") return lvEntryNum(v, 1) + " h";
+  if(n === "str") return lvEntryNum(v, 2) + " %";
+  return lvEntryNum(v, n === "rvol" || n === "sqz" ? 2 : 3);
+}
+function lvStackNeed(x){
+  if(lvStackOff(x)) return "off";
+  const n = x.name;
+  if(LV_SSWITCH.includes(n)) return "needs yes";
+  if(n === "stale" || n === "str"){
+    const u = n === "stale" ? " h" : " %", d = n === "stale" ? 1 : 2;
+    const lo = x.min != null && Number(x.min) > 0 ? lvEntryNum(x.min, d) : null;
+    if(x.max == null) return lo != null ? `needs at least ${lo}${u}` : "";
+    return lo != null ? `needs ${lo} to ${lvEntryNum(x.max, d)}${u}` : `at most ${lvEntryNum(x.max, d)}${u}`;
+  }
+  if(x.max != null) return `needs ${lvEntryNum(x.min, 2)} to ${lvEntryNum(x.max, 2)}`;
+  return "needs " + lvEntryNum(x.min, n === "rvol" || n === "sqz" ? 2 : 3);
 }
 function lvStackCard(e, head, asOf, offSay){
   const s = e.stack, trig = Number(s.trig), t = LV_STRIG[trig] || "?";
@@ -15241,11 +15296,7 @@ function lvStackCard(e, head, asOf, offSay){
       "the trade's way.", false, "stk_armed");
   gs.forEach(x => {
     const off = lvStackOff(x), pass = lvStackPass(x);
-    const dp = x.name === "rvol" || x.name === "sqz" ? 2 : 3;
-    const val = x.name === "macd" && x.value != null ? (Number(x.value) > 0 ? "yes" : "no") : lvEntryNum(x.value, dp);
-    const need = off ? "off" : x.name === "macd" ? "needs yes"
-      : x.max != null ? `needs ${lvEntryNum(x.min, 2)} to ${lvEntryNum(x.max, 2)}` : "needs " + lvEntryNum(x.min, dp);
-    rows += lvEntryRow(off ? null : pass, esc(label(x.name)), val, need,
+    rows += lvEntryRow(off ? null : pass, esc(label(x.name)), lvStackVal(x.name, x.value), lvStackNeed(x),
                        (LV_SWHAT[x.name] || "") + (off ? " Off in this bucket: it passes everything." : ""), off,
                        "s_" + x.name);
   });
