@@ -2166,7 +2166,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-090230";
+const APP_BUILD = "20261105-151936";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -18941,11 +18941,61 @@ function pfNowCard(s, title){
 /* 2026-10-27 -- THE KIDS TAB. Trevor: *"I need a spot where I can see the Kids RESP Balances
    and Transactions."* GOLDbot's REAL books, read on the Laptop -- the demo hides the RESPs on
    the GOLDbot tab. A row's `change` is what it did to the balance (a move into GOLDbot: none). */
+/* 2026-11-05 -- THE TD RESPs. Trevor: *"the three different Mutual Funds are each supposed to go
+   to the 3 different kids. The Main RESP Is somehow split between the 3"*. Read from the TD
+   statements (his own books, not GOLDbot's): each kid's own fund, and the family plan -- ONE pot;
+   TD keeps apart only what went in for each kid. Never his money, never GOLDbot's. */
+function pfTdRows(rows, key){
+  const all = !!PF.all[key], shown = all ? rows : rows.slice(0, 8);
+  return '<table class="fin-tbl"><tr><th>What</th><th>Amount</th></tr>' + shown.map(r =>
+      `<tr><td>${esc(r.what)}<span class="fin-sub">${esc(finDate(r.date, true))}</span></td>` +
+      `<td class="${finTone(r.change)}">${esc(Math.abs(r.change) < 0.005 ? finMoney(Math.abs(r.amount))
+        : (r.change > 0 ? "+" : "") + finMoney(r.change))}</td></tr>`).join("") + "</table>" +
+    (rows.length > 8 ? `<button type="button" class="fin-more" style="padding:8px 0 0" data-pf="all" ` +
+      `data-id="${finAttr(key)}">${all ? "Show the latest 8" : "Show all " + rows.length}</button>` : "");
+}
+function pfTdResp(t){
+  if(!t || (!(t.funds || []).length && !(t.plans || []).length)) return "";
+  let h = '<div class="section-label">At TD</div>' + finStats((t.kids || []).filter(k => k.fund != null)
+      .map(k => [k.name + "'s fund", finMoney(k.fund), "", "on " + finDate(k.fund_as_of, true)])
+    .concat((t.plans || []).map(p => ["Family RESP", finMoney(p.value), "", "all the kids · " + finDate(p.as_of, true)]))
+    .concat([["All at TD", finMoney(t.total), "", "newest statement each"]]));
+  (t.plans || []).forEach((p, i) => {
+    h += `<div class="section-label">${esc(p.name)} — one pot for every kid</div>` +
+      '<div class="card"><div class="card-in">' + finKv([
+        ["Value", finMoney(p.value), "sum", "on " + finDate(p.as_of, true) + " · TD sends this one once a year"],
+        ...(p.savings != null ? [["In savings", finMoney(p.savings), "", ""]] : []),
+        ...(p.gics || []).map(g => ["In a GIC", finMoney(g.value), "",
+          g.rate_pct.toFixed(2) + "% · matures " + finDate(g.matures, true)])]) +
+      '<table class="fin-tbl"><tr><th>Put in for</th><th>Amount</th></tr>' + (p.kids || []).map(k =>
+        `<tr><td>${esc(k.name)}<span class="fin-sub">${esc(finMoney(k.contributions) + " contributions · " +
+          finMoney(k.cesg) + " Canada grant · " + finMoney(k.other) + " other grants")}</span></td>` +
+        `<td>${esc(finMoney(k.total))}</td></tr>`).join("") +
+      `<tr><td>Not tied to one kid<span class="fin-sub">growth, interest, and money moved in from another plan</span></td>` +
+      `<td>${esc(finMoney(p.shared))}</td></tr></table>` +
+      '<div class="fin-note">A family plan is one pot. TD keeps track only of what went in for each kid; ' +
+      "the rest belongs to all of them. When a kid goes to school, you choose how much they get. " +
+      "Contributions and the Canada grant can go to any of the kids (at most $7,200 of Canada grant per kid, " +
+      "ever). A Canada Learning Bond, if that's in the other grants, stays with its own kid.</div>" +
+      pfTdRows(p.rows || [], "tdplan:" + i) + "</div></div>";
+  });
+  (t.funds || []).forEach((f, i) => {
+    const grown = f.value - f.invested;
+    h += `<div class="section-label">${esc((f.kid || "A kid") + "'s TD fund")}</div>` +
+      '<div class="card"><div class="card-in">' + finKv([
+        ["Value", finMoney(f.value), "sum", "on " + finDate(f.as_of, true) + (f.funds.length ? " · " + f.funds.join(", ") : "")],
+        ["Put in since it opened", finMoney(f.invested), "", ""],
+        ["Grown", finMoney(grown), "", "", finTone(grown)]]) +
+      pfTdRows(f.rows || [], "tdfund:" + i) + "</div></div>";
+  });
+  return h + '<div class="fin-note">From your TD RESP statements. Kept apart from the Wealthsimple RESP money ' +
+    "above, and never counted in your budget or plan.</div>";
+}
 function pfKids(d){
-  const k = d.kids;
+  const k = d.kids, td = pfTdResp(d.td_resp);
   if(!k || k.why || !(k.kids || []).length)
     return finCard(`<div class="fin-note">${esc((k && k.why) || (k ? "There are no RESP accounts in GOLDbot's books yet."
-      : "GOLDbot's books aren't on the Laptop, so the RESPs can't be shown."))}</div>`);
+      : "GOLDbot's books aren't on the Laptop, so the RESPs can't be shown."))}</div>`) + td;
   let h = finStats(k.kids.map(x => [x.name, finMoney(x.balance), "",
       x.per_month > 0.005 ? "+" + finMoney(x.per_month) + " a month" : ""]).concat(
     k.kids.length > 1 ? [["All " + k.kids.length + " together", finMoney(k.total), "", ""]] : []));
@@ -18970,7 +19020,7 @@ function pfKids(d){
   });
   return h + '<div class="fin-note">From GOLDbot\'s books, not the demo. Money you hold for a kid is theirs, not ' +
     "GOLDbot's; moved into GOLDbot, it's owed to them and shares every trading day, gains and losses. A payment " +
-    "marked for a kid's RESP on the Spending tab shows here too.</div>";
+    "marked for a kid's RESP on the Spending tab shows here too.</div>" + td;
 }
 function pfSchedule(d){
   const s = d.schedule || {};
