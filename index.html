@@ -2105,7 +2105,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261104-024309";
+const APP_BUILD = "20261105-011316";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -18695,10 +18695,16 @@ function pfSchedule(d){
   /* 2026-10-26 -- THE BUFFER. Trevor: *"We're going to have to leave a buffer in the chequing
      account ... that way we don't accidentally dip into the Overdraft Protection."* */
   const bf = s.buffer || {amount: 0};
+  /* 2026-11-05 -- Trevor: *"add $25 per day until pay is Recieved ... After that no buffer is
+     no longer needed."* The buffer is held only until bf.until (the next pay); after it, $0. */
+  const bfAt = d => (bf.until && d >= bf.until && d > s.plan_date) ? 0 : bf.amount;
   const bfFrom = bf.typed != null ? "your own number"
     : bf.budget_keep > bf.auto ? "the Budget tab's kept-in-chequing"
     : "your average unusual spending" + ((bf.months || []).length ? ", " + finMonth(bf.months[0]) + "–" +
-      finMonth(bf.months[bf.months.length - 1]) : "");
+      finMonth(bf.months[bf.months.length - 1]) : "") +
+      (bf.average != null && bf.days ? ", " + finMoney(bf.average, false) + " + " + finMoney(bf.per_day, false) +
+        " a day for " + bf.days + " day" + (bf.days === 1 ? "" : "s") : "");
+  const bfTill = bf.until ? " until the next pay on " + finDate(bf.until) : "";
   let h = "";
   (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
   const card = s.card || {}, loc = s.loc;
@@ -18707,22 +18713,24 @@ function pfSchedule(d){
      card.due > 0.004 ? card.rate + "% · " + (card.balance_from || "") : "paid off"],
     [loc ? loc.name : "Line of credit", loc ? finMoney(-loc.owed) : "—", loc && loc.owed > 0.004 ? "lv-bad" : "",
      loc ? loc.rate + "% a year" : ""],
-    ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < bf.amount - 0.004 ? "lv-bad" : "lv-good",
-     "on " + finDate(s.lowest.date) + " · buffer " + finMoney(bf.amount, false)],
+    ["Lowest in chequing", finMoney(s.lowest.balance), s.lowest.balance < bfAt(s.lowest.date) - 0.004 ? "lv-bad" : "lv-good",
+     "on " + finDate(s.lowest.date) + " · buffer " + finMoney(bf.amount, false) +
+       (bf.until ? " to " + finDate(bf.until) : "")],
     ["GOLDbot", g.live ? g.return_pct + "% a year" : "not on real money", g.beats_loc ? "lv-good" : "",
      g.live ? "vs the line of credit's " + g.loc_rate + "%" : "about " + c.months + " months away"],
   ]);
   /* WHAT TO DO, RIGHT NOW, IN ORDER */
   h += pfNowCard(s, "Right now — move these, in order");
   h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))}: ${esc(finMoney(s.need))} for the bills ` +
-    `until the next pay covers them, plus a <b>${esc(finMoney(bf.amount))} buffer</b> (${esc(bfFrom)}) so ` +
-    "nothing dips into the overdraft. Everything above that goes to the debts — the highest rate first.</div>";
+    `until the next pay covers them, plus a <b>${esc(finMoney(bf.amount))} buffer</b>${esc(bfTill)} ` +
+    `(${esc(bfFrom)}) so nothing dips into the overdraft. Everything above that goes to the debts — the ` +
+    "highest rate first.</div>";
   /* CHEQUING, DAY BY DAY */
   if((s.calendar || []).length)
     h += `<div class="section-label">${esc(s.chequing.name)} until ${esc(finDate(s.next_plan))}</div>` + finCard(
       '<table class="fin-tbl"><tr><th>Day</th><th>What</th><th>Amount</th><th>Left</th></tr>' +
       s.calendar.map(e => `<tr><td>${esc(finDate(e.date))}</td><td>${esc(e.what)}</td>` +
-        `<td>${esc(finMoney(e.amount))}</td><td class="${e.balance < bf.amount - 0.004 ? "pf-short" : ""}">` +
+        `<td>${esc(finMoney(e.amount))}</td><td class="${e.balance < bfAt(e.date) - 0.004 ? "pf-short" : ""}">` +
         `${esc(finMoney(e.balance))}</td></tr>`).join("") + "</table>");
   /* PAY COMING IN */
   if((s.income || []).length)
