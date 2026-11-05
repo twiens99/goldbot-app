@@ -2118,7 +2118,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-030651";
+const APP_BUILD = "20261105-032537";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4546,6 +4546,56 @@ function jobCheckpoints(r){
     `</div></div>`;
 }
 
+/* 2026-11-05 -- SECTION BARS: a page's shortcut bar, sticky under the header, one button per block. Trevor, for Live:
+   "a tab bar that appears at the top of the page, always visible ... these are shortcuts to the Blocks"; then "Let's
+   add that shortcut bar to the results tab. Jobs - Gates - Baselines". secBar(page, blocks) draws it -- blocks are
+   [[key, label], ...], each block's element is id <page>b-<key> (class lv-blk, which rests under the bar when scrolled
+   to). A tap scrolls there; secSpy marks the block in view on whichever bar is on screen. The mark is remembered per
+   bar (SEC.cur), so a page that repaints (Results, every snapshot) keeps it. A div, not a <nav>: the bottom tab bar's
+   own rules are written on the bare `nav` element (fixed, centred). */
+const SEC = {cur: {}, quiet: {}};
+let _secRaf = 0;
+function secBar(page, blocks){
+  const id = page + "tabs", ids = blocks.map(([k]) => page + "b-" + k);
+  const cur = ids.indexOf(SEC.cur[id]) >= 0 ? SEC.cur[id] : ids[0];
+  return `<div class="lv-tabs secbar" id="${id}" role="navigation" aria-label="Page sections">` +
+    blocks.map(([k, l], i) => `<button type="button" data-secgo="${ids[i]}" aria-current="${ids[i] === cur}">${
+      esc(l)}</button>`).join("") + `</div>`;
+}
+function secMark(bar, target){
+  SEC.cur[bar.id] = target;
+  bar.querySelectorAll("[data-secgo]").forEach(b => b.setAttribute("aria-current", String(b.dataset.secgo === target)));
+}
+/* WHICH BLOCK YOU ARE IN: the last one whose top has reached the bar's bottom edge (the last block, once the page can
+   scroll no further). Quiet for a moment after a tap, so a smooth scroll past a block does not light it up on the way.
+   rAF-throttled and passive, like syncStuck; a bar on a hidden page has no box and is skipped. */
+function secSpy(){
+  _secRaf = 0;
+  document.querySelectorAll(".secbar").forEach(bar => {
+    if(!bar.getClientRects().length || Date.now() < (SEC.quiet[bar.id] || 0)) return;
+    const ids = Array.from(bar.querySelectorAll("[data-secgo]")).map(b => b.dataset.secgo);
+    const line = bar.getBoundingClientRect().bottom + 24;   // a tapped block rests ~13 px under the bar (scroll-margin)
+    let cur = ids[0];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if(el && el.getBoundingClientRect().top <= line) cur = id;
+    });
+    if(window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4)
+      cur = ids[ids.length - 1];
+    if(cur !== SEC.cur[bar.id]) secMark(bar, cur);
+  });
+}
+window.addEventListener("scroll", () => { if(!_secRaf) _secRaf = requestAnimationFrame(secSpy); }, {passive: true});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-secgo]");
+  const bar = b && b.closest(".secbar"), el = b && document.getElementById(b.dataset.secgo);
+  if(!bar || !el) return;
+  secMark(bar, b.dataset.secgo);
+  SEC.quiet[bar.id] = Date.now() + 1200;
+  el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+                     block: "start"});
+});
+
 function renderResultsList(){
   const rows = resultsRows().map(r => {
     const rc = REGIME_CLASS[r.regime] || "";
@@ -4599,7 +4649,7 @@ function renderResultsList(){
      place -- it simply does something now. */
   /* 2026-11-05 -- NO "not finished yet" here any more. Trevor: "The results tab: let's take the Not finished rounds out.
      I can find those in the active tab." (inProgressSection stays: a running round's own view still uses ipCard.) */
-  return resultsReviewSection() +
+  const jobs = resultsReviewSection() +
     `<div class="section-label">${shown.filter(completed).length} completed` +
     (nf ? ` · ${nf} failed` : "") + `</div>
     <div class="rctl">
@@ -4625,7 +4675,14 @@ function renderResultsList(){
            data-rfilter="task">${RESULTS_TASK ? esc(phaseText(RESULTS_TASK))
                                               : "All tasks"}</button>`
       : "") + `
-    </div>` + rows + gateSettingsSection() + baselinesSection();
+    </div>` + rows;
+  /* 2026-11-05 -- THREE BLOCKS UNDER A SHORTCUT BAR (secBar). Trevor: "Let's add that shortcut bar to the results
+     tab. Jobs - Gates - Baselines". The gate settings sit above the baselines, as before. A block with nothing to show
+     yet (no gate settings, no baseline) gets no button. */
+  const blocks = [["jobs", "Jobs", jobs], ["gates", "Gates", gateSettingsSection()],
+                  ["base", "Baselines", baselinesSection()]].filter(x => x[2]);
+  return secBar("rs", blocks) +
+    blocks.map(([k, , h]) => `<div class="lv-blk" id="rsb-${k}" style="gap:12px">${h}</div>`).join("");
 }
 
 /* 2026-11-05 -- EACH BUCKET'S GATE SETTINGS, above the baselines. Trevor, on the first V3.3 round: "I'm not finding
@@ -14655,19 +14712,15 @@ function lvPaintBadge(){
 /* 2026-11-05 -- FIVE BLOCKS, A SHORTCUT BAR ABOVE THEM. Trevor: "Let's have a tab bar that appears at the top of the
    page, always visible. Here we're gonna have in order: Charts - Status - Performance - Gates - History. So all these
    can still be on the same page, but these are shortcuts to the Blocks. Status consists of in order: Balance - Market
-   - Trading In". The page runs in the bar's order; each block is a .lv-blk (id lvb-<key>), the bar (#lvtabs) sticks
-   under the header and marks the block you are in (lvSpy). Open trades ride with Charts: their toggles draw on it.
-   The issue notes (#lvstatus) stay above every block -- they are the page's alarms. */
+   - Trading In". The page runs in the bar's order; each block is a .lv-blk (id lvb-<key>), the bar (secBar, #lvtabs)
+   sticks under the header and marks the block you are in (secSpy). Open trades ride with Charts: their toggles draw
+   on it. The issue notes (#lvstatus) stay above every block -- they are the page's alarms. */
 const LV_BLOCKS = [["charts", "Charts"], ["status", "Status"], ["perf", "Performance"], ["gates", "Gates"],
                    ["history", "History"]];
 function lvSkeleton(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
-    /* a div, not a <nav>: the bottom tab bar's own rules are written on the bare `nav` element (fixed, centred). */
-    + '<div class="lv-tabs" id="lvtabs" role="navigation" aria-label="Live page sections">'
-    +   LV_BLOCKS.map(([k, l]) => `<button type="button" data-lvblk="${k}" aria-current="${k === "charts"}">${l}</button>`)
-          .join("")
-    + '</div>'
+    + secBar("lv", LV_BLOCKS)
     + '<div id="lvstatus" class="home"></div>'
     + '<div class="lv-blk" id="lvb-charts">'
     + '<div class="card" id="lvchartcard">'
@@ -14731,42 +14784,6 @@ function lvSkeleton(){
     + '<div class="lv-foot" id="lvfoot"></div>'
     + '</div>';
 }
-/* WHICH BLOCK YOU ARE IN: the last one whose top has reached the bar's bottom edge (the last block, once the page
-   can scroll no further). Quiet for a moment after a tap, so a smooth scroll past Status does not light it up on the
-   way to Gates. rAF-throttled and passive, like syncStuck. */
-let _lvSpyRaf = 0;
-function lvMarkBlock(k){
-  LV.blk = k;
-  document.querySelectorAll("#lvtabs [data-lvblk]").forEach(b =>
-    b.setAttribute("aria-current", String(b.dataset.lvblk === k)));
-}
-function lvSpy(){
-  _lvSpyRaf = 0;
-  const bar = document.getElementById("lvtabs");
-  if(!bar || !lvVisible() || Date.now() < (LV.blkQuiet || 0)) return;
-  const line = bar.getBoundingClientRect().bottom + 24;   // a tapped block rests ~13 px under the bar (scroll-margin)
-  let cur = LV_BLOCKS[0][0];
-  LV_BLOCKS.forEach(([k]) => {
-    const el = document.getElementById("lvb-" + k);
-    if(el && el.getBoundingClientRect().top <= line) cur = k;
-  });
-  if(window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4)
-    cur = LV_BLOCKS[LV_BLOCKS.length - 1][0];
-  if(cur !== LV.blk) lvMarkBlock(cur);
-}
-window.addEventListener("scroll", () => { if(!_lvSpyRaf) _lvSpyRaf = requestAnimationFrame(lvSpy); }, {passive: true});
-function lvGoBlock(k){
-  const el = document.getElementById("lvb-" + k);
-  if(!el) return;
-  lvMarkBlock(k);
-  LV.blkQuiet = Date.now() + 1200;
-  el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-                     block: "start"});
-}
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-lvblk]");
-  if(b) lvGoBlock(b.dataset.lvblk);
-});
 function lvConnectForm(){
   const cur = liveUrl();
   const val = esc(cur).replace(/"/g, "&quot;");
