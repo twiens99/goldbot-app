@@ -2021,6 +2021,48 @@ nav button{min-width:0;}
 .pg-mv{font-size:.5rem;margin-left:2px;vertical-align:1px;}
 .pg-mv.up{color:var(--good);}
 .pg-mv.dn{color:var(--bad);}
+/* 2026-11-05 -- Progress: Backtest vs live (the live-vs-backtest ledger) */
+.ldg-key{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.6rem;color:var(--faint);margin:2px 0 2px;
+  font-family:"Roboto Mono",ui-monospace,monospace;}
+.ldg-key i{display:inline-block;width:12px;height:4px;border-radius:2px;vertical-align:2px;margin-right:4px;}
+.ldg-row{width:100%;display:block;background:transparent;border:0;border-top:1px solid var(--line);
+  padding:7px 3px 8px;text-align:left;cursor:pointer;color:var(--dim);font-family:inherit;}
+.ldg-row.on{background:rgba(224,180,87,.06);}
+.ldg-hd{display:flex;align-items:baseline;gap:7px;font-size:.68rem;}
+.ldg-hd b{color:var(--text);font-weight:600;font-size:.78rem;}
+.ldg-hd .r{margin-left:auto;font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+.ldg-bar{display:grid;grid-template-columns:76px minmax(0,1fr) 46px;align-items:center;gap:7px;margin-top:5px;
+  font-family:"Roboto Mono",ui-monospace,monospace;font-size:.6rem;font-variant-numeric:tabular-nums;}
+.ldg-bar > span:last-child{text-align:right;color:var(--text);}
+.ldg-trk{position:relative;height:6px;border-radius:3px;background:var(--card-2);}
+.ldg-trk i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;}
+.ldg-trk i.bt{background:var(--dim);opacity:.75;}
+.ldg-trk i.up{background:var(--good);}
+.ldg-trk i.dn{background:var(--bad);}
+.ldg-trk em,.ldg-div em{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--text);opacity:.5;}
+.ldg-more{padding:2px 3px 10px;}
+.ldg-grid{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:.66rem;color:var(--dim);
+  font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+.ldg-grid b{color:var(--text);font-weight:500;text-align:right;}
+.ldg-grid .sub{grid-column:1 / -1;font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  margin-top:6px;}
+.ldg-svg{width:100%;height:auto;display:block;margin-top:8px;border-radius:6px;background:var(--bg);}
+.ldg-rho{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.7fr) 42px;gap:7px;align-items:center;
+  border-top:1px solid var(--line);padding:6px 3px;font-family:"Roboto Mono",ui-monospace,monospace;font-size:.64rem;
+  color:var(--dim);font-variant-numeric:tabular-nums;}
+.ldg-rho > span:last-child{text-align:right;color:var(--text);}
+.ldg-rho.weak > span{opacity:.55;}
+.ldg-rh{border-top:0;padding-top:2px;padding-bottom:2px;}
+.ldg-ax{position:relative;height:1.2em;font-size:.5rem;color:var(--faint);}
+.ldg-ax > span{position:absolute;top:0;white-space:nowrap;}
+.ldg-ax > span:nth-child(1){left:0;}
+.ldg-ax > span:nth-child(2){left:50%;transform:translateX(-50%);}
+.ldg-ax > span:nth-child(3){right:0;}
+.ldg-div{position:relative;height:6px;border-radius:3px;background:var(--card-2);}
+.ldg-div em{left:50%;}
+.ldg-div i{position:absolute;top:0;bottom:0;border-radius:3px;}
+.ldg-need{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 8px;align-items:center;font-size:.64rem;
+  color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;margin:6px 0 6px;}
 </style>
 
 <div class="app">
@@ -2124,7 +2166,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-084257";
+const APP_BUILD = "20261105-090230";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2133,6 +2175,7 @@ let CURVES = [];
 let QUEUE = null;
 let QUEUE_HELD = {};
 let QCOUNTS = null;     // 2026-11-05 -- d.queue_counts: every backtest waiting (the Active bar's "Queued N")
+let LDG = null;         // 2026-11-05 -- d.live_ledger: Progress's Backtest vs live (app_snapshot.collect_live_ledger)
 /* Rounds waiting on a PASS PICK, in Telegram's own numbering. */
 let PICKS = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
@@ -17338,6 +17381,12 @@ function applySnapshot(d, source){
   CURVES = Array.isArray(d.curves) ? d.curves : [];
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
   QCOUNTS = (d.queue_counts && typeof d.queue_counts === "object") ? d.queue_counts : null;
+  /* 2026-11-05 -- the live-vs-backtest ledger; a NEW build repaints Progress (every snapshot would wipe its crosshair). */
+  const ldg = (d.live_ledger && typeof d.live_ledger === "object" && Array.isArray(d.live_ledger.views))
+    ? d.live_ledger : null;
+  const ldgNew = (ldg && ldg.built) !== (LDG && LDG.built);
+  LDG = ldg;
+  if(ldgNew){ try{ if(pgVisible()) pgPaint(); }catch(e){} }
   /* 2026-10-17 -- each backtest machine's slot service: tests running, and why it did not start another. */
   BTSLOTS = (d.backtest_slots && typeof d.backtest_slots === "object") ? d.backtest_slots : {};
   QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
@@ -19779,9 +19828,11 @@ const PG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
 let PG_REG = null;      // the chart as drawn, for the crosshair
 const PG = (() => {
-  const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "all", filt: "all", axis: "date", vsel: ""};
+  const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "all", filt: "all", axis: "date", vsel: "",
+             lfrom: "", lopen: ""};
   try{
     const v = JSON.parse(localStorage.getItem(PG_KEY) || "null");
+    if(v && typeof v.lfrom === "string") s.lfrom = v.lfrom;
     if(v && Array.isArray(v.on)) s.on = v.on.filter(k => PG_M.some(m => m[0] === k));
     if(v && PG_WINS.some(w => w[0] === v.win)) s.win = v.win;
     if(v && typeof v.filt === "string") s.filt = v.filt;
@@ -19790,7 +19841,8 @@ const PG = (() => {
   return s;
 })();
 function pgSave(){
-  try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis})); }catch(e){}
+  try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis,
+                                                      lfrom: PG.lfrom})); }catch(e){}
 }
 
 async function pgLoad(){
@@ -20154,6 +20206,126 @@ function pgByVersion(S){
     `<span class="${lvTone(T.avgr)}">${T.avgr != null ? lvSigned(T.avgr, 2) : "—"}</span></div>`;
   return head + body + foot;
 }
+/* ---------- Backtest vs live (2026-11-05) ----------
+   Trevor: "The part that we have learning about the trades and attempting to predict trades ... I want to implement
+   into the app so I can visually see what is going on" -> "Yes Build it". The live-vs-backtest ledger, from the
+   snapshot (app_snapshot.collect_live_ledger; the Laptop rebuilds it every hour from the VPS record). Each live trade
+   is set beside what ITS bucket's backtest said at the moment it opened, so an older version's trades are judged by
+   their own backtest and stay fair evidence; the chips start the record at a later version. */
+function ldgNum(k, v){
+  if(v == null || !isFinite(v)) return "—";
+  if(k === "trades_per_yr") return String(Math.round(v));
+  if(k === "months_profitable_share") return Math.round(v * 100) + "%";
+  if(k === "month_net_mean" || k === "month_net_std")
+    return (v < 0 ? "−" : "") + "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
+  return Number(v).toFixed(2);
+}
+function ldgView(){
+  const vs = LDG && Array.isArray(LDG.views) ? LDG.views : [];
+  return vs.find(v => v.from === PG.lfrom) || vs[0] || null;
+}
+/* One bar per trade, oldest left: its R (the move over its first stop), up green, down red. */
+function ldgStrip(b){
+  const tr = (b.trades || []).filter(t => t[1] != null && isFinite(t[1]));
+  if(!tr.length) return "";
+  const W = 320, H = 78, T = 10, B = 15, L = 4, R = 4;
+  const m = Math.max(1, ...tr.map(t => Math.abs(Number(t[1]))));
+  const y0 = T + (H - T - B) / 2, k = (H - T - B) / 2 / m;
+  const step = (W - L - R) / tr.length, bw = Math.max(2, Math.min(14, step - 2));
+  let bars = "";
+  tr.forEach((t, i) => {
+    const r = Number(t[1]), x = L + i * step + (step - bw) / 2, h = Math.max(1, Math.abs(r) * k);
+    bars += `<rect x="${x.toFixed(1)}" y="${(r >= 0 ? y0 - h : y0).toFixed(1)}" width="${bw.toFixed(1)}" ` +
+            `height="${h.toFixed(1)}" rx="1.5" fill="${r >= 0 ? "#5FBE95" : "#E0685A"}"><title>` +
+            `${esc(pgDate(t[0]))} · ${esc(lvSigned(r, 2))}R · ${esc(lvMoney(t[2]))} · ${esc(pgVer(t[3]))}</title></rect>`;
+  });
+  const lab = (x, y, s, a) => `<text x="${x}" y="${y}" fill="#5F727E" font-size="7.5" text-anchor="${a}">${esc(s)}</text>`;
+  return `<svg class="ldg-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Each live trade's R, oldest first">` +
+    `<line x1="${L}" x2="${W - R}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#8CA0AC" stroke-width="0.6" ` +
+    `opacity=".6"></line>` + bars + lab(W - R, T - 2, "bars to ±" + m.toFixed(1) + "R", "end") +
+    lab(L, H - 2, pgDate(tr[0][0]), "start") + (tr.length > 1 ? lab(W - R, H - 2, pgDate(tr[tr.length - 1][0]), "end") : "") +
+    `</svg>`;
+}
+/* A bucket: what its backtest said (PF, at each trade's entry) over what live did, on one PF scale for the view. */
+function ldgRow(b, S){
+  const key = b.regime + "|" + b.bucket, open = PG.lopen === key, L = b.live || {}, bt = b.bt || {};
+  const w = v => (Math.min(Math.max(v, 0), S) / S * 100).toFixed(1) + "%";
+  const bar = (label, v, cls, txt) => `<span class="ldg-bar"><span>${label}</span><span class="ldg-trk">` +
+    (v != null && isFinite(v) ? `<i class="${cls}" style="width:${w(v)}"></i>` : "") +
+    `<em style="left:${w(1)}"></em></span><span>${txt}</span></span>`;
+  const liveTxt = L.pf != null ? L.pf.toFixed(2) : (L.won ? "no loss" : "—");
+  const row = `<button type="button" class="ldg-row${open ? " on" : ""}" data-pgl="${esc(key)}" aria-expanded="${open}">` +
+    `<span class="ldg-hd"><b>${esc(bktName(b.regime, b.bucket))}</b><span>${L.trades} trade${L.trades === 1 ? "" : "s"}` +
+    ` · ${L.won} won</span><span class="r ${lvTone(L.r_mean)}">${L.r_mean != null ? lvSigned(L.r_mean, 2) + "R a trade"
+    : ""}</span></span>` +
+    bar("Backtest PF", bt.pf, "bt", ldgNum("pf", bt.pf)) +
+    bar("Live PF", L.pf, L.pf != null && L.pf >= 1 ? "up" : "dn", liveTxt) + `</button>`;
+  if(!open) return row;
+  const rg = b.bt_pf_range && b.bt_pf_range[0] !== b.bt_pf_range[1]
+    ? ` <span class="pg-dim">(${b.bt_pf_range[0].toFixed(2)}–${b.bt_pf_range[1].toFixed(2)})</span>` : "";
+  const nums = (LDG.numbers || []).map(([k, label]) =>
+    `<span>${esc(label)}</span><b>${ldgNum(k, bt[k])}${k === "pf" ? rg : ""}</b>`).join("");
+  return row + `<div class="ldg-more"><div class="ldg-grid"><span class="sub">The backtest, when each trade opened</span>` +
+    nums + `<span class="sub">Live</span><span>Net</span><b class="${lvTone(L.net)}">${lvMoney(L.net)}</b>` +
+    `<span>R, all trades</span><b class="${lvTone(L.r_sum)}">${L.r_sum != null ? lvSigned(L.r_sum, 2) + "R" : "—"}</b>` +
+    `</div>` + ldgStrip(b) + `<div class="vhcap">Each bar is one live trade, oldest left: its R, the price move over ` +
+    `its first stop. The backtest numbers are the means over this bucket's trades of what was in force at each ` +
+    `entry; a range shows when the gate PF changed between trades. Month net is the backtest's, at its fixed 0.01 ` +
+    `lot.</div></div>`;
+}
+/* Which backtest number ranks the buckets the way live does: each number's rank agreement with live R a trade. */
+function ldgTracks(v){
+  const t = v.tracks || {}, need = LDG.need || {buckets: 5, trades: 30}, nb = t.buckets || 0, nf = t.fewest || 0;
+  const meter = (n, of) => `<span class="lv-meter"><i class="${n >= of ? "ok" : ""}" ` +
+    `style="width:${Math.min(100, n / of * 100).toFixed(0)}%"></i></span>`;
+  const head = t.enough
+    ? `<div class="lv-line">Enough live trades to read: ${nb} buckets, the fewest with ${nf}.</div>`
+    : `<div class="lv-line warn">Too few live trades to trust yet — every new trade can swing these.</div>` +
+      `<div class="ldg-need"><span>Buckets with trades</span>${meter(nb, need.buckets)}<span>${nb} of ${need.buckets}` +
+      `</span><span>Fewest in one</span>${meter(nf, need.trades)}<span>${nf} of ${need.trades}</span></div>`;
+  const rows = (LDG.numbers || []).map(([k, label]) => {
+    const r = (t.rho || {})[k];
+    const bar = r == null ? "" : `<i style="left:${(50 + Math.min(0, r) * 50).toFixed(1)}%;width:` +
+      `${(Math.abs(r) * 50).toFixed(1)}%;background:${r >= 0 ? "var(--good)" : "var(--bad)"}"></i>`;
+    return `<div class="ldg-rho${t.enough ? "" : " weak"}"><span>${esc(label)}</span><span class="ldg-div">${bar}` +
+      `<em></em></span><span>${r == null ? "—" : lvSigned(r, 2)}</span></div>`;
+  }).join("");
+  return head + `<div class="ldg-rho ldg-rh"><span></span><span class="ldg-ax"><span>−1 backwards</span><span>0</span>` +
+    `<span>+1 same</span></span><span></span></div>` + rows;
+}
+function pgLedgerHtml(){
+  const v = ldgView();
+  if(!v) return "";
+  const card = h => `<div class="card"><div class="card-in">${h}</div></div>`;
+  const chips = '<div class="mgrp">' + LDG.views.map(x =>
+    `<button type="button" class="gch${x === v ? " on" : ""}" data-pglf="${esc(x.from)}">Since ${esc(pgVer(x.from))}` +
+    `<span class="n">${x.total ? x.total.trades : 0}</span></button>`).join("") + '</div>';
+  const bs = (v.buckets || []).slice().sort((a, b) => bktFlow(a.regime, a.bucket, b.regime, b.bucket));
+  const vals = [];
+  bs.forEach(b => { if(b.bt && b.bt.pf != null) vals.push(b.bt.pf); if(b.live && b.live.pf != null) vals.push(b.live.pf); });
+  const S = Math.min(5, Math.max(2, Math.max(0, ...vals) * 1.08));
+  const T = v.total || {}, built = LDG.built ? Date.parse(LDG.built) : NaN;
+  return '<div class="section-label">Backtest vs live</div>' +
+    card(`<div class="tlab">${T.trades || 0} live trade${T.trades === 1 ? "" : "s"} since ${esc(pgVer(v.from))} · PF ` +
+           `${T.pf != null ? T.pf.toFixed(2) : "—"}${T.r_mean != null ? " · " + lvSigned(T.r_mean, 2) + "R a trade" : ""}` +
+           `</div>` + chips +
+         `<div class="ldg-key"><span><i style="background:var(--dim)"></i>Backtest said</span><span><i ` +
+           `style="background:var(--good)"></i>Live did (red under 1.0)</span><span>| PF 1.0 = break-even</span></div>` +
+         (bs.length ? bs.map(b => ldgRow(b, S)).join("") : '<div class="lv-line">No live trade placed in a bucket yet.</div>') +
+         (v.unplaced ? `<div class="vhcap">${v.unplaced} trade${v.unplaced === 1 ? "" : "s"} with no bucket at entry ` +
+           `count in the total only.</div>` : "") +
+         `<div class="vhcap">Backtest PF: the bucket test the live gate read, as it stood when each trade opened (the ` +
+           `mean when it changed). Live PF counts swap and commission. Every trade is judged against its own version's ` +
+           `backtest, so older versions stay fair evidence. Tap a bucket for the rest of its backtest numbers and its ` +
+           `trades.</div>`) +
+    '<div class="section-label">Which backtest number tracks live</div>' +
+    card(ldgTracks(v) +
+         `<div class="vhcap">Each backtest number puts the buckets in an order; live puts them in order by R a trade. ` +
+           `+1: the same order as live — a number worth tuning on. −1: exactly backwards. 0: no link. — : fewer than 3 ` +
+           `buckets to compare. The aim: as trades come in, find the backtest number that really predicts live.</div>`) +
+    `<div class="lv-foot"><span>Ledger rebuilt ${isFinite(built) ? lvAgo((Date.now() - built) / 1000) : "—"} by the ` +
+      `Laptop from the VPS record; it rebuilds every hour.</span></div>`;
+}
 function pgErrLine(){
   const old = /^HTTP 404/.test(PG.err);
   return `<div class="lv-line${old ? "" : " warn"}">` + (old
@@ -20170,7 +20342,8 @@ function pgHtml(){
     return wrap(card('<div class="lv-line">Progress reads the same VPS feed as Live. Set the feed’s address ' +
                      'on the <button type="button" class="lv-link" data-go="live">Live</button> tab first.</div>'));
   const d = PG.data && pgFrom(PG.data);
-  if(!d) return wrap(card(PG.err ? pgErrLine() : '<div class="lv-line">Reading every trade from the VPS…</div>'));
+  if(!d) return wrap(card(PG.err ? pgErrLine() : '<div class="lv-line">Reading every trade from the VPS…</div>') +
+                     pgLedgerHtml());
   const all = pgTrades(d);
   const filters = pgFilters(all);
   if(!filters.some(f => f[0] === PG.filt)) PG.filt = "all";
@@ -20220,6 +20393,7 @@ function pgHtml(){
            `before it that traded. Net counts swap and commission; R is the price move over the trade’s ` +
            `first stop distance. Buckets are each trade’s slope at entry placed in today’s buckets, ` +
            `as on Live.${dealsFrom}</div>`) +
+    pgLedgerHtml() +
     (PG.err ? card(pgErrLine()) : "") +
     `<div class="lv-foot"><span>Feed: ${esc(lvHost())}, read ${PG.at ? lvAgo((Date.now() - PG.at) / 1000) : "never"}.` +
       `</span></div>`);
@@ -20243,6 +20417,11 @@ document.addEventListener("click", e => {
   if(f){ PG.filt = f.getAttribute("data-pgf"); pgSave(); pgPaint(); return; }
   const v = e.target.closest("[data-pgv]");
   if(v){ const tag = v.getAttribute("data-pgv"); PG.vsel = PG.vsel === tag ? "" : tag; pgPaint(); return; }
+  /* Backtest vs live: a start version; a bucket opens / closes. */
+  const lf = e.target.closest("[data-pglf]");
+  if(lf){ PG.lfrom = lf.getAttribute("data-pglf"); PG.lopen = ""; pgSave(); pgPaint(); return; }
+  const lb = e.target.closest("[data-pgl]");
+  if(lb){ const k = lb.getAttribute("data-pgl"); PG.lopen = PG.lopen === k ? "" : k; pgPaint(); return; }
   if(e.target.closest("[data-pgre]")){ PG.err = ""; pgPaint(); pgLoad(); }
 });
 
