@@ -2118,7 +2118,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-033422";
+const APP_BUILD = "20261105-035259";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14747,8 +14747,9 @@ function lvPaintBadge(){
    page, always visible. Here we're gonna have in order: Charts - Status - Performance - Gates - History. So all these
    can still be on the same page, but these are shortcuts to the Blocks. Status consists of in order: Balance - Market
    - Trading In". The page runs in the bar's order; each block is a .lv-blk (id lvb-<key>), the bar (secBar, #lvtabs)
-   sticks under the header and marks the block you are in (secSpy). Open trades ride with Charts: their toggles draw
-   on it. The issue notes (#lvstatus) stay above every block -- they are the page's alarms. */
+   sticks under the header and marks the block you are in (secSpy). Open trades lead Status while there are any
+   (Trevor, the same day: "the status should actually shortcut to the current open trade(s)"). The issue notes
+   (#lvstatus) stay above every block -- they are the page's alarms. */
 const LV_BLOCKS = [["charts", "Charts"], ["status", "Status"], ["perf", "Performance"], ["gates", "Gates"],
                    ["history", "History"]];
 function lvSkeleton(){
@@ -14795,10 +14796,15 @@ function lvSkeleton(){
     +       'line = signal</span>'
     +   '</div>'
     + '</div>'
-    + '<div class="section-label">Open trades <span class="hcount" id="lvopenn"></span></div>'
-    + '<div id="lvopen"></div>'
     + '</div>'
     + '<div class="lv-blk" id="lvb-status">'
+    /* 2026-11-05 -- THE OPEN TRADES LEAD STATUS. Trevor: "If we have an open trade, the status should actually
+       shortcut to the current open trade(s)". Shown only while a trade is open (lvPaintOpen sets the display -- an
+       inline display would beat [hidden]); with none, Status starts at Balance. */
+    +   '<div id="lvopenwrap" style="display:none;flex-direction:column;gap:9px">'
+    +     '<div class="section-label">Open trades <span class="hcount" id="lvopenn"></span></div>'
+    +     '<div id="lvopen"></div>'
+    +   '</div>'
     +   '<div class="lv-stats" id="lvstats"></div>'
     +   '<div class="card lv-tin" id="lvmkt"></div>'
     +   '<div class="card lv-tin" id="lvtin"></div>'
@@ -15506,6 +15512,9 @@ function lvPaintOpen(){
   const pos = lvPositions();
   const n = document.getElementById("lvopenn");
   if(n) n.textContent = LV.data ? String(pos.length) : "";
+  /* 2026-11-05 -- the open trades head the Status block only while there are some (lvSkeleton). */
+  const wrap = document.getElementById("lvopenwrap");
+  if(wrap) wrap.style.display = LV.data && pos.length ? "flex" : "none";
   if(!LV.data){ el.innerHTML = ""; return; }
   if(!pos.length){
     el.innerHTML = '<div class="card lv-otrade"><div class="lv-line">No open trade. ' +
