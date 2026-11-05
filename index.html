@@ -2166,7 +2166,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-151936";
+const APP_BUILD = "20261105-153502";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -19552,14 +19552,19 @@ function pfInputsCard(b){
 function pfBillsCard(b){
   const bills = b.bills || [];
   const f = PF.form && PF.form.kind === "bill" ? PF.form : null;
-  let h = '<div class="fin-head"><div class="section-label">Monthly bills from chequing</div>' +
+  let h = '<div class="fin-head"><div class="section-label">Bills from chequing</div>' +
     (f && !f.id ? "" : '<button type="button" class="fin-btn gold" data-pf="billadd">+ Add</button>') + "</div>";
   const row = x => {
     if(f && f.id === x.id) return pfBillForm(f, x);
     const tags = (x.off ? '<span class="fin-tag">not counted</span>' : "") +
       (x.edited ? '<span class="fin-tag">edited</span>' : "") + (!x.auto ? '<span class="fin-tag">added</span>' : "");
-    const sub = [x.day ? "around the " + finOrd(x.day) : "",
-                 x.auto ? "found in " + x.seen + " month" + (x.seen === 1 ? "" : "s") : "you added it"]
+    /* 2026-11-05 -- Trevor: *"lets assume that that bill comes out the 4th of every second the month"* */
+    const every = x.every > 1;
+    const sub = [every ? (x.day ? "the " + finOrd(x.day) + " of every " + finOrd(x.every) + " month" : "every " + x.every + " months") +
+                   (x.next ? " · next " + finDate(x.next) : "") + " · " + finMoney(x.per_month) + " a month"
+                 : x.day ? "around the " + finOrd(x.day) : "",
+                 x.auto ? "found in " + x.seen + (x.of_months ? " of the last " + x.of_months : "") +
+                   " month" + (x.seen === 1 && !x.of_months ? "" : "s") : "you added it"]
                  .filter(Boolean).join(" · ");
     return `<button type="button" class="fin-row" data-pf="bill" data-id="${finAttr(x.id)}">` +
       `<div><div class="fin-rt">${esc(x.name)}${tags}</div><div class="fin-rs">${esc(sub)}</div></div>` +
@@ -19573,15 +19578,34 @@ function pfBillsCard(b){
     `chequing (card and line-of-credit payments, and money to GOLDbot, are left out). Total ` +
     `<b>${esc(finMoney(b.bills_total || 0))}</b> a month. Tap one to change it or stop counting it.</div>`;
 }
+function pfBillMonths(every){
+  /* the choice of which months an every-Nth-month bill comes in: "Nov · Jan · Mar …" or "Dec · Feb · Apr …" */
+  const now = new Date(), out = [];
+  for(let i = 0; i < every; i++){
+    const y = now.getFullYear() + Math.floor((now.getMonth() + i) / 12), m = (now.getMonth() + i) % 12;
+    const names = [0, 1, 2].map(j => FIN_MON[(m + j * every) % 12]);
+    out.push([y + "-" + String(m + 1).padStart(2, "0"), names.join(" · ") + " …"]);
+  }
+  return out;
+}
 function pfBillForm(f, x){
-  const manual = !x || !x.auto;
+  const manual = !x || !x.auto, every = Number(f.every) || 1;
   return '<div class="fin-form">' +
     (manual ? pfFormField("Name", "name", f.name, 'maxlength="60"')
             : `<div class="fin-rt">${esc(x.name)}</div>`) +
-    '<div class="fin-two">' + pfFormField("Amount a month", "amount", f.amount) +
+    '<div class="fin-two">' + pfFormField(every > 1 ? "Amount each time" : "Amount a month", "amount", f.amount) +
     pfFormField("Day of the month", "day", f.day, 'inputmode="numeric"') + "</div>" +
+    '<div class="fin-two"><label>How often<select class="pf-sel" data-pff="every" aria-label="How often">' +
+    [[1, "Every month"], [2, "Every 2 months"], [3, "Every 3 months"]].map(([v, l]) =>
+      `<option value="${v}"${every === v ? " selected" : ""}>${l}</option>`).join("") + "</select></label>" +
+    (every > 1 ? '<label>Comes in<select class="pf-sel" data-pff="first" aria-label="Which months">' +
+      pfBillMonths(every).map(([v, l]) => {
+        const on = f.first && ((Number(f.first.slice(0, 4)) - Number(v.slice(0, 4))) * 12 +
+          Number(f.first.slice(5, 7)) - Number(v.slice(5, 7))) % every === 0;
+        return `<option value="${v}"${on ? " selected" : ""}>${l}</option>`;
+      }).join("") + "</select></label>" : "") + "</div>" +
     (x && x.auto ? `<label class="pf-check"><input type="checkbox" data-pff="count"${f.count ? " checked" : ""}>` +
-      "Count it as a monthly bill</label>" +
+      "Count it as a bill</label>" +
       '<div class="fin-note">Blank amount = what the statements show' +
       ` (${esc(finMoney(x.amount))} on average).</div>` : "") +
     '<div class="fin-acts">' +
@@ -19658,17 +19682,19 @@ document.addEventListener("click", e => {
     return;
   }
   else if(act === "cancel"){ PF.form = null; PF.formErr = ""; PF.confirm = ""; }
-  else if(act === "billadd"){ PF.form = {kind: "bill", id: "", name: "", amount: "", day: ""}; PF.confirm = ""; }
+  else if(act === "billadd"){ PF.form = {kind: "bill", id: "", name: "", amount: "", day: "", every: "1", first: ""}; PF.confirm = ""; }
   else if(act === "bill"){
     const x = (b.bills || []).find(y => y.id === id);
     if(!x) return;
     PF.form = {kind: "bill", id: x.id, name: x.name, amount: x.auto && !x.edited ? "" : String(x.amount),
-               day: x.day ? String(x.day) : "", count: !x.off, auto: x.auto};
+               day: x.day ? String(x.day) : "", count: !x.off, auto: x.auto,
+               every: String(x.every || 1), first: x.first || ""};
     PF.confirm = "";
   }
   else if(act === "billsave" && PF.form){
     const f = PF.form;
-    const body = {op: "bill", amount: f.amount, day: f.day};
+    if(Number(f.every) > 1 && !f.first) f.first = pfBillMonths(Number(f.every))[0][0];
+    const body = {op: "bill", amount: f.amount, day: f.day, every: f.every, first: f.first};
     if(f.id) body.id = f.id;
     if(!f.auto) body.name = f.name;
     if(f.auto) body.off = !f.count;
@@ -19823,6 +19849,8 @@ document.addEventListener("change", e => {
     if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp",
                                   "who", "kid", "dir", "one_off"].includes(f.dataset.pff))
       finRender();
+    /* a bill every few months asks which months it comes in */
+    if(PF.form.kind === "bill" && f.dataset.pff === "every") finRender();
   }
   const up = e.target.closest && e.target.closest("[data-pffile]");
   if(up){
