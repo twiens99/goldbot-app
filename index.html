@@ -2118,7 +2118,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-032537";
+const APP_BUILD = "20261105-033422";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2126,6 +2126,7 @@ let CURVES = [];
    [], so the page can fall back to the seeds-only queue it always had. */
 let QUEUE = null;
 let QUEUE_HELD = {};
+let QCOUNTS = null;     // 2026-11-05 -- d.queue_counts: every backtest waiting (the Active bar's "Queued N")
 /* Rounds waiting on a PASS PICK, in Telegram's own numbering. */
 let PICKS = [];
 /* Per-agent lending hours per day, and why it was not lending the rest of
@@ -4906,19 +4907,24 @@ function fleetAgentBars(){
 
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
    asking -- it counts attempts at groups, and a group is re-run on purpose. */
-function campaignProgress(){
+/* {done, total} groups this epoch, or null -- the header's count (campaignProgress) and, since 2026-11-05, the Active
+   bar's "Queued N" for sweeps (total - done), so the two never disagree. */
+function epochCounts(){
   /* 2026-10-15 (V3.1.0) -- THE STATUS PAGE'S COUNT when it is here: the leaves only, each with the groups IT
      carries, by the picker's own epoch rule. BUCKETS gives every bucket its regime's whole list -- the roots and
      the BULL 2400 node included -- so V3.1's first night read "0 of 179" over the 104 groups the five children
      actually have. */
   const st = (STATUS.buckets || []).filter(b => !regimeOff(b.regime));
   const stTotal = st.reduce((a, b) => a + (b.total || 0), 0);
-  if(stTotal) return `${st.reduce((a, b) => a + (b.done || 0), 0)} of ${stTotal} groups this epoch`;
+  if(stTotal) return {done: st.reduce((a, b) => a + (b.done || 0), 0), total: stTotal};
   const on = BUCKETS.filter(b => !regimeOff(b.regime));     // an off regime is not owed work (V3.1)
-  const done = on.reduce((a, b) => a + (b.groups_done || 0), 0);
   const total = on.reduce((a, b) => a + (b.groups_total || 0), 0);
-  if(!total) return LEDGER.filter(completed).length + " rounds this epoch";
-  return `${done} of ${total} groups this epoch`;
+  return total ? {done: on.reduce((a, b) => a + (b.groups_done || 0), 0), total} : null;
+}
+function campaignProgress(){
+  const c = epochCounts();
+  if(!c) return LEDGER.filter(completed).length + " rounds this epoch";
+  return `${c.done} of ${c.total} groups this epoch`;
 }
 
 /* ---------- page: active (current jobs) ---------- */
@@ -5896,10 +5902,31 @@ function renderJobList(){
   jobs.forEach((j, i) => { if(isQ(j) || j.section === "Running now" ||
                               j.section === "Waiting on you") at = i; });
   const note = queueNote(jobs.filter(isQ).length) + moreSeedsNote();
-  let out = "", section = null;
+  /* 2026-11-05 -- FOUR BLOCKS UNDER A SHORTCUT BAR (secBar). Trevor: "And the active tab gets the shortcut bar also.
+     Sweeps - Queued - Backtests - Queued. And this time in the Queued button I want how many are Queued up. The Sweeps
+     get the total number left in the Epoch. The Backtests get the total number of backtests currently in the que,
+     whether they be full, or bucket tests, checkpoint tests, or trigger tests." jobsModel's order is already the bar's:
+     the sweeps running (a pick waiting on you rides with them), their queue, the tests running, their queue. The
+     machines' standing-by / not-reporting rows and the failures follow under no button. Counts: epochCounts (the
+     header's own "N of M groups") and the publisher's queue_counts (every backtest waiting; the list shows a few). */
+  const blk = j => {
+    const t = j.lane === "test";
+    if(j.section === "Running now") return t ? "tests" : "sweeps";
+    if(j.section === "Waiting on you") return "sweeps";
+    if(isQ(j)) return t ? "testq" : "sweepq";
+    return null;
+  };
+  let out = "", section = null, open = null;
+  const enter = k => {
+    if(k === open) return;
+    if(open) out += "</div>";
+    open = k;
+    if(k) out += `<div class="lv-blk" id="acb-${k}" style="gap:12px">`;
+  };
   if(at < 0) out += note;
   const laned = sec => sec === "Running now" || sec === "Queued up next" || sec === "Queued after that";
   jobs.forEach((j, i) => {
+    enter(blk(j));
     const key = j.section + (laned(j.section) ? "|" + (j.lane || "opt") : "");
     if(key !== section){
       section = key;
@@ -5910,7 +5937,14 @@ function renderJobList(){
     out += jobRow(j);
     if(i === at) out += note;
   });
-  return out + renderFailures();
+  enter(null);
+  const ec = epochCounts(), left = ec ? Math.max(0, ec.total - ec.done) : null;
+  const tq = QCOUNTS && QCOUNTS.tests != null && isFinite(Number(QCOUNTS.tests)) ? Number(QCOUNTS.tests) : null;
+  const label = {sweeps: "Sweeps", sweepq: "Queued" + (left != null ? " " + left : ""),
+                 tests: "Backtests", testq: "Queued" + (tq != null ? " " + tq : "")};
+  const have = new Set(jobs.map(blk).filter(Boolean));
+  const blocks = ["sweeps", "sweepq", "tests", "testq"].filter(k => have.has(k)).map(k => [k, label[k]]);
+  return (blocks.length ? secBar("ac", blocks) : "") + out + renderFailures();
 }
 
 /* THE QUEUE SHOWS FOUR; THE SEEDS MAY BE MORE. Trevor, 2026-09-27: *"seeds
@@ -17253,6 +17287,7 @@ function applySnapshot(d, source){
      snapshot from an older publisher, which leaves the badge saying so. */
   CURVES = Array.isArray(d.curves) ? d.curves : [];
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
+  QCOUNTS = (d.queue_counts && typeof d.queue_counts === "object") ? d.queue_counts : null;
   /* 2026-10-17 -- each backtest machine's slot service: tests running, and why it did not start another. */
   BTSLOTS = (d.backtest_slots && typeof d.backtest_slots === "object") ? d.backtest_slots : {};
   QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
