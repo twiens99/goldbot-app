@@ -2124,7 +2124,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-045021";
+const APP_BUILD = "20261105-084257";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -19873,6 +19873,23 @@ function pgAxisFmt(k, v){
   return k === "n" ? String(Math.round(v)) : v.toFixed(2);
 }
 
+/* 2026-11-05 -- THE RECORD STARTS AT V3.1. Trevor: "Lets actually start it at Ver 3.1. That's actually when the
+   trading started. The previous info is more clutter and unncessary." Before it the feed holds the deposit, one $0.12
+   trade and three version lines. Dropped here: every version before V3.1, every trade an older version opened, every
+   deposit before V3.1's first run. What they left in the account becomes the balance the record opens on (pgSeries
+   works that out as the balance less everything kept). A feed with no V3.1 in it: the whole record, as before. */
+const PG_FROM = "GoldBot_V3.1.0";
+function pgFrom(d){
+  const vers = (d.versions || []).slice().sort((a, b) => Number(a.from) - Number(b.from));
+  const at = vers.findIndex(v => v.tag === PG_FROM);
+  if(at < 0) return d;
+  const keep = vers.slice(at), start = Number(keep[0].from), tags = keep.map(v => v.tag);
+  return Object.assign({}, d, {
+    versions: keep,
+    cash: (d.cash || []).filter(c => Number(c[0]) >= start),
+    trades: (d.trades || []).filter(t => t.version ? tags.indexOf(t.version) >= 0 : Number(t.exit_time) >= start)});
+}
+
 /* Every closed trade, oldest first, each with its R; the filters the record holds; the one in force. */
 function pgTrades(d){
   const all = (d.trades || []).slice().sort((a, b) => Number(a.exit_time) - Number(b.exit_time));
@@ -20053,7 +20070,7 @@ function pgChart(S, on){
          `Tap a metric below to draw it.</text>`;
   PG_REG = {pts: S.pts, t0: t0, t1: t1, L: L, on: on.slice(), vers: S.vers, byTrade: byTrade};
   return `<div class="eqwrap" data-pgbox><svg class="pg-svg" viewBox="0 0 ${PG_W} ${PG_H}" role="img" ` +
-         `aria-label="Live trading since the first version, with a line at each version">` + bg + grid + ln + vl +
+         `aria-label="Live trading since V3.1, with a line at each version">` + bg + grid + ln + vl +
          `<line class="eqx" x1="0" x2="0" y1="${PG_TOP}" y2="${yB}" stroke="#8CA0AC" stroke-width="1" ` +
          `visibility="hidden"></line></svg><div class="eqtip" hidden></div></div>`;
 }
@@ -20146,13 +20163,13 @@ function pgErrLine(){
     ` <button type="button" class="lv-link" data-pgre>Try again</button></div>`;
 }
 function pgHtml(){
-  const wrap = h => '<div class="home"><div class="section-label">Progress · every live trade, every version</div>' +
+  const wrap = h => '<div class="home"><div class="section-label">Progress · every live trade since V3.1</div>' +
                     h + '</div>';
   const card = h => `<div class="card"><div class="card-in">${h}</div></div>`;
   if(!liveUrl())
     return wrap(card('<div class="lv-line">Progress reads the same VPS feed as Live. Set the feed’s address ' +
                      'on the <button type="button" class="lv-link" data-go="live">Live</button> tab first.</div>'));
-  const d = PG.data;
+  const d = PG.data && pgFrom(PG.data);
   if(!d) return wrap(card(PG.err ? pgErrLine() : '<div class="lv-line">Reading every trade from the VPS…</div>'));
   const all = pgTrades(d);
   const filters = pgFilters(all);
