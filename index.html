@@ -1529,7 +1529,9 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 
 /* ---------- tab bar ---------- */
 nav{
-  position:fixed;bottom:0;left:0;right:0;
+  /* 2026-11-05 -- z-index: the Live chart's panes (positioned, with their own z-index) drew over this bar; with
+     the chart first on the Live page that was the opening view. */
+  position:fixed;bottom:0;left:0;right:0;z-index:6;
   background:rgba(10,16,22,.96);
   border-top:1px solid var(--line);
   display:flex;
@@ -1704,6 +1706,17 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-seg button[aria-pressed="true"]{background:var(--card-2);color:var(--text);box-shadow:inset 0 -2px 0 var(--gold);}
 .lv-seg.small button{min-width:0;padding:5px 7px;font-family:inherit;font-size:.72rem;}
 .lv-seg button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+/* 2026-11-05 -- THE LIVE PAGE'S SHORTCUT BAR (lvSkeleton): sticky under the header (--hdr, as .gbadge), opaque, a
+   shade once it holds the top (syncStuck's "stuck"). A block it scrolls to comes to rest under both. */
+.lv-tabs{position:sticky;top:var(--hdr,64px);z-index:4;display:flex;gap:2px;padding:3px;
+  background:var(--card);border:1px solid var(--line);border-radius:11px;}
+.lv-tabs.stuck{box-shadow:0 6px 14px rgba(10,16,22,.55);}
+.lv-tabs button{flex:1 1 auto;min-width:0;border:0;background:transparent;cursor:pointer;color:var(--dim);
+  font:inherit;font-size:.74rem;font-weight:600;padding:8px 2px;border-radius:8px;white-space:nowrap;}
+.lv-tabs button[aria-current="true"]{background:var(--card-2);color:var(--text);box-shadow:inset 0 -2px 0 var(--gold);}
+.lv-tabs button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+.lv-blk{display:flex;flex-direction:column;gap:9px;scroll-margin-top:calc(var(--hdr,64px) + 54px);}
+#lvchartcard{scroll-margin-top:calc(var(--hdr,64px) + 54px);}
 .lv-ohlc{
   font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;color:var(--dim);
   padding:0 13px 4px;min-height:1.4em;font-variant-numeric:tabular-nums;
@@ -2105,7 +2118,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-023832";
+const APP_BUILD = "20261105-030651";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4584,7 +4597,9 @@ function renderResultsList(){
   /* "newest first" WAS TEXT AND IS NOW A CONTROL. Trevor: *"Where it currently
      says NEWEST FIRST, i want that to be a button chip also."* Same words, same
      place -- it simply does something now. */
-  return resultsReviewSection() + inProgressSection() +
+  /* 2026-11-05 -- NO "not finished yet" here any more. Trevor: "The results tab: let's take the Not finished rounds out.
+     I can find those in the active tab." (inProgressSection stays: a running round's own view still uses ipCard.) */
+  return resultsReviewSection() +
     `<div class="section-label">${shown.filter(completed).length} completed` +
     (nf ? ` · ${nf} failed` : "") + `</div>
     <div class="rctl">
@@ -4621,6 +4636,17 @@ function renderResultsList(){
    117 left it off" (it didn't); the round opens its job. Leaf buckets only (a split parent trades nothing), narrowed by
    the regime / bucket chips like the list. An older publisher sends no gates: the section stays away. */
 const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C"};
+/* 2026-11-05 -- WHAT EACH TRIGGER DOES, under the bucket's name. Trevor: "with the gates, I need some more info about
+   the trigger... Not sure which trigger is C vs A." The Live card's own words (lvPaintEntry), so the two never
+   disagree. */
+const GATE_TRIG_SAY = {
+  0: "V3.2's entry decides: the gate stack is not used here.",
+  1: "A: once every gate agrees, it waits for the score to keep turning the trade's way for a few seconds (the arm), " +
+     "then trades.",
+  2: "B: trades the moment every gate agrees, once per stretch of all-green; after a trade it waits for a gate to " +
+     "fail and come back.",
+  3: "C: arms the moment every gate agrees (once per stretch), then trades on the next 1-minute EMA cross the " +
+     "trade's way."};
 function gateSettingsSection(){
   const bs = (BUCKETS || []).filter(b => b && b.gates && Array.isArray(b.gates.rows) && b.leaf !== false &&
       !regimeOff(b.regime) && (!RESULTS_REGIME || b.regime === RESULTS_REGIME) &&
@@ -4650,7 +4676,8 @@ function gateSettingsSection(){
     const trig = b.gates.trig == null ? "" : " · " + esc(GATE_TRIG[b.gates.trig] || "Trigger " + b.gates.trig);
     return `<div style="margin-top:10px"><div style="font-weight:700">${esc(bktName(b.regime, b.bucket_id))}` +
       `<span class="tnote" style="font-weight:400">${trig} · ${on.length} of ${rows.length} on</span></div>` +
-      (b.gates.trig === 0 ? `<div class="tnote">V3.2's entry decides: the gate stack is not used here.</div>` : "") +
+      (GATE_TRIG_SAY[b.gates.trig] ? `<div class="tnote" style="margin-top:2px">${
+        esc(GATE_TRIG_SAY[b.gates.trig])}</div>` : "") +
       shown.map(row).join("") +
       (rest.length ? `<div class="tnote" style="border-top:1px solid var(--line);padding-top:5px">Off: ${
         rest.map(r => esc(lab[r[0]])).join(", ")}</div>` : "") + `</div>`;
@@ -14625,15 +14652,24 @@ function lvPaintBadge(){
 }
 
 /* ---------- the page ---------- */
+/* 2026-11-05 -- FIVE BLOCKS, A SHORTCUT BAR ABOVE THEM. Trevor: "Let's have a tab bar that appears at the top of the
+   page, always visible. Here we're gonna have in order: Charts - Status - Performance - Gates - History. So all these
+   can still be on the same page, but these are shortcuts to the Blocks. Status consists of in order: Balance - Market
+   - Trading In". The page runs in the bar's order; each block is a .lv-blk (id lvb-<key>), the bar (#lvtabs) sticks
+   under the header and marks the block you are in (lvSpy). Open trades ride with Charts: their toggles draw on it.
+   The issue notes (#lvstatus) stay above every block -- they are the page's alarms. */
+const LV_BLOCKS = [["charts", "Charts"], ["status", "Status"], ["perf", "Performance"], ["gates", "Gates"],
+                   ["history", "History"]];
 function lvSkeleton(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
+    /* a div, not a <nav>: the bottom tab bar's own rules are written on the bare `nav` element (fixed, centred). */
+    + '<div class="lv-tabs" id="lvtabs" role="navigation" aria-label="Live page sections">'
+    +   LV_BLOCKS.map(([k, l]) => `<button type="button" data-lvblk="${k}" aria-current="${k === "charts"}">${l}</button>`)
+          .join("")
+    + '</div>'
     + '<div id="lvstatus" class="home"></div>'
-    + '<div class="card lv-tin" id="lvmkt"></div>'
-    + '<div class="lv-stats" id="lvstats"></div>'
-    + '<div class="card lv-tin" id="lvtin"></div>'
-    + '<div class="card lv-tin" id="lvpd"></div>'
-    + '<div class="card lv-ent" id="lvent"></div>'
+    + '<div class="lv-blk" id="lvb-charts">'
     + '<div class="card" id="lvchartcard">'
     +   '<div class="lv-chead" id="lvchead"></div>'
     +   '<div class="lv-controls">'
@@ -14674,13 +14710,63 @@ function lvSkeleton(){
     + '</div>'
     + '<div class="section-label">Open trades <span class="hcount" id="lvopenn"></span></div>'
     + '<div id="lvopen"></div>'
-    + '<div class="section-label">Trade history</div>'
-    + '<div class="lv-hf" id="lvhf"></div>'
-    + '<div class="lv-hsum" id="lvhsum"></div>'
-    + '<div class="card" id="lvhist"></div>'
+    + '</div>'
+    + '<div class="lv-blk" id="lvb-status">'
+    +   '<div class="lv-stats" id="lvstats"></div>'
+    +   '<div class="card lv-tin" id="lvmkt"></div>'
+    +   '<div class="card lv-tin" id="lvtin"></div>'
+    + '</div>'
+    + '<div class="lv-blk" id="lvb-perf">'
+    +   '<div class="card lv-tin" id="lvpd"></div>'
+    + '</div>'
+    + '<div class="lv-blk" id="lvb-gates">'
+    +   '<div class="card lv-ent" id="lvent"></div>'
+    + '</div>'
+    + '<div class="lv-blk" id="lvb-history">'
+    +   '<div class="section-label">Trade history</div>'
+    +   '<div class="lv-hf" id="lvhf"></div>'
+    +   '<div class="lv-hsum" id="lvhsum"></div>'
+    +   '<div class="card" id="lvhist"></div>'
+    + '</div>'
     + '<div class="lv-foot" id="lvfoot"></div>'
     + '</div>';
 }
+/* WHICH BLOCK YOU ARE IN: the last one whose top has reached the bar's bottom edge (the last block, once the page
+   can scroll no further). Quiet for a moment after a tap, so a smooth scroll past Status does not light it up on the
+   way to Gates. rAF-throttled and passive, like syncStuck. */
+let _lvSpyRaf = 0;
+function lvMarkBlock(k){
+  LV.blk = k;
+  document.querySelectorAll("#lvtabs [data-lvblk]").forEach(b =>
+    b.setAttribute("aria-current", String(b.dataset.lvblk === k)));
+}
+function lvSpy(){
+  _lvSpyRaf = 0;
+  const bar = document.getElementById("lvtabs");
+  if(!bar || !lvVisible() || Date.now() < (LV.blkQuiet || 0)) return;
+  const line = bar.getBoundingClientRect().bottom + 24;   // a tapped block rests ~13 px under the bar (scroll-margin)
+  let cur = LV_BLOCKS[0][0];
+  LV_BLOCKS.forEach(([k]) => {
+    const el = document.getElementById("lvb-" + k);
+    if(el && el.getBoundingClientRect().top <= line) cur = k;
+  });
+  if(window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4)
+    cur = LV_BLOCKS[LV_BLOCKS.length - 1][0];
+  if(cur !== LV.blk) lvMarkBlock(cur);
+}
+window.addEventListener("scroll", () => { if(!_lvSpyRaf) _lvSpyRaf = requestAnimationFrame(lvSpy); }, {passive: true});
+function lvGoBlock(k){
+  const el = document.getElementById("lvb-" + k);
+  if(!el) return;
+  lvMarkBlock(k);
+  LV.blkQuiet = Date.now() + 1200;
+  el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+                     block: "start"});
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-lvblk]");
+  if(b) lvGoBlock(b.dataset.lvblk);
+});
 function lvConnectForm(){
   const cur = liveUrl();
   const val = esc(cur).replace(/"/g, "&quot;");
@@ -20428,7 +20514,8 @@ function syncStuck(){
   _stuckRaf = 0;
   const hdr = parseFloat(getComputedStyle(document.documentElement)
                 .getPropertyValue("--hdr")) || 64;
-  document.querySelectorAll(".gbadge").forEach(el => {
+  /* 2026-11-05 -- the Live page's shortcut bar too (its shade once it holds the top). */
+  document.querySelectorAll(".gbadge, .lv-tabs").forEach(el => {
     /* +1 for sub-pixel: a card resting exactly on the header reports 76.98. */
     el.classList.toggle("stuck", el.getBoundingClientRect().top <= hdr + 1);
   });
