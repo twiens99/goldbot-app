@@ -2105,7 +2105,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-011316";
+const APP_BUILD = "20261105-023832";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4610,7 +4610,54 @@ function renderResultsList(){
            data-rfilter="task">${RESULTS_TASK ? esc(phaseText(RESULTS_TASK))
                                               : "All tasks"}</button>`
       : "") + `
-    </div>` + rows + baselinesSection();
+    </div>` + rows + gateSettingsSection() + baselinesSection();
+}
+
+/* 2026-11-05 -- EACH BUCKET'S GATE SETTINGS, above the baselines. Trevor, on the first V3.3 round: "I'm not finding
+   anywhere whether the gate was implemented, or skipped" -> "Yes let's add the gate settings for the results tab".
+   The publisher's buckets[].gates (app_snapshot.bucket_gates): the bucket's trigger and every gate as it stands now,
+   in the EA's order (LV_SGATES' labels) -- the gates that are on with what each asks for, then the off ones. A gate the
+   last round of this version swept says what that round did: "set by round 117 (was off)" (it changed it) or "round
+   117 left it off" (it didn't); the round opens its job. Leaf buckets only (a split parent trades nothing), narrowed by
+   the regime / bucket chips like the list. An older publisher sends no gates: the section stays away. */
+const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C"};
+function gateSettingsSection(){
+  const bs = (BUCKETS || []).filter(b => b && b.gates && Array.isArray(b.gates.rows) && b.leaf !== false &&
+      !regimeOff(b.regime) && (!RESULTS_REGIME || b.regime === RESULTS_REGIME) &&
+      (RESULTS_BUCKET == null || bktKey(b.regime, b.bucket_id) === String(RESULTS_BUCKET)))
+    .sort((a, b) => bktOrder(a.regime, a.bucket_id, b.regime, b.bucket_id));
+  if(!bs.length) return "";
+  const lab = {};
+  LV_SGATES.forEach(x => { lab[x[0]] = x[1]; });
+  const say = s => esc(String(s || "").replace(/-(?=\d)/g, "−"));
+  const state = (on, s) => on === 1 ? "on" + (s ? " " + say(s) : "") : "off";
+  const rnd = n => `<button type="button" class="linkbtn" data-rjob="${esc(n)}">round ${esc(n)}</button>`;
+  const grid = "grid-template-columns:minmax(0,.8fr) minmax(0,1.7fr)";
+  const row = r => {
+    const l = Array.isArray(r[3]) && r[3][0] != null ? r[3] : null;
+    const same = l && l[1] === r[1] && String(l[2] || "") === String(r[2] || "");
+    const note = !l ? "" : `<br><span class="tnote">${same ? rnd(l[0]) + " left it " + state(l[1], l[2])
+                                                            : "set by " + rnd(l[0]) + " (was " + state(l[1], l[2]) + ")"}</span>`;
+    return `<div class="optr ro" style="${grid}"><span>${esc(lab[r[0]])}</span><span style="${
+      r[1] === 1 ? "color:var(--good)" : "color:var(--dim)"}">${r[1] === 1 ? "On" + (r[2] ? " · " + say(r[2]) : "")
+                                                                      : "Off"}${note}</span></div>`;
+  };
+  const blocks = bs.map(b => {
+    const rows = b.gates.rows.filter(r => Array.isArray(r) && lab[r[0]] && r[1] != null);
+    const on = rows.filter(r => r[1] === 1);
+    const shown = rows.filter(r => r[1] === 1 || (Array.isArray(r[3]) && r[3][0] != null));
+    const rest = rows.filter(r => shown.indexOf(r) < 0);
+    const trig = b.gates.trig == null ? "" : " · " + esc(GATE_TRIG[b.gates.trig] || "Trigger " + b.gates.trig);
+    return `<div style="margin-top:10px"><div style="font-weight:700">${esc(bktName(b.regime, b.bucket_id))}` +
+      `<span class="tnote" style="font-weight:400">${trig} · ${on.length} of ${rows.length} on</span></div>` +
+      (b.gates.trig === 0 ? `<div class="tnote">V3.2's entry decides: the gate stack is not used here.</div>` : "") +
+      shown.map(row).join("") +
+      (rest.length ? `<div class="tnote" style="border-top:1px solid var(--line);padding-top:5px">Off: ${
+        rest.map(r => esc(lab[r[0]])).join(", ")}</div>` : "") + `</div>`;
+  }).join("");
+  return `<div class="section-label">Gate settings · now</div><div class="card"><div class="card-in">` + blocks +
+    `<div class="vhcap">Each bucket's entry gates as they stand now. A trade fires only when every gate that is on
+      agrees. Tap a round to open it.</div></div></div>`;
 }
 
 /* 2026-10-18 -- THE EPOCH-START TESTS, AT THE VERY BOTTOM. Trevor: "The results tab needs at the very bottom, the base line
