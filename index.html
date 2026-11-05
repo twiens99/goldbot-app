@@ -1715,8 +1715,12 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
   font:inherit;font-size:.74rem;font-weight:600;padding:8px 2px;border-radius:8px;white-space:nowrap;}
 .lv-tabs button[aria-current="true"]{background:var(--card-2);color:var(--text);box-shadow:inset 0 -2px 0 var(--gold);}
 .lv-tabs button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
-.lv-blk{display:flex;flex-direction:column;gap:9px;scroll-margin-top:calc(var(--hdr,64px) + 54px);}
-#lvchartcard{scroll-margin-top:calc(var(--hdr,64px) + 54px);}
+/* 2026-11-05 -- the bar lives in the header (secMount), so --hdr already includes it: a block rests just under. */
+.lv-blk{display:flex;flex-direction:column;gap:9px;scroll-margin-top:calc(var(--hdr,64px) + 10px);}
+#lvchartcard{scroll-margin-top:calc(var(--hdr,64px) + 10px);}
+header .lv-tabs{position:static;margin-top:6px;}
+header .lv-tabs.stuck{box-shadow:none;}
+.lv-tabs[hidden]{display:none;}
 .lv-ohlc{
   font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;color:var(--dim);
   padding:0 13px 4px;min-height:1.4em;font-variant-numeric:tabular-nums;
@@ -2038,6 +2042,8 @@ nav button{min-width:0;}
     <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
     <!-- 2026-10-23 -- THE FLEET HOLD: on, the copies finish what they run and start nothing new. See paintHold. -->
     <div class="holdbar" id="holdbar" hidden></div>
+    <!-- 2026-11-05 -- the page's shortcut bar (secBar), moved here by secMount: the header is always on screen. -->
+    <div id="hdrbars"></div>
   </header>
 
   <main>
@@ -2118,7 +2124,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-035259";
+const APP_BUILD = "20261105-045021";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4575,7 +4581,8 @@ function secSpy(){
   document.querySelectorAll(".secbar").forEach(bar => {
     if(!bar.getClientRects().length || Date.now() < (SEC.quiet[bar.id] || 0)) return;
     const ids = Array.from(bar.querySelectorAll("[data-secgo]")).map(b => b.dataset.secgo);
-    const line = bar.getBoundingClientRect().bottom + 24;   // a tapped block rests ~13 px under the bar (scroll-margin)
+    // a tapped block rests 10 px under the header (scroll-margin), which ends ~12 px under the bar
+    const line = bar.getBoundingClientRect().bottom + 30;
     let cur = ids[0];
     ids.forEach(id => {
       const el = document.getElementById(id);
@@ -4587,15 +4594,49 @@ function secSpy(){
   });
 }
 window.addEventListener("scroll", () => { if(!_secRaf) _secRaf = requestAnimationFrame(secSpy); }, {passive: true});
+/* 2026-11-05 -- A TAP JUMPS, AT ONCE. Trevor: "All Those shortcut bars should be always visible. If I click one... I
+   want to be able to immediately click another." A smooth scroll ran for a second or more, and a phone reads a tap
+   during it as "stop scrolling" -- the second tap was lost. The quiet moment only covers the jump's own scroll event
+   (a block that cannot reach the bar, near the page's end, would otherwise hand the mark to the last button). */
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-secgo]");
   const bar = b && b.closest(".secbar"), el = b && document.getElementById(b.dataset.secgo);
   if(!bar || !el) return;
   secMark(bar, b.dataset.secgo);
-  SEC.quiet[bar.id] = Date.now() + 1200;
-  el.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-                     block: "start"});
+  SEC.quiet[bar.id] = Date.now() + 300;
+  el.scrollIntoView({behavior: "auto", block: "start"});
 });
+/* 2026-11-05 -- THE BARS LIVE IN THE HEADER (same request). In the page they hung on position:sticky under a measured
+   header height (--hdr): if either misfired on the phone the bar scrolled away, or slid under the header, the moment a
+   tap moved the page. The header is the one thing always on screen. So every page still draws its bar where it always
+   did (secBar), and secMount moves it into #hdrbars the moment it appears -- before the frame is painted -- replacing
+   that page's older bar; only the bar of the page on screen shows, and only while its blocks are there (a job's own
+   view, Live's address form: none). A MutationObserver on <main> calls it, so every way a page repaints is covered.
+   Only the visible bar's state changing re-measures the header (stickTop), never every second of Live's updates. */
+function secMount(){
+  const slot = document.getElementById("hdrbars");
+  if(!slot) return;
+  let changed = false;                  // the header's height may have moved: re-measure (stickTop)
+  document.querySelectorAll("main section.page .secbar").forEach(bar => {
+    const page = bar.closest("section.page");
+    bar.dataset.page = page ? page.id : "";
+    const old = Array.from(slot.children).find(x => x.id === bar.id);
+    if(old){ bar.hidden = old.hidden; old.replaceWith(bar); }
+    else { slot.appendChild(bar); changed = true; }
+  });
+  const vis = Array.from(document.querySelectorAll("main section.page")).find(s => !s.hidden);
+  Array.from(slot.children).forEach(bar => {
+    const first = bar.querySelector("[data-secgo]");
+    const on = !!vis && bar.dataset.page === vis.id && !!first && vis.contains(document.getElementById(first.dataset.secgo));
+    if(bar.hidden === on){ bar.hidden = !on; changed = true; }
+  });
+  if(changed) stickTop();
+}
+/* Straight from the observer (a microtask: after the page's own change, before the frame is drawn). Moving a bar out
+   of <main> is itself a change there; the second call finds nothing to move and stops. */
+new MutationObserver(secMount)
+  .observe(document.querySelector("main"), {childList: true, subtree: true, attributes: true,
+                                            attributeFilter: ["hidden"]});
 
 function renderResultsList(){
   const rows = resultsRows().map(r => {
@@ -20562,6 +20603,10 @@ function stickTop(){
   if(h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px");
 }
 window.addEventListener("resize", stickTop);
+/* 2026-11-05 -- AND WHENEVER THE HEADER ITSELF CHANGES HEIGHT. With the shortcut bars in the header (secMount) a line
+   that wraps or a bar that comes and goes moves every block's resting place (scroll-margin uses --hdr); a repaint of
+   the cards was the only re-measure, and the Live page read 16 px short. */
+if(typeof ResizeObserver === "function") new ResizeObserver(() => stickTop()).observe(document.querySelector("header"));
 
 /* IS IT HOLDING THE TOP RIGHT NOW. Read off the element's own rectangle rather
    than off a scroll threshold: the card's position in the document changes every
