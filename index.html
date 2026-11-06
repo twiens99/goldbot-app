@@ -1617,6 +1617,14 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 /* trading in */
 .lv-tin{padding:12px 13px 6px;gap:8px;}
 .lv-tinhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.sw-row{padding:8px 0;border-top:1px solid var(--line);}
+.sw-row:first-child{border-top:0;}
+.sw-row.tap{cursor:pointer;}
+.sw-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.sw-s{font-weight:600;font-size:.82rem;}
+.sw-t{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+.sw-t.good{color:var(--good);}
+.sw-t.dim{color:var(--dim);}
 .lv-pill{
   margin-left:auto;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:3px 8px;border-radius:999px;white-space:nowrap;
@@ -2137,7 +2145,7 @@ nav button{min-width:0;}
 </div>
 
 <script>
-const EPOCH = "V3.3.0";
+const EPOCH = "V3.4.0";
 /* 2026-10-15 -- WHAT V3.1 DOES NOT RUN. RANGING is switched off (its own build later; opt_schedule.RANGING_ENABLED,
    its trees untouched on disk) and GLOBALS has no group left (GLOBALS_EXIT_HANDOVER retired). Both read as "off in
    V3.1" -- one quiet line -- never as stalled, empty or 0 of N. `d.regimes_off` when the publisher sends it; until
@@ -2166,7 +2174,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261105-173822";
+const APP_BUILD = "20261106-173122";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4767,7 +4775,9 @@ function renderResultsList(){
      2026-11-05 -- A FOURTH, right above the baselines. Trevor: "Right above the baseline block in the results tab.
      Let's have another block that looks the same, but let's make it current status. Add the shortcut bar to compliment
      it." -> Jobs - Gates - Current - Baselines. */
+  /* 2026-11-06 (V3.4.0, #7b) -- + Switches, right after the gate settings it explains. */
   const blocks = [["jobs", "Jobs", jobs], ["gates", "Gates", gateSettingsSection()],
+                  ["sw", "Switches", switchesSection()],
                   ["cur", "Current", currentSection()],
                   ["base", "Baselines", baselinesSection()]].filter(x => x[2]);
   return secBar("rs", blocks) +
@@ -4781,18 +4791,56 @@ function renderResultsList(){
    last round of this version swept says what that round did: "set by round 117 (was off)" (it changed it) or "round
    117 left it off" (it didn't); the round opens its job. Leaf buckets only (a split parent trades nothing), narrowed by
    the regime / bucket chips like the list. An older publisher sends no gates: the section stays away. */
-const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C"};
+const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C", 4: "Trigger D"};
 /* 2026-11-05 -- WHAT EACH TRIGGER DOES, under the bucket's name. Trevor: "with the gates, I need some more info about
    the trigger... Not sure which trigger is C vs A." The Live card's own words (lvPaintEntry), so the two never
    disagree. */
 const GATE_TRIG_SAY = {
   0: "V3.2's entry decides: the gate stack is not used here.",
-  1: "A: once every gate agrees, it waits for the score to keep turning the trade's way for a few seconds (the arm), " +
-     "then trades.",
+  1: "A: once every gate agrees, it waits for its readers to turn the trade's way -- the score's turn (the score " +
+     "reader) and any turn reader switched on -- for a few seconds (the arm), then trades.",
   2: "B: trades the moment every gate agrees, once per stretch of all-green; after a trade it waits for a gate to " +
      "fail and come back.",
   3: "C: arms the moment every gate agrees (once per stretch), then trades on the next 1-minute EMA cross the " +
-     "trade's way."};
+     "trade's way.",
+  4: "D: arms the moment every gate agrees, then trades on the next 1-minute EMA cross the trade's way whatever the " +
+     "gates read then; it disarms on a bucket or regime change, at its wait limit, or when 2 gates fail at once."};
+/* 2026-11-06 (V3.4.0, audit #7b) -- THE SWITCHES BLOCK. Trevor: "I'd rather build a section in the app that tells
+   me what has recently switched on or off and when" -> "Yup, add that". The publisher's switches (app_snapshot.
+   collect_switches: the one switch log, the last 30 days, newest first -- checkpoint answers, a round's gate or feature
+   moving to or from off, a setting retired after 2 epochs off): when, the bucket, the setting old -> new, why, who. A
+   checkpoint's row opens its card on the Checkpoints page. Narrowed by the regime / bucket chips like the list. An
+   older publisher sends none: no block. */
+const SW_TURNED = {on: "switched on", off: "switched off", retired: "retired", changed: "changed"};
+function swVal(v){ return v == null ? "—" : Math.abs(Number(v)) >= 1e8 ? "off" : num(Number(v)); }
+function switchesSection(){
+  const rows = (SWITCHES || []).filter(r => r && !regimeOff(r.regime) &&
+      (!RESULTS_REGIME || r.regime === RESULTS_REGIME) &&
+      (RESULTS_BUCKET == null || bktKey(r.regime, r.bucket_id) === String(RESULTS_BUCKET)));
+  if(!rows.length) return "";
+  const li = rows.slice(0, 60).map(r => {
+    const ck = r.ref && r.ref.checkpoint ? String(r.ref.checkpoint) : "";
+    const t = String(r.turned || "changed"), cls = t === "on" ? "good" : (t === "off" || t === "retired") ? "dim" : "";
+    const move = t === "retired" ? `held at ${esc(swVal(r.new))}` : `${esc(swVal(r.old))} → ${esc(swVal(r.new))}`;
+    const who = r.who ? ` · ${esc(r.who)}` : "";
+    return `<div class="sw-row${ck ? " tap" : ""}"${ck ? ` data-swck="${esc(ck)}" role="button" tabindex="0"` : ""}>` +
+      `<div class="sw-h"><span class="tby">${esc(fmtWhen(r.at))}</span>${lvRegTag(r.regime)}` +
+      `${bktEl(r.bucket_id, false, null, r.regime)}<span class="sw-s">${esc(spaceOut(stripRegime(r.setting)))}</span>` +
+      `<span class="sp"></span><span class="sw-t ${cls}">${esc(SW_TURNED[t] || t)}</span></div>` +
+      `<div class="tnote">${move} · ${esc(r.why || "")}${who}${ck ? " · tap for the checkpoint" : ""}</div></div>`;
+  }).join("");
+  return `<div class="section-label">Switches \u00b7 last 30 days</div><div class="card"><div class="card-in">${li}` +
+    (rows.length > 60 ? `<div class="tnote">${rows.length - 60} older not shown.</div>` : "") + `</div></div>`;
+}
+/* A checkpoint's switch row -> the Checkpoints page, scrolled to its card (ckCard's data-ckcard). */
+document.addEventListener("click", e => {
+  const r = e.target.closest("[data-swck]");
+  if(!r) return;
+  const id = r.dataset.swck;
+  go("checkpoints");                       // the page is drawn on every snapshot: its cards are there already
+  const c = Array.from(document.querySelectorAll("#page-checkpoints [data-ckcard]")).find(x => x.dataset.ckcard === id);
+  if(c) c.scrollIntoView({behavior: "auto", block: "start"});
+});
 function gateSettingsSection(){
   const bs = (BUCKETS || []).filter(b => b && b.gates && Array.isArray(b.gates.rows) && b.leaf !== false &&
       !regimeOff(b.regime) && (!RESULTS_REGIME || b.regime === RESULTS_REGIME) &&
@@ -8012,6 +8060,7 @@ function stPf(r){
    RESULTS ONLY: a setting is named by its arm label, never by its values (the snapshot carries none).
    d.checkpoints / d.swing; absent on an older publisher, which reads as "none yet". */
 let CHECKPOINTS = {buckets: [], answers: []};
+let SWITCHES = [];   // 2026-11-06 (V3.4.0, #7b) -- the switch log (switchesSection)
 let SWING = null;
 const CK_UI = {arm: "", sent: {}, err: {}};   // arm = "<checkpoint id>|<choice>", armed by a first tap
 
@@ -8069,20 +8118,29 @@ function ckVerdictChip(c){
   const m = CK_CHIP[c.verdict] || ["", c.verdict || ""];
   return '<span class="chip ' + m[0] + '">' + esc(m[1]) + '</span>';
 }
+/* 2026-11-06 (V3.4.0, #18) -- a V3.4 checkpoint reads in R (units "R"): net in R, the dollars under it. And S1 /
+   S2's run on the unseen 2021-24 years (U), which decides whether the fleet may take its pick by itself. */
+function ckR(x){ const v = Number(x); return isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(1) + " R" : "–"; }
 function ckTable(c){
+  const inR = c.units === "R";
+  const hasU = (c.rows || []).some(r => r.U !== undefined);
   const cell = function(y){
     if(!y) return '<td>–</td><td>–</td>';
     if(y.error) return '<td colspan="2">' + esc(y.error) + '</td>';
-    return '<td title="' + esc(y.trades) + ' trades">' + recurMoney(y.net) + '</td><td>' + ckPf(y.pf) + '</td>';
+    const net = inR ? ckR(y.net) + (y.net_usd != null ? '<div class="ck-sub">' + recurMoney(y.net_usd) + '</div>' : "")
+                    : recurMoney(y.net);
+    return '<td title="' + esc(y.trades) + ' trades">' + net + '</td><td>' + ckPf(y.pf) + '</td>';
   };
-  return '<table class="ck-t"><tr><th></th><th colspan="2">Y1</th><th colspan="2">Y2</th><th></th></tr>'
-    + '<tr><th>Setting</th><th>net</th><th>PF</th><th>net</th><th>PF</th><th>t</th></tr>'
+  return '<table class="ck-t"><tr><th></th><th colspan="2">Y1</th><th colspan="2">Y2</th>'
+    + (hasU ? '<th colspan="2">2021-24</th>' : '') + '<th></th></tr>'
+    + '<tr><th>Setting</th><th>net</th><th>PF</th><th>net</th><th>PF</th>'
+    + (hasU ? '<th>net</th><th>PF</th>' : '') + '<th>t</th></tr>'
     + (c.rows || []).map(function(r){
         const cls = r.current ? "cur" : r.mark === "passes" ? "pass" : r.mark === "y1_guard" ? "guard" : "";
         const name = (r.current ? "Current" : esc(ckArm(r.setting)))
           + (r.mark === "passes" ? " ✓" : r.mark === "y1_guard" ? " ⚠" : "")
           + (r.also && r.also.length ? '<div class="ck-sub">= ' + esc(r.also.map(ckArm).join(", ")) + '</div>' : "");
-        return '<tr class="' + cls + '"><td>' + name + '</td>' + cell(r.Y1) + cell(r.Y2)
+        return '<tr class="' + cls + '"><td>' + name + '</td>' + cell(r.Y1) + cell(r.Y2) + (hasU ? cell(r.U) : "")
           + '<td>' + (r.t != null ? Number(r.t).toFixed(2) : "–") + '</td></tr>';
       }).join("")
     + '</table>';
@@ -8131,7 +8189,7 @@ function ckHistory(c){
   }).join(" · ") + '</div>';
 }
 function ckCard(c){
-  return '<div class="ck"><div class="ck-h"><span class="ck-n">' + esc(ckCap(c.title)) + '</span>'
+  return '<div class="ck" data-ckcard="' + esc(c.id || "") + '"><div class="ck-h"><span class="ck-n">' + esc(ckCap(c.title)) + '</span>'
     + ckVerdictChip(c) + '<span class="sp"></span><span class="tby">' + esc(c.switch) + '</span></div>'
     + '<div class="ck-sub">After ' + esc(ckTrigger(c.trigger)) + ' · ' + esc(fmtWhen(c.at)) + '</div>'
     + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
@@ -8303,7 +8361,7 @@ function ckPageCard(b, c){
   const allot = a.retired ? "cancelled on this bucket for the rest of the epoch"
     : "re-check " + esc(a.used != null ? a.used : "–") + " of " + esc(a.allowed != null ? a.allowed : "–")
       + " this epoch";
-  return '<div class="card"><div class="card-in"><div class="ck">'
+  return '<div class="card" data-ckcard="' + esc(c.id || "") + '"><div class="card-in"><div class="ck">'
     + '<div class="ck-h"><span class="ck-n">' + esc(c.question || ckCap(c.title)) + '</span>' + ckVerdictChip(c)
     + '</div>'
     + '<div class="ck-sub"><span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span> '
@@ -13773,6 +13831,19 @@ function lvGmt(){
   return "server time (GMT" + (o >= 0 ? "+" : "−") + Math.abs(o) + ")";
 }
 const lvRegTag = r => r ? `<span class="chip ${RC[r] || ""}">${esc(r)}</span>` : "";
+/* V3.4.0 (11-06) -- THE TRIGGER THAT OPENED THE TRADE (the EA's TRADE_OPEN trigger / turn_lit), and for trigger A
+   which of its readers had turned -- "score" is the old score's turn, kept as one reader. A V3.3 trade has none. */
+const LV_TURN = {SCORE: "score", RSI_M5: "M5 RSI", RSI_M15: "M15 RSI", POS_24H: "24 h position", VWAP: "VWAP",
+  GAP_M5: "M5 EMA gap", GAP_M15: "M15 EMA gap", GAP_M30: "M30 EMA gap", MACD_M5: "M5 MACD", MACD_D1: "D1 MACD",
+  POS_2D: "2-day position", GAP_H1: "H1 EMA gap"};
+function lvTrigTag(p){
+  const t = String((p && p.trigger) || "");
+  if(!t || t === "SWING") return "";
+  const lit = String(p.turn_lit || "-");
+  const rd = (t === "A" && lit !== "-") ? lit.split(",").map(k => LV_TURN[k] || k).join(" + ") : "";
+  const label = t === "V32" ? "V3.2 entry" : `Trigger ${t}`;
+  return `<span class="chip" title="The trigger that opened this trade">${esc(label)}${rd ? " · " + esc(rd) : ""}</span>`;
+}
 const lvDirTag = d => `<span class="lv-dir"><span class="ar">${d === "buy" ? "▲" : "▼"}</span> ` +
                       `${d === "buy" ? "BUY" : "SELL"}</span>`;
 function lvReason(t){
@@ -13959,13 +14030,22 @@ async function lvMaybeSlopes(){
 /* 2026-11-03 (feed 1.8) -- THE V3.3 GATE STACK: no blended score; every gate its own row, a trade only when all agree.
    The EA's own gate order (feed $StackGates, EA GateName). Their switches are "s_<gate>", and "stk_armed" for C's arm.
    2026-11-04 -- 21 gates: a trend gate per timeframe (M1 to D1), RSI on M5 and on M15, the session, the M5 MACD, the
-   stale clock (in hours), how far price already ran (in percent), the young regime and the bucket exit. */
+   stale clock (in hours), how far price already ran (in percent), the young regime and the bucket exit.
+   2026-11-06 (V3.4.0 fold-in, stage P) -- 39, the staged V3.4 EA's: + the turning gate, the RSI's time in the zone,
+   the Bollinger squeeze (a 0..1 band like the ATR squeeze), the fast / slow EMA slopes on M1 .. D1. A V3.3 minute
+   carries none of them (null). Ships with the feed's $StackGates (the /gates columns move), at the V3.4 cutover. */
 const LV_SGATES = [["slope", "Slope"], ["macd", "D1 MACD"], ["m1", "M1 trend"], ["m5", "M5 trend"],
                    ["m15", "M15 trend"], ["m30", "M30 trend"], ["h1", "H1 trend"], ["h4", "H4 trend"],
                    ["d1", "D1 trend"], ["rsi5", "RSI M5"], ["rsi15", "RSI M15"], ["rng24", "Range 24h"],
                    ["vwap", "VWAP"], ["sqz", "Squeeze"], ["rvol", "Rel volume"], ["sess", "Session"],
                    ["m5macd", "M5 MACD"], ["stale", "Stale clock"], ["str", "Ran far"], ["young", "Young regime"],
-                   ["bexit", "Bucket exit"]];
+                   ["bexit", "Bucket exit"], ["turn", "Turning"], ["rsi5dur", "RSI M5 zone time"],
+                   ["rsi15dur", "RSI M15 zone time"], ["sqzbb", "BB squeeze"],
+                   ["efm1", "M1 fast slope"], ["efm5", "M5 fast slope"], ["efm15", "M15 fast slope"],
+                   ["efm30", "M30 fast slope"], ["efh1", "H1 fast slope"], ["efh4", "H4 fast slope"],
+                   ["efd1", "D1 fast slope"], ["esm1", "M1 slow slope"], ["esm5", "M5 slow slope"],
+                   ["esm15", "M15 slow slope"], ["esm30", "M30 slow slope"], ["esh1", "H1 slow slope"],
+                   ["esh4", "H4 slow slope"], ["esd1", "D1 slow slope"]];
 const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"],
                   ["stk_armed", "Armed (C)"]].concat(LV_SGATES.map(x => ["s_" + x[0], x[1]]));
 const LV_GATE_DAYS = {M1: 1, M5: 2, M15: 4, H1: 10, H4: 14, D1: 14};
@@ -13996,7 +14076,7 @@ function lvGateState(r, k){
   const trig = r.length > 13 && r[13] != null ? Number(r[13]) : 0;
   if(k === "stk_armed" || k.startsWith("s_")){
     if(trig < 1 || block === "na" || block == null || block === "") return "x";
-    if(k === "stk_armed") return trig === 3 ? (r[14] === 1 ? "p" : "b") : "x";
+    if(k === "stk_armed") return (trig === 3 || trig === 4) ? (r[14] === 1 ? "p" : "b") : "x";   // 11-06: + D
     const at = LV_SIDX[k.slice(2)], hi = LV_SHI[k.slice(2)], mx = hi != null ? r[hi] : null;
     if(at == null || r[at] == null || r[at + 1] == null) return "n";
     return Number(r[at]) >= Number(r[at + 1]) && (mx == null || Number(r[at]) <= Number(mx)) ? "p" : "b";
@@ -14010,12 +14090,14 @@ function lvGateState(r, k){
   return Number(v) >= Number(mn) ? "p" : "b";
 }
 /* The stack's columns in a /gates row (feed 1.8): [13] trig, [14] stk_armed, then each gate's value and minimum in
-   LV_SGATES' order from [15], then the ceilings (11-04): the squeeze's at [57], the stale clock's at [58], how far
-   price ran at [59] -- null in a minute whose ceiling is off, which reads as no ceiling. */
+   LV_SGATES' order from [15], then the ceilings (11-04): the squeeze's, the stale clock's, how far price ran (V3.4:
+   + the Bollinger squeeze's) after the last pair -- null in a minute whose ceiling is off, which reads as no ceiling. */
 const LV_SIDX = {slope: 15, macd: 17, m1: 19, m5: 21, m15: 23, m30: 25, h1: 27, h4: 29, d1: 31, rsi5: 33, rsi15: 35,
                  rng24: 37, vwap: 39, sqz: 41, rvol: 43, sess: 45, m5macd: 47, stale: 49, str: 51, young: 53,
-                 bexit: 55};
-const LV_SHI = {sqz: 57, stale: 58, str: 59};
+                 bexit: 55, turn: 57, rsi5dur: 59, rsi15dur: 61, sqzbb: 63, efm1: 65, efm5: 67, efm15: 69, efm30: 71,
+                 efh1: 73, efh4: 75, efd1: 77, esm1: 79, esm5: 81, esm15: 83, esm30: 85, esh1: 87, esh4: 89,
+                 esd1: 91};
+const LV_SHI = {sqz: 93, stale: 94, str: 95, sqzbb: 96};
 function lvGateRowsIn(rows, t0, t1){
   let lo = 0, hi = rows.length;
   while(lo < hi){ const mid = (lo + hi) >> 1; if(rows[mid][0] < t0) lo = mid + 1; else hi = mid; }
@@ -15594,14 +15676,14 @@ const LV_SWHAT = {
   young: "No entry while the regime is still young and its slope still close to the line it crossed.",
   bexit: "No entry soon after the slope left the steeper bucket next to this one, once it is well past that " +
          "bucket's edge."};
-const LV_STRIG = {1: "A", 2: "B", 3: "C"};
+const LV_STRIG = {1: "A", 2: "B", 3: "C", 4: "D"};
 /* 2026-11-04 -- the yes / no gates (+1 passes, -1 blocks; a minimum below zero is off), and the two that read on their
    own scale: the stale clock in hours and how far price ran in percent, each held under a ceiling. */
 const LV_SSWITCH = ["macd", "sess", "m5macd", "young", "bexit"];
 function lvStackOff(x){
   if(x.min == null) return false;
   const mn = Number(x.min), mx = x.max == null ? null : Number(x.max);
-  if(x.name === "sqz") return mn <= 0 && (mx == null || mx >= 1);
+  if(x.name === "sqz" || x.name === "sqzbb") return mn <= 0 && (mx == null || mx >= 1);
   if(x.name === "rvol") return mn <= 0;
   if(x.name === "stale" || x.name === "str") return mx == null && mn <= 0;
   if(x.name === "slope" || x.name === "h1") return false;
@@ -15617,7 +15699,7 @@ function lvStackVal(n, v){
   if(LV_SSWITCH.includes(n)) return Number(v) > 0 ? "yes" : "no";
   if(n === "stale") return lvEntryNum(v, 1) + " h";
   if(n === "str") return lvEntryNum(v, 2) + " %";
-  return lvEntryNum(v, n === "rvol" || n === "sqz" ? 2 : 3);
+  return lvEntryNum(v, n === "rvol" || n === "sqz" || n === "sqzbb" ? 2 : 3);
 }
 function lvStackNeed(x){
   if(lvStackOff(x)) return "off";
@@ -15630,7 +15712,7 @@ function lvStackNeed(x){
     return lo != null ? `needs ${lo} to ${lvEntryNum(x.max, d)}${u}` : `at most ${lvEntryNum(x.max, d)}${u}`;
   }
   if(x.max != null) return `needs ${lvEntryNum(x.min, 2)} to ${lvEntryNum(x.max, 2)}`;
-  return "needs " + lvEntryNum(x.min, n === "rvol" || n === "sqz" ? 2 : 3);
+  return "needs " + lvEntryNum(x.min, n === "rvol" || n === "sqz" || n === "sqzbb" ? 2 : 3);
 }
 function lvStackCard(e, head, asOf, offSay){
   const s = e.stack, trig = Number(s.trig), t = LV_STRIG[trig] || "?";
@@ -15642,17 +15724,26 @@ function lvStackCard(e, head, asOf, offSay){
   const all = on.length > 0 && ok.length === on.length;
   let pill, cls, say;
   if(offSay){ pill = "Off"; cls = "off"; say = offSay; }
+  else if(trig === 4 && cArmed){
+    pill = "Armed"; cls = "on";                         // 2026-11-06 (V3.4.0, #6b) -- D: the gates do not decide now
+    say = "Trigger D is armed: it trades on the next 1-minute EMA cross the trade's way whatever the gates read now; " +
+          "it disarms on a bucket or regime change, at its wait limit, or when 2 gates fail at once.";
+  }
   else if(!all){
     pill = "Blocked"; cls = ok.length >= on.length - 1 ? "near" : "block";
     say = `Stopped at the ${esc(label(stop ? stop.name : ""))} gate: every gate has to agree before trigger ${t} can trade.`;
   } else if(trig === 1){
     pill = v32armed ? "Ready" : "Waiting to arm"; cls = v32armed ? "on" : "near";
     say = v32armed ? "Every gate agrees and the score's turn has armed it: a trade opens unless a check before it stops it."
-                   : "Every gate agrees. Trigger A trades once the score turns hard enough to arm (first row).";
+                   : "Every gate agrees. Trigger A trades once its readers turn -- the score reader: once the score " +
+                     "turns hard enough to arm (first row).";
   } else if(trig === 2){
     pill = "Ready"; cls = "on";
     say = "Every gate agrees. Trigger B trades the moment they do, once per stretch of all-green: after a trade it " +
           "waits for a gate to fail and come back.";
+  } else if(trig === 4){
+    pill = "Ready"; cls = "on";
+    say = "Every gate agrees: trigger D arms and trades on the next 1-minute EMA cross the trade's way.";
   } else if(cArmed){
     pill = "Armed"; cls = "on";
     say = "Every gate agrees and trigger C is armed: it trades on the next 1-minute EMA cross the trade's way.";
@@ -15720,7 +15811,7 @@ function lvPaintOpen(){
   /* BUILT when the stop moves (or the trade changes), UPDATED IN PLACE every
      second otherwise. Rebuilding once a second would replace the button under
      a finger that was halfway through tapping it. */
-  const key = JSON.stringify(pos.map(p => [p.ticket, p.sl, p.tp, p.regime, p.bucket, p.sl_initial,
+  const key = JSON.stringify(pos.map(p => [p.ticket, p.sl, p.tp, p.regime, p.bucket, p.trigger, p.turn_lit, p.sl_initial,
                                            (p.sl_trail || []).length, !!p.sl_gap,
                                            p.giveback ? [p.giveback.cap_r > 0, p.giveback.bucket, p.giveback.armed] : null]));
   if(el.dataset.key !== key){
@@ -15845,7 +15936,7 @@ function lvOpenCard(p){
     : "";
   return `<div class="card lv-otrade">
     <div class="lv-orow">${lvDirTag(p.dir)}<span class="lv-dir">${Number(p.volume).toFixed(2)} lot</span>` +
-      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, p.regime) : ""}` +
+      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, p.regime) : ""}${lvTrigTag(p)}` +
       `<span class="lv-oage" id="lvo-${t}-age"></span></div>
     <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
       `<span class="lv-sub" id="lvo-${t}-move"></span></div>
@@ -17463,6 +17554,8 @@ function applySnapshot(d, source){
   STATUS = (d.status && typeof d.status === "object") ? d.status : {};
   /* 2026-10-15 -- V3.1 checkpoints + the SWING card (ckCard / swingCard). Absent on an older publisher. */
   CHECKPOINTS = (d.checkpoints && typeof d.checkpoints === "object") ? d.checkpoints : {buckets: [], answers: []};
+  /* 2026-11-06 (V3.4.0, #7b) -- the switch log; absent on an older publisher. */
+  SWITCHES = Array.isArray(d.switches) ? d.switches : [];
   SWING = (d.swing && typeof d.swing === "object") ? d.swing : null;
   /* 2026-10-15 -- the regimes the fleet does not run (see REGIMES_OFF); absent = this build's own answer. */
   REGIMES_OFF = Array.isArray(d.regimes_off) ? d.regimes_off.map(function(r){ return String(r).toUpperCase(); })
