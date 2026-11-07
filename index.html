@@ -703,6 +703,7 @@ button.chip[disabled]{opacity:.4;cursor:default;}
    streak is real; quieter, because the evidence behind it is not. */
 .tst.pinned.weak{background:rgba(224,139,74,.09);color:rgba(240,160,94,.62);}
 .tst.locked{background:rgba(169,139,224,.16);color:var(--done);}
+.tst.held{background:transparent;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(140,160,172,.38);}
 /* 2026-10-25 -- FLAT / STEEP, the shape learner's reading of how much the setting moved the Result. Outlined, not
    filled: it is a measurement beside the state, not a sixth place in the lifecycle. */
 .tst.flat{background:transparent;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(140,160,172,.38);}
@@ -2174,7 +2175,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-043602";
+const APP_BUILD = "20261107-053434";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8656,6 +8657,19 @@ function stBucketPage(){
     + '</div>';
 }
 
+/* 2026-11-07 -- A RUNNING ROUND ON THE STATUS PAGE: the machine card's facts for it -- where, started, ETA, progress,
+   and the settings it sweeps (varList, the card's own rows). */
+function stRunningBlock(f){
+  const rc = RC[f.regime] || "";
+  return `<div class="tsec" style="margin:0 0 8px">
+      <div class="lrow">${copyTag(f.copy)}<span class="chip gold">${esc(f.machine)}</span>
+        <span class="tnote" style="margin:0 0 0 6px">started ${esc(fmtStarted(f.phase_since) || "?")} \u00b7 ETA ${
+          esc(fmtEta(ourEtaAt(f) || etaAt(f)) || "?")}</span></div>
+      ${progressBar(f, rc)}
+      ${varList(f.variables, liveStates(f), f.riders)}
+    </div>`;
+}
+
 function stGroupPage(){
   const [regime, bid, gid] = String(ST_NAV.group).split("|");
   const key = regime + "|" + bid;
@@ -8670,8 +8684,14 @@ function stGroupPage(){
         : g && g.done ? "run this epoch"
         : g && g.parked ? "parked" : "not yet run this epoch"}`;
   let vars;
-  if(nr.state === "running")
-    vars = '<div class="tnote">Its round is running now; the next one is planned from its result.</div>';
+  if(nr.state === "running"){
+    /* 2026-11-07 -- Trevor: "in the status tab, no info is displayed on the rounds that are currently running." The
+       round's own machine card holds it (started, ETA, progress, what it sweeps): drawn here from the same pieces. */
+    const live = FLEET.filter(f => running(f) && !f.seed && f.regime === regime
+                                   && String(f.bucket_id) === String(bid) && f.group_id === gid);
+    vars = live.map(stRunningBlock).join("")
+      + '<div class="tnote">Its round is running now; the next one is planned from its result.</div>';
+  }
   else if(nr.state === "awaiting_pick")
     vars = '<div class="tnote">Its round is waiting on your pass pick; the next one is planned from the pass you choose.</div>';
   else if(nr.state === "nothing")
@@ -8853,6 +8873,8 @@ function nrRow(v, attrs){
     ? `<span class="tvr nrrange" title="How many values it is swept over">${
         last && last !== pts ? esc(last) + " → " : ""}${esc(pts)}</span>` : "";
   let why = NR_WHY[v.why] || "";
+  /* 2026-11-07 -- a HELD setting says why it is held (the publisher's plain words), never "re-checked after" */
+  if(v.state === "HELD" && v.hold) why = esc(v.hold);
   if(v.action === "SITS_OUT" && v.rounds_to_recheck)
     why = `Locked, so it sits out; re-checked after ${esc(v.rounds_to_recheck)} more ${
       Number(v.rounds_to_recheck) === 1 ? "round" : "rounds"} of this group.`;
@@ -9461,7 +9483,7 @@ function statesAtNote(d){
    a wider band and is a park waiting to happen. */
 function taskStateKey(list){
   const seen = [];
-  ["PINNED", "CENTER", "FLOATING", "DEFAULT", "LOCKED"].forEach(st => {
+  ["PINNED", "CENTER", "FLOATING", "DEFAULT", "LOCKED", "HELD"].forEach(st => {
     if((list || []).some(v => v.state === st) && STATE_TEXT[st]) seen.push(st);
   });
   /* 2026-10-25 -- and the FLAT / STEEP chips on screen, after the states. */
