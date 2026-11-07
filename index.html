@@ -2174,7 +2174,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261106-173122";
+const APP_BUILD = "20261106-213331";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5722,6 +5722,17 @@ function jobsModel(){
     (p.tasks = p.tasks || []).push(j);
     jobs.splice(jobs.indexOf(j), 1);
   });
+  /* 2026-11-06 -- ...AND THE LAPTOP STILL GETS ITS OWN BLOCK. Trevor: "How come this shortcut bar doesn't have the
+     laptop queues and laptop shortcut?" With every test it runs riding inside a round, the Backtests block -- and
+     its bar button -- vanished. One short row per such test under "Running now -- Laptop"; it opens the round it
+     rides in (ref), where the test stays as one of the round's tasks. */
+  jobs.filter(o => (o.tasks || []).length).forEach(p => p.tasks.forEach(t => jobs.push({
+    id: "t:" + t.id, ref: p.id, section: "Running now", seed: t.seed, slot: t.slot, copy: null,
+    title: t.title,
+    line: ["inside " + (p.copy ? "copy " + p.copy + "\u2019s" : "the") + " round", t.line,
+           "1 core: " + String((t.seed && t.seed.claimed_by) || "").split("~")[0]].filter(Boolean).join(" \u00b7 "),
+    eta: t.eta, chip: t.chip, regime: t.regime || null, cls: t.cls || "",
+  })));
   /* 2026-10-17 -- OPTIMIZATIONS FIRST, TESTS BELOW, ALWAYS (Trevor: "They will also always be Below the
      Optimizations on the active tab"). FLEET order put the Laptop's own-MT5 test above the T7910's rounds. */
   const isTest = j => !(j.fleet && sweeping(j.fleet));
@@ -6110,7 +6121,7 @@ function jobRow(j){
   /* ...and the line stops repeating it ("Bear High · 46 agents" -> "46 agents"). */
   const line = bk ? String(j.line || "").split(" · ").filter(x => x !== bktName(bk.regime, bk.id)).join(" · ")
                   : j.line;
-  return `<button type="button" class="hbtn jrow" data-job="${esc(j.id)}">
+  return `<button type="button" class="hbtn jrow" data-job="${esc(j.ref || j.id)}">
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
         <span class="hb">
