@@ -2174,7 +2174,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-032952";
+const APP_BUILD = "20261107-043602";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2226,11 +2226,43 @@ const TIMEFRAMES = new Set(["M1","M5","M15","M30","H1","H4","D1","W1","MN1"]);
 
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
+/* 2026-11-07 -- MIXED GROUPS IN WORDS (Trevor: "can we make it so that the group names are displayed on the app
+   something that makes sense to me, instead of what looks like a hexadecimal code?"). A V3.4 bucket's mixed groups
+   are built per bucket (mixed_groups.py) and their ids say so in code: <R>_ENTRY_GM<bucket>E<epoch>[P<pass>]X<nn>_GATE_MIX
+   for the gates, <R>_MIX<bucket>E<epoch>_<LANE>_<nn> for the rest. Read here as "Mixed gates 3 · pass 2" (epoch 1:
+   pass 2, or pass 3 when the id carries P3) / "Mixed gates 3 · epoch 2" / "Mixed score 1 · epoch 2", then what the
+   group holds -- the gates it tunes together, from the snapshot's mixed_groups (MIXED; app_snapshot
+   collect_mixed_groups), or its count of settings. A snapshot from an older publisher has no mixed_groups: the name
+   still reads, without the list. The canonical id still travels for every lookup. */
+let MIXED = {};
+const MIX_LANE = {CADENCE: "cadence", SCORE: "score", EMA: "EMA"};
+function mixedName(gid){
+  const s = String(gid || "");
+  let m = s.match(/_ENTRY_GM\d+E(\d+)(?:P(\d+))?X(\d+)_GATE_MIX$/);
+  let name = null;
+  if(m){
+    const ep = +m[1];
+    name = `Mixed gates ${+m[3]} · ${ep <= 1 ? "pass " + (m[2] ? +m[2] : 2) : "epoch " + ep}`;
+  } else {
+    m = s.match(/_MIX\d+E(\d+)_([A-Z]+)_(\d+)$/);
+    if(m) name = `Mixed ${MIX_LANE[m[2]] || m[2].toLowerCase()} ${+m[3]} · epoch ${+m[1]}`;
+  }
+  if(!name) return null;
+  const rec = MIXED[s];
+  const words = rec && Array.isArray(rec.gates) ? rec.gates.filter(Boolean) : [];
+  if(words.length) return name + ": " + words.slice(0, 3).join(", ") + (words.length > 3 ? ` +${words.length - 3}` : "");
+  const n = rec && Array.isArray(rec.names) ? rec.names.length : 0;
+  if(n) return name + `: ${n} setting${n === 1 ? "" : "s"}`;
+  return name;
+}
+
 /* Mirrors message_doc.humanize_group -- one implementation per renderer is the
    cost of the split; the canonical id always travels alongside so a tap can
    still look the group up. */
 function humanize(gid){
   if(!gid) return "";
+  const mx = mixedName(gid);
+  if(mx) return mx;
   let n = String(gid).replace(/^(BULL|BEAR|RANGING|GLOBALS)_/, "");
   return n.split("_").filter(Boolean).map(t => {
     const u = t.toUpperCase();
@@ -17610,6 +17642,8 @@ function applySnapshot(d, source){
   }
   if(d.settings && d.settings.schedule_vocab) VOCAB = d.settings.schedule_vocab;
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
+  /* 2026-11-07 -- the mixed groups' contents, for their names (mixedName); {} from an older publisher */
+  MIXED = (d.mixed_groups && typeof d.mixed_groups === "object") ? d.mixed_groups : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
      snapshot from an older publisher, which leaves the badge saying so. */
