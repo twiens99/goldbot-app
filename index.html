@@ -2174,7 +2174,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261106-213331";
+const APP_BUILD = "20261107-032952";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4903,16 +4903,36 @@ function fullThenBuckets(byKey){
   return (byKey.all ? [byKey.all] : []).concat(buckets);
 }
 function baselineRuns(){
+  /* 2026-11-07 -- a bucket's starting point is its LAST bucket test before its first round of the version, not its
+     first one. Trevor: "The baseline should start with the new bear ranges. Then it can look like that range change
+     was part of the version bump." Bear High was measured twice before any round: on its old range (PF 1.62) and
+     again after Bear Mid was inserted and its range shrank (PF 1.55); the first one made the range change read as a
+     -0.07 "change since its baseline" on the Current card. A re-measure after the first round never moves it. */
   const byStamp = CURVES.slice().sort((a, b) => String(a.stamp).localeCompare(String(b.stamp)));
   if(!byStamp.length) return [];
   const ver = curveVer();
-  const firsts = {};
+  const rounds = {};
+  (LEDGER || []).forEach(r => {
+    const d = String(((r || {}).reports || {}).rel_dir || "").replace(/\/+$/, "");
+    if(d) rounds[d] = r;
+  });
+  const firstRound = {};
+  byStamp.forEach(c => {
+    const id = String(c.id || "");
+    if(id.split("/")[0] !== ver || String(c.group) === "ALL") return;
+    const r = rounds[id.split("/").slice(0, -1).join("/")];
+    if(r && r.applied === false) return;
+    const k = curveKey(c);
+    if(k && !firstRound[k]) firstRound[k] = String(c.stamp);
+  });
+  const starts = {};
   byStamp.forEach(c => {
     if(String(c.id || "").split("/")[0] !== ver || String(c.group) !== "ALL") return;
     const k = curveKey(c);
-    if(k && !firsts[k]) firsts[k] = c;
+    if(!k || (firstRound[k] && String(c.stamp) >= firstRound[k])) return;
+    starts[k] = c;
   });
-  return fullThenBuckets(firsts);
+  return fullThenBuckets(starts);
 }
 /* 2026-11-05 -- the baselines' table, SHARED WITH THE CURRENT STATUS ABOVE IT (Trevor: "another block that looks the
    same"). open: {curve id: true}; attr: the row's data attribute -- each block opens its own lines, because one line
