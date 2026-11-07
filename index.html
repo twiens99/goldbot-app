@@ -2175,7 +2175,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-053434";
+const APP_BUILD = "20261107-075926";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14130,7 +14130,8 @@ const LV_SGATES = [["slope", "Slope"], ["macd", "D1 MACD"], ["m1", "M1 trend"], 
                    ["efm30", "M30 fast slope"], ["efh1", "H1 fast slope"], ["efh4", "H4 fast slope"],
                    ["efd1", "D1 fast slope"], ["esm1", "M1 slow slope"], ["esm5", "M5 slow slope"],
                    ["esm15", "M15 slow slope"], ["esm30", "M30 slow slope"], ["esh1", "H1 slow slope"],
-                   ["esh4", "H4 slow slope"], ["esd1", "D1 slow slope"]];
+                   ["esh4", "H4 slow slope"], ["esd1", "D1 slow slope"],
+                   ["rsih1", "RSI H1"], ["rsih1dur", "RSI H1 zone time"], ["effh1", "H1 efficiency"], ["sqzh1", "H1 squeeze"], ["sqzbbh1", "H1 BB squeeze"], ["rngmd", "Multi-day range"], ["extd1", "D1 extension"], ["pdl", "Yesterday's level"], ["pbm15", "M15 pullback"], ["pbh1", "H1 pullback"]];
 const LV_GATES = [["armed", "Armed"], ["slope", "Slope"], ["htf", "H1 trend"], ["health", "Health"], ["total", "Total"],
                   ["stk_armed", "Armed (C)"]].concat(LV_SGATES.map(x => ["s_" + x[0], x[1]]));
 const LV_GATE_DAYS = {M1: 1, M5: 2, M15: 4, H1: 10, H4: 14, D1: 14};
@@ -14177,12 +14178,8 @@ function lvGateState(r, k){
 /* The stack's columns in a /gates row (feed 1.8): [13] trig, [14] stk_armed, then each gate's value and minimum in
    LV_SGATES' order from [15], then the ceilings (11-04): the squeeze's, the stale clock's, how far price ran (V3.4:
    + the Bollinger squeeze's) after the last pair -- null in a minute whose ceiling is off, which reads as no ceiling. */
-const LV_SIDX = {slope: 15, macd: 17, m1: 19, m5: 21, m15: 23, m30: 25, h1: 27, h4: 29, d1: 31, rsi5: 33, rsi15: 35,
-                 rng24: 37, vwap: 39, sqz: 41, rvol: 43, sess: 45, m5macd: 47, stale: 49, str: 51, young: 53,
-                 bexit: 55, turn: 57, rsi5dur: 59, rsi15dur: 61, sqzbb: 63, efm1: 65, efm5: 67, efm15: 69, efm30: 71,
-                 efh1: 73, efh4: 75, efd1: 77, esm1: 79, esm5: 81, esm15: 83, esm30: 85, esh1: 87, esh4: 89,
-                 esd1: 91};
-const LV_SHI = {sqz: 93, stale: 94, str: 95, sqzbb: 96};
+const LV_SIDX = {slope: 15, macd: 17, m1: 19, m5: 21, m15: 23, m30: 25, h1: 27, h4: 29, d1: 31, rsi5: 33, rsi15: 35, rng24: 37, vwap: 39, sqz: 41, rvol: 43, sess: 45, m5macd: 47, stale: 49, str: 51, young: 53, bexit: 55, turn: 57, rsi5dur: 59, rsi15dur: 61, sqzbb: 63, efm1: 65, efm5: 67, efm15: 69, efm30: 71, efh1: 73, efh4: 75, efd1: 77, esm1: 79, esm5: 81, esm15: 83, esm30: 85, esh1: 87, esh4: 89, esd1: 91, rsih1: 93, rsih1dur: 95, effh1: 97, sqzh1: 99, sqzbbh1: 101, rngmd: 103, extd1: 105, pdl: 107, pbm15: 109, pbh1: 111};
+const LV_SHI = {sqz: 113, stale: 114, str: 115, sqzbb: 116, rsih1: 117, sqzh1: 118, sqzbbh1: 119, rngmd: 120, extd1: 121, pdl: 122, pbm15: 123, pbh1: 124};
 function lvGateRowsIn(rows, t0, t1){
   let lo = 0, hi = rows.length;
   while(lo < hi){ const mid = (lo + hi) >> 1; if(rows[mid][0] < t0) lo = mid + 1; else hi = mid; }
@@ -15761,7 +15758,7 @@ const LV_SWHAT = {
   young: "No entry while the regime is still young and its slope still close to the line it crossed.",
   bexit: "No entry soon after the slope left the steeper bucket next to this one, once it is well past that " +
          "bucket's edge."};
-const LV_STRIG = {1: "A", 2: "B", 3: "C", 4: "D"};
+const LV_STRIG = {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F"};   // 11-07: + E / F
 /* 2026-11-04 -- the yes / no gates (+1 passes, -1 blocks; a minimum below zero is off), and the two that read on their
    own scale: the stale clock in hours and how far price ran in percent, each held under a ceiling. */
 const LV_SSWITCH = ["macd", "sess", "m5macd", "young", "bexit"];
@@ -15769,6 +15766,10 @@ function lvStackOff(x){
   if(x.min == null) return false;
   const mn = Number(x.min), mx = x.max == null ? null : Number(x.max);
   if(x.name === "sqz" || x.name === "sqzbb") return mn <= 0 && (mx == null || mx >= 1);
+  /* 2026-11-07 -- the 13 new signals: the H1 squeeze ratio (off 0 / 1e9), the -1..+1 bands, the unbounded bands */
+  if(x.name === "sqzh1" || x.name === "sqzbbh1") return mn <= 0 && (mx == null || mx >= 1e8);
+  if(x.name === "rsih1" || x.name === "rngmd") return mn <= -1 && (mx == null || mx >= 1);
+  if(["extd1", "pdl", "pbm15", "pbh1"].includes(x.name)) return mn <= -1e8 && (mx == null || mx >= 1e8);
   if(x.name === "rvol") return mn <= 0;
   if(x.name === "stale" || x.name === "str") return mx == null && mn <= 0;
   if(x.name === "slope" || x.name === "h1") return false;
@@ -15784,7 +15785,8 @@ function lvStackVal(n, v){
   if(LV_SSWITCH.includes(n)) return Number(v) > 0 ? "yes" : "no";
   if(n === "stale") return lvEntryNum(v, 1) + " h";
   if(n === "str") return lvEntryNum(v, 2) + " %";
-  return lvEntryNum(v, n === "rvol" || n === "sqz" || n === "sqzbb" ? 2 : 3);
+  return lvEntryNum(v, ["rvol", "sqz", "sqzbb", "sqzh1", "sqzbbh1", "extd1", "pdl", "pbm15", "pbh1"].includes(n)
+    ? 2 : 3);
 }
 function lvStackNeed(x){
   if(lvStackOff(x)) return "off";
