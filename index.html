@@ -452,6 +452,7 @@ article.jrow{cursor:default;}
 .jrow .hstripe.warn{background:var(--warn);}
 .jrow .hstripe.agent{background:var(--gold);opacity:.55;}
 .jtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.jchips{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}      /* 2026-11-07 -- a job row's chips, one line */
 .backbtn{
   background:transparent;border:0;cursor:pointer;
   font-family:inherit;font-size:.82rem;font-weight:600;
@@ -2099,7 +2100,10 @@ nav button{min-width:0;}
 .lp-chk:first-child{border-top:0;padding-top:2px;}
 .lp-chk .lv-line{margin-top:3px;}
 .lp-t{margin-top:3px;}
-.lp-mark{margin-top:3px;font-size:.66rem;font-weight:600;letter-spacing:.02em;color:var(--dim);}
+.lp-mark{font-size:.66rem;font-weight:600;letter-spacing:.02em;color:var(--dim);}
+.lp-foot{display:flex;align-items:baseline;gap:8px;margin-top:3px;}
+.lp-foot .lp-mark{flex:1;min-width:0;}
+.lp-go{font-size:.66rem;font-weight:600;color:var(--gold);white-space:nowrap;}
 .lp-mark.ok{color:var(--good);}
 .lp-mark.wait{color:var(--gold);}
 .lp-mark.off{color:var(--faint);}
@@ -2211,7 +2215,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-192527";
+const APP_BUILD = "20261107-210107";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4455,12 +4459,37 @@ function taskBadges(tasks, open, rep, picked){
     graphFull(t, rep);
 }
 
+/* 2026-11-07 -- A GATE JOB'S "GATES" CHIP. Trevor: "In the results tab, when I click on a job, if it's a gate job,
+   beside the full test it should have another chip labeled Gates. This will take us to bucket's Gate settings." After
+   the task chips (the full test's is the last); the [data-rgates] handler opens the Results list on that bucket, at its Gates
+   block. A gate job = a gate group, fixed (<R>_ENTRY_G<n>_GATE_<name>) or mixed (..._GATE_MIX). */
+function gatesChip(r){
+  if(!r || !/_GATE_/.test(String(r.group_id || "")) || r.bucket_id == null || !r.regime) return "";
+  return `<button type="button" class="cchip" data-rgates="${esc(bktKey(r.regime, r.bucket_id))}">Gates</button>`;
+}
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-rgates]");
+  if(!g) return;
+  const key = String(g.dataset.rgates);
+  RESULTS_JOB = null;
+  RESULTS_FROM = null;
+  RESULTS_TASK_OPEN = 0;
+  RESULTS_REGIME = key.split("|")[0];
+  RESULTS_BUCKET = key;
+  SEC.cur.rstabs = "rsb-gates";
+  go("results");
+  document.getElementById("page-results").innerHTML = renderResults();
+  const el = document.getElementById("rsb-gates");
+  if(el) el.scrollIntoView({block: "start"}); else window.scrollTo(0, 0);
+});
 function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
   const rc = REGIME_CLASS[r.regime] || "";
   const rep = r.reports || {};
-  /* Opened from a Status group's History: Back returns there, named for it. */
-  const back = RESULTS_FROM
+  /* Opened from a Status group's History: Back returns there, named for it. 2026-11-07 -- from the Loop page's
+     Changes: Back returns there. */
+  const back = RESULTS_FROM && RESULTS_FROM.loop != null ? LP_BACK
+    : RESULTS_FROM
     ? `<button type="button" class="backbtn" data-rback="status">\u2039 ${
         esc(humanize(r.group_id) || "Group")} history</button>`
     : '<button type="button" class="backbtn" data-rjob="">' +
@@ -4471,10 +4500,11 @@ function renderResultsJob(r){
      tap instead of a scroll, and only one card on screen at a time. */
   const tasks = rep.tasks || [];
   const open = Math.min(RESULTS_TASK_OPEN, Math.max(0, tasks.length - 1));
-  const chips = tasks.length
+  const gch = gatesChip(r);
+  const chips = tasks.length || gch
     ? `<div class="rctl">` + tasks.map((t, i) =>
         `<button type="button" class="cchip${i === open ? " on" : ""}"
-           data-rtask="${i}">${esc(phaseText(t.kind))}</button>`).join("") +
+           data-rtask="${i}">${esc(phaseText(t.kind))}</button>`).join("") + gch +
       `</div>`
     : "";
   /* The pass number comes off the folder, which is the only place it exists for
@@ -5585,6 +5615,21 @@ function taskCoresText(f){
 /* "68% · ~6m left · ETA 07:42" -- etaAt is anchored to the beacon and gives a stale one no ETA. */
 function taskEta(f){
   if(stale(f)) return "last reported " + ago(f.age_seconds);
+  /* 2026-11-07 -- AN OPTIMIZATION'S ETA IS THE MODEL'S. Trevor: "The ETA times that you have labeled here they should
+     be the predicted times that you have in this efficiency screen shot." The Efficiency page's running row
+     (round_eta: the progress curve learned from every finished round, the copy's own share of the agents before a
+     percent shows), ± half its range. MT5's own rate below stays for anything the model does not cover. */
+  const me = effEta(f.machine);
+  if(me){
+    const nowS = Date.now() / 1000, left = Math.max(0, me.end - nowS);
+    const pm = me.low && me.high ? Math.max(0, (me.high - me.low) / 2) : null;
+    const began = new Date(f.phase_since || "");
+    const ran = isNaN(began.getTime()) ? null : (Date.now() - (f.age_seconds || 0) * 1000 - began.getTime()) / 1000;
+    return [f.percent != null ? Math.round(f.percent) + "%" : (ran != null && ran >= 0 ? "running " + dur(ran) : ""),
+            "~" + dur(left) + " left",
+            "ETA " + fmtEta(new Date(me.end * 1000)) + (pm != null && pm >= 60 ? " ±" + dur(pm) : "")]
+      .filter(Boolean).join(" · ");
+  }
   if(f.percent == null){
     /* No live percentage yet (MT5's genetic run reports one only after its first passes; a post-round test's MT5
        bar is not published -- app_snapshot._live_progress). Say how long it has run instead of guessing. */
@@ -6214,13 +6259,19 @@ function jobRow(j){
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
         <span class="hb">
-          <span class="jtop">${copyTag(j.copy)}${slotTag(j.slot)}<span class="hname">${esc(j.title)}</span>` +
-          (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">` +
-            `${esc(j.regime)}</span>` : "") +
-          (bk ? bktEl(bk.id, false, null, bk.regime) : "") +
-          (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
-          (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
-            `${esc(c)}</span>`).join("") + `</span>
+          <span class="jtop">${copyTag(j.copy)}${slotTag(j.slot)}<span class="hname">${esc(j.title)}</span></span>` +
+          /* 2026-11-07 -- THE CHIPS ON THEIR OWN LINE, all together. Trevor (an Active screenshot): "The chips should
+             be all on the same line. So Bull mid optimize chips should all be on the same horizontal line similar to
+             the bear high optimize chips" -- they sat inline after the name, so a short name kept the regime beside
+             it and pushed the rest down, a long one wrapped them all. */
+          (() => {
+            const chips = (j.regime ? `<span class="chip ${esc(RC[j.regime] || "")}">${esc(j.regime)}</span>` : "") +
+              (bk ? bktEl(bk.id, false, null, bk.regime) : "") +
+              (j.chip ? `<span class="chip">${esc(j.chip)}</span>` : "") +
+              (j.chips || []).map(c => `<span class="chip${c === "SEEDED" ? " gold" : ""}">` +
+                `${esc(c)}</span>`).join("");
+            return chips ? `<span class="jchips">${chips}</span>` : "";
+          })() + `
           <span class="hsubline">${esc(line)}</span>` +
           (j.eta ? `<span class="hsubline heta">${esc(j.eta)}</span>` : "") +
           /* 2026-10-17 -- its own tests running now (jobsModel nests them): one line each */
@@ -8891,6 +8942,12 @@ document.addEventListener("click", e => {
   RESULTS_FROM = null;
   RESULTS_JOB = null;              // the Results tab rests on its list again
   document.getElementById("page-results").innerHTML = renderResults();
+  /* 2026-11-07 -- opened from the Loop page's Changes: back there, where it was tapped. */
+  if(b.dataset.rback === "loop"){
+    go("loop");
+    window.scrollTo(0, (from && from.loop) || 0);
+    return;
+  }
   if(from && from.nav) ST_NAV = Object.assign({}, from.nav);
   go("status");
   repaintStatus();
@@ -11381,12 +11438,13 @@ function renderInProgressJob(key){
     open = -1;
     tasks.forEach((t, i) => { if(ipDone(t)) open = i; });
   }
-  const back = '<button type="button" class="backbtn" data-rjob="">‹ All jobs</button>';
+  const back = RESULTS_FROM && RESULTS_FROM.loop != null ? LP_BACK      // 2026-11-07 -- opened from the Loop page
+    : '<button type="button" class="backbtn" data-rjob="">‹ All jobs</button>';
   const chips = tasks.length ? `<div class="rctl">` + tasks.map((t, i) => ipDone(t)
       ? `<button type="button" class="cchip${i === open ? " on" : ""}" data-rtask="${i}">${
           esc(TASK_MARK.passed)} ${esc(phaseText(t.kind))}</button>`
       : `<span class="cchip wait">${esc(TASK_MARK[t.status] || "·")} ${
-          esc(phaseText(t.kind))}</span>`).join("") + `</div>` : "";
+          esc(phaseText(t.kind))}</span>`).join("") + gatesChip(it) + `</div>` : "";
   return back + chips + ipCard(it, true) + roundWarnings(tl.warnings) + roundVerdicts(tl.verdicts) + roundPoints(tasks) +
     (open >= 0
       ? whyBadge(whyTask(tasks), it) + taskBadges(tasks, open, rep,
@@ -14319,12 +14377,26 @@ function ownPace(f){
             && f.percent < 100 && f.pct_per_hour);
 }
 function ourEtaAt(f){
+  /* 2026-11-07 -- an optimization the round model covers: ITS finish (effEta -- the Efficiency page's row and the
+     Active tab's ETA), so every page says the same time. etaAt stays MT5's own arithmetic ("MT5 says"). */
+  const me = f && !stale(f) ? effEta(f.machine) : null;
+  if(me) return new Date(me.end * 1000);
   if(ownPace(f)){ const own = etaAt(f); if(own) return own; }
   const e = f && f.eta;
   if(!e || e.finish_at == null || stale(f)) return null;
   return new Date(e.finish_at * 1000);
 }
 function etaNote(f){
+  /* 2026-11-07 -- the round model's finish first (ourEtaAt shows it), its range and what it stands on, then MT5's. */
+  const me = f && !stale(f) ? effEta(f.machine) : null;
+  if(me){
+    const r = ((EFFMODEL && EFFMODEL.running) || []).find(x => x && x.machine === f.machine) || {};
+    const when = s => fmtEta(new Date(s * 1000));
+    const mt5m = fmtEta(etaAt(f));
+    return `<div class="trk-note">Done <b>${esc(when(me.end))}</b>` +
+      (me.low && me.high ? ` (${esc(when(me.low))}–${esc(when(me.high))})` : "") +
+      ` · ${esc(r.basis || EFF_METHOD[me.method] || "")}` + (mt5m ? ` · MT5 says ${esc(mt5m)}` : "") + `.</div>`;
+  }
   const e = f && f.eta;
   if(!e) return "";
   if(e.seconds == null)
@@ -14835,6 +14907,32 @@ function effLeftOutNote(){
    stands on, how the past predictions did, how many rounds at once keep the pool busy, and the planner's advice.
    Advice only: nothing on these cards changes a setting. */
 const effSigned = x => x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(1);
+/* 2026-11-07 -- how a running round's finish was worked out (round_eta), and how good each way has been */
+const EFF_METHOD = {progress: "progress", start: "start est."};
+const EFF_BANDS = ["0-10%", "10-25%", "25-50%", "50-75%", "75-100%"];
+function effAccuracyNote(M){
+  const a = (M && M.eta_accuracy) || {};
+  const line = (key, label) => {
+    const b = a[key] || {};
+    const cells = EFF_BANDS.filter(k => b[k]).map(k => `${k} ${Number(b[k][0]).toFixed(2)}×`);
+    return cells.length ? `${label}: ${cells.join(" · ")}` : "";
+  };
+  const start = ["genetic", "complete"].map(md => (a["start|" + md] || {})["0-10%"])
+    .filter(Boolean).map(v => `${Number(v[0]).toFixed(2)}×`);
+  const lines = [line("curve|genetic", "Genetic rounds, by progress"), line("curve|complete", "Small grids, by progress"),
+                 start.length ? `Before a percent shows (start estimate): ${start.join(" / ")}` : ""].filter(Boolean);
+  if(!lines.length) return "";
+  return `<div class="trk-note">How far off each ETA has been on the ${M.eta_rounds || "past"} rounds it learned from ` +
+    `(median, replayed with only the rounds before each one): ${esc(lines.join(". "))}. Every finished round ` +
+    `sharpens it.</div>`;
+}
+/* The Active tab's ETA for a copy: its row in the model's running list (same numbers as this page), or null. */
+function effEta(machine){
+  const r = ((EFFMODEL && EFFMODEL.running) || []).find(x => x && x.machine === machine);
+  if(!r || !(r.end_at || (r.since && r.wall_s))) return null;
+  return {end: r.end_at || r.since + r.wall_s, low: r.low_s ? r.since + r.low_s : null,
+          high: r.high_s ? r.since + r.high_s : null, method: r.method};
+}
 const effCopyOf = m => { const t = String(m || "").split("-").pop(); return /^[A-Z]$/.test(t) ? t : "A"; };
 function effModelCard(){
   const M = EFFMODEL;
@@ -14861,25 +14959,48 @@ function effModelCard(){
                    `~${Math.round(f.free_in)} (now ${f.free_now})`]])
       + `<div class="trk-note">${esc((f.basis || []).join(", "))}</div>`;
   const run = M.running || [];
+  /* 2026-11-07 -- round_eta's finish (app_snapshot): the progress curve once MT5 shows a percent, the start estimate
+     before; the range is that method's past misses at this point. The Active tab's ETA is this same row (effEta). */
   if(run.length)
     out += '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Copy</th><th>Done</th><th>Predicted</th>'
-      + '<th>Ends</th><th>Calibration</th></tr>' + run.map(r =>
+      + '<th>Ends</th><th>From</th></tr>' + run.map(r =>
         `<tr><td>${copyTag(r.copy)}</td><td>${r.pct != null ? Math.round(r.pct) + "%" : "—"}</td>`
         + `<td>${r.wall_s ? esc(hm(r.wall_s)) + (r.low_s && r.high_s
             ? ` <span class="dim">(${esc(hm(r.low_s))}–${esc(hm(r.high_s))})</span>` : "") : "—"}</td>`
-        + `<td class="dim">${r.since && r.wall_s ? esc(fmtWhen(r.since + r.wall_s)) : "—"}</td>`
-        + `<td class="dim">${r.calibrated_from ? "×" + esc(String(r.calibration)) + " from " + r.calibrated_from
-            : "not yet"}</td></tr>`
+        + `<td class="dim">${r.end_at ? esc(fmtWhen(r.end_at)) : r.since && r.wall_s ? esc(fmtWhen(r.since + r.wall_s))
+            : "—"}</td>`
+        + `<td class="dim">${esc(EFF_METHOD[r.method] || r.method || "—")}</td></tr>`
         + (r.basis ? `<tr><td></td><td colspan="4" class="dim" style="white-space:normal;font-size:11px">${
             esc(r.basis)}</td></tr>` : "")).join("")
-      + '</table></div>';
+      + '</table></div>' + effAccuracyNote(M);
   else if(s.minutes)
     out += `<div class="trk-note">${M.fresh ? "No round running right now." : "The box's last row is old — "
       + "no round is read as running."}</div>`;
   out += '</div></div>';
 
-  const tr = M.track_record || [];
-  out += '<div class="section-label" style="margin-top:12px">How its predictions did</div>'
+  /* 2026-11-07 -- THE ETA'S OWN RECORD. Trevor: "And you can fix the efficiency pages how the predictions did block."
+     The last 10 finished rounds with what round_eta (the ETA every page shows) would have said at the start and half
+     way through -- only what was known then -- beside what each took. The old start prediction stays as one line. */
+  const et = M.eta_track || [];
+  if(et.length){
+    const cell = (s, vs) => s ? `${esc(hm(s))}<div style="font-size:11px;color:${vs != null && (vs < 0.8 || vs > 1.25)
+      ? "var(--warn)" : "var(--dim)"}">${vs != null ? vs.toFixed(2) + "×" : ""}</div>` : "—";
+    const offs = k => { const v = et.map(r => r[k]).filter(x => x).map(x => Math.abs(Math.log(x))).sort((a, b) => a - b);
+                        return v.length ? Math.exp(v[Math.floor((v.length - 1) / 2)]).toFixed(2) + "×" : "—"; };
+    out += '<div class="section-label" style="margin-top:12px">How its predictions did</div>'
+      + '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl"><tr><th>Copy</th>'
+      + '<th>Finished</th><th>Took</th><th>At start</th><th>Half way</th></tr>' + et.map(r =>
+        `<tr><td>${copyTag(r.copy)}</td><td class="dim">${esc(fmtWhen(r.end))}</td><td>${esc(hm(r.actual_s))}</td>`
+        + `<td>${cell(r.start_s, r.start_vs)}</td><td>${cell(r.half_s, r.half_vs)}</td></tr>`).join("")
+      + '</table></div>'
+      + `<div class="trk-note">What the ETA would have said for each round when it started and half way through, from `
+      + `only the rounds that had finished before it; × = took ÷ predicted (red when off by more than 25%). Median off `
+      + `on these ${et.length}: <b>${offs("start_vs")}</b> at the start, <b>${offs("half_vs")}</b> half way` +
+      (M.old_track_off ? ` — the old start prediction: <b>${Number(M.old_track_off).toFixed(2)}×</b>` : "") +
+      `.</div></div></div>`;
+  }
+  const tr = et.length ? [] : (M.track_record || []);
+  if(!et.length) out += '<div class="section-label" style="margin-top:12px">How its predictions did</div>'
     + '<div class="card"><div class="card-in">' + (tr.length
       ? '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Copy</th><th>Finished</th><th>Predicted</th>'
         + '<th>Took</th><th>vs</th></tr>' + tr.map(r => {
@@ -20638,6 +20759,8 @@ const LP_KIND = {round: ["Round", "gold"], orig: ["Original test", "ckhold"], re
 const LP_FILTERS = [["all", "All"], ["round", "Rounds"], ["checks", "Checks"], ["ck", "Checkpoints"],
                     ["hand", "By hand"]];
 const LP_SHOWN = 25;
+/* the Back of a job opened from Changes (renderResultsJob / renderInProgressJob; the [data-rback] handler) */
+const LP_BACK = '<button type="button" class="backbtn" data-rback="loop">‹ Live loop</button>';
 function lpTs(v){
   if(v == null || v === "") return null;
   if(typeof v === "number") return isFinite(v) ? v : null;
@@ -20660,6 +20783,36 @@ function lpSince(){ return LOOP && LOOP.since ? Number(LOOP.since) : 0; }
 /* Every decision this epoch that moved what live trades on, newest first; a check counts once it has decided. A round
    whose record reads pass -1 ended on the values before it -- often because a check undid its pick (the record is
    rewritten then), so it is listed too, marked by that check. */
+/* 2026-11-07 -- EACH CHANGE OPENS WHAT IT IS ABOUT. Trevor: "each change here should be a clickable link to the
+   corrosponding checkpoint run, or job. Whatever it is referring to." A round -> its job on Results; an original test
+   or a re-test -> the job it tested (the checks keep one record per group, its LATEST round's: the running job while
+   it is still finishing, else the group's newest finished one); a checkpoint -> its card; an unseen-years check or a
+   hand move -> the bucket on Status (they have no page of their own). `to`: {job} / {ck} / {stb}. */
+function lpJobOf(regime, bid, gid){
+  const key = regime + "|" + bid + "|" + gid;
+  if((IN_PROGRESS || []).some(it => ipKey(it) === key)) return "ip:" + key;
+  const rows = (LEDGER || []).filter(x => x && x.regime + "|" + x.bucket_id + "|" + x.group_id === key);
+  if(!rows.length) return null;
+  return String(rows.reduce((a, b) => (Number(b.round_no) || 0) > (Number(a.round_no) || 0) ? b : a).round_no);
+}
+/* A round past its sweep and not yet on Results (its after-round backtests running) is the Active tab's job: the
+   machine running it (jobsModel's "m:<machine>"). `act` = jobsModel(), built once per draw. */
+function lpActiveOf(act, regime, bid, gid){
+  const j = (act || []).find(x => x && x.fleet && String(x.id).indexOf("m:") === 0 && x.fleet.group_id === gid &&
+                                  String(x.fleet.regime) === String(regime) && String(x.fleet.bucket_id) === String(bid));
+  return j ? j.id : null;
+}
+function lpTo(e, act){
+  if(e.kind === "round") return {job: e.job};
+  if(e.kind === "orig" || e.kind === "retest"){
+    const j = lpJobOf(e.regime, e.bucket, e.group);
+    if(j) return {job: j};
+    const a = lpActiveOf(act, e.regime, e.bucket, e.group);
+    return a ? {active: a} : {stb: e.regime + "|" + e.bucket};
+  }
+  if(e.kind === "ck") return {ck: e.ck};
+  return e.regime && e.bucket != null ? {stb: e.regime + "|" + e.bucket} : null;
+}
 function lpEvents(){
   const since = lpSince(), ev = [], sw = Array.isArray(SWITCHES) ? SWITCHES : [];
   const g = (LOOP && LOOP.guards) || {};
@@ -20681,7 +20834,7 @@ function lpEvents(){
     const key = r.regime + "|" + r.bucket_id + "|" + r.group_id;
     const latest = Math.max(...(LEDGER || []).filter(x => x && x.regime + "|" + x.bucket_id + "|" + x.group_id === key)
       .map(x => Number(x.round_no) || 0));
-    ev.push({at: at, kind: "round", regime: r.regime, bucket: r.bucket_id,
+    ev.push({at: at, kind: "round", regime: r.regime, bucket: r.bucket_id, job: String(r.round_no),
              undone: undone[key] != null && Number(r.round_no) === latest,
              title: `${humanize(r.group_id)} · round ${r.round_no}`,
              text: kept ? "The round ended on the values before it (see its checks)"
@@ -20690,7 +20843,8 @@ function lpEvents(){
   (g.original || []).forEach(o => {
     if(!o.what || o.at == null || o.at < since) return;
     const kept = o.what === "keep_pass";
-    ev.push({at: o.at, kind: "orig", regime: o.regime, bucket: o.bucket_id, title: humanize(o.group_id),
+    ev.push({at: o.at, kind: "orig", regime: o.regime, bucket: o.bucket_id, group: o.group_id,
+             title: humanize(o.group_id),
              text: kept ? `Kept the round's pick: it scored ${lpScore(o.pick)}, the values before it ${lpScore(o.original)}`
                         : `Put the values before the round back: they scored ${lpScore(o.original)}, the pick ` +
                           `${lpScore(o.pick)}` + (lpScore(o.original) === lpScore(o.pick) ? " (a tie keeps them)" : "")});
@@ -20699,7 +20853,8 @@ function lpEvents(){
     if(!o.what || o.at == null || o.at < since) return;
     const kept = o.what === "keep_pick";
     const moved = (o.moved || []).length ? ` (moved meanwhile: ${o.moved.slice(0, 3).map(lpName).join(", ")})` : "";
-    ev.push({at: o.at, kind: "retest", regime: o.regime, bucket: o.bucket_id, title: humanize(o.group_id),
+    ev.push({at: o.at, kind: "retest", regime: o.regime, bucket: o.bucket_id, group: o.group_id,
+             title: humanize(o.group_id),
              text: (kept ? "The pick stays" : "The pick was undone") + `: on the bucket as it is now it scored ` +
                    `${lpScore(o.pick)}, without it ${lpScore(o.keep)}${moved}`});
   });
@@ -20726,7 +20881,7 @@ function lpEvents(){
              text: `${c.verdict ? ckCap(String(c.verdict).toLowerCase()) + " · " : ""}` +
                    `${a.by === "auto" ? "the fleet applied" : "applied"} ${a.pick ? "“" + spaceOut(a.pick) + "”" : "its answer"}` +
                    (moved.length ? " · " + moved.map(s => `${lpName(s.setting)} ${swVal(s.old)} → ${swVal(s.new)}`)
-                     .join(", ") : "") + " · tap for the checkpoint"});
+                     .join(", ") : "")});
   });
   sw.forEach(s => {
     if(!s || s.who === "fleet" || (s.ref && (s.ref.checkpoint || s.ref.group))) return;
@@ -20784,13 +20939,21 @@ function lpChangesHtml(){
   if(!pick.length)
     return chips + `<div class="tnote">${all.length ? "None of this kind this epoch." :
       "Nothing this epoch has changed what live trades on yet."}</div>`;
+  let act = [];
+  try{ act = jobsModel(); }catch(err){ act = []; }
   const rows = shown.map(e => {
-    const tag = LP_KIND[e.kind] || [e.kind, ""], m = lpMark(e);
-    return `<div class="sw-row${e.ck ? " tap" : ""}"${e.ck ? ` data-swck="${esc(e.ck)}" role="button" tabindex="0"` : ""}>` +
+    const tag = LP_KIND[e.kind] || [e.kind, ""], m = lpMark(e), to = lpTo(e, act) || {};
+    const attr = to.job ? ` data-lpjob="${esc(to.job)}"` : to.active ? ` data-lpactive="${esc(to.active)}"`
+      : to.ck ? ` data-swck="${esc(to.ck)}"` : to.stb ? ` data-lpstb="${esc(to.stb)}"` : "";
+    const where = to.job ? (String(to.job).indexOf("ip:") === 0 ? "the running job" : "the job")
+      : to.active ? "the job on Active" : to.ck ? "the checkpoint" : to.stb ? "the bucket on Status" : "";
+    return `<div class="sw-row${attr ? " tap" : ""}"${attr ? `${attr} role="button" tabindex="0"` +
+        ` aria-label="${esc(e.title)} — open ${where}"` : ""}>` +
       `<div class="sw-h"><span class="tby">${esc(fmtWhen(e.at))}</span>${lvRegTag(e.regime)}` +
       `${bktEl(e.bucket, false, null, e.regime)}<span class="chip ${tag[1]}">${esc(tag[0])}</span></div>` +
       `<div class="sw-s lp-t">${esc(e.title)}</div><div class="tnote">${esc(e.text)}</div>` +
-      (m.t ? `<div class="lp-mark ${m.k}">${esc(m.t)}</div>` : "") + `</div>`;
+      (m.t || attr ? `<div class="lp-foot"><span class="lp-mark ${m.k}">${esc(m.t)}</span>` +
+        (attr ? `<span class="lp-go">${esc(where)} ›</span>` : "") + `</div>` : "") + `</div>`;
   }).join("");
   return chips + rows + (pick.length > shown.length
     ? `<button type="button" class="lp-more" data-lpmore>Show all ${pick.length}</button>` : "") +
@@ -20914,7 +21077,37 @@ function repaintLoop(){
 document.addEventListener("click", e => {
   const f = e.target.closest("[data-lpf]");
   if(f){ LP.filt = f.dataset.lpf; LP.all = false; repaintLoop(); return; }
-  if(e.target.closest("[data-lpmore]")){ LP.all = true; repaintLoop(); }
+  if(e.target.closest("[data-lpmore]")){ LP.all = true; repaintLoop(); return; }
+  /* A change -> its job on Results, opened as if from its list; its Back ("‹ Live loop") returns here, at this
+     scroll (RESULTS_FROM.loop). Opened is reviewed, as from any list. */
+  const j = e.target.closest("[data-lpjob]");
+  if(j){
+    RESULTS_FROM = {loop: window.scrollY};
+    RESULTS_TASK_OPEN = 0;
+    RESULTS_JOB = j.dataset.lpjob;
+    if(String(RESULTS_JOB).indexOf("ip:") !== 0) markReviewed(RESULTS_JOB);
+    go("results");
+    document.getElementById("page-results").innerHTML = renderResults();
+    window.scrollTo(0, 0);
+    return;
+  }
+  /* A round still running its after-round backtests -> the machine's job on the Active tab. */
+  const a = e.target.closest("[data-lpactive]");
+  if(a){
+    ACTIVE_JOB = a.dataset.lpactive;
+    go("active");
+    paintActive();
+    window.scrollTo(0, 0);
+    return;
+  }
+  /* A change with no page of its own -> its bucket on Status. */
+  const s = e.target.closest("[data-lpstb]");
+  if(s){
+    ST_NAV = {bucket: s.dataset.lpstb, group: null, variable: null};
+    go("status");
+    repaintStatus();
+    window.scrollTo(0, 0);
+  }
 });
 
 /* ---------- Backtest vs live (2026-11-05) ----------
@@ -21205,8 +21398,9 @@ document.addEventListener("click", () => {
 }, true);
 function navShow(page){
   const btn = document.querySelector(`nav button[data-p="${page}"]`);
+  const lit = page === "loop" ? "live" : "home";      // 2026-11-07 -- the Loop page keeps Live lit (go's rule)
   document.querySelectorAll("nav button").forEach(b =>
-    b.setAttribute("aria-selected", String(btn ? b === btn : b.dataset.p === "home")));
+    b.setAttribute("aria-selected", String(btn ? b === btn : b.dataset.p === lit)));
   PAGES.forEach(p => {
     const el = document.getElementById("page-" + p);
     if(el) el.hidden = (p !== page);
