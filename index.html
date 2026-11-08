@@ -2219,7 +2219,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-221854";
+const APP_BUILD = "20261108-034734";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5026,9 +5026,10 @@ function curveVer(){
 function curveKey(c){
   return c.scope === "all" ? "all" : c.scope === "bucket" ? c.regime + "|" + c.bucket : null;
 }
-function fullThenBuckets(byKey){
+function fullThenBuckets(byKey, order){
+  const cmp = order || bktOrder;
   const buckets = Object.keys(byKey).filter(k => k !== "all").map(k => byKey[k])
-    .sort((a, b) => bktOrder(a.regime, a.bucket, b.regime, b.bucket));
+    .sort((a, b) => cmp(a.regime, a.bucket, b.regime, b.bucket));
   return (byKey.all ? [byKey.all] : []).concat(buckets);
 }
 function baselineRuns(){
@@ -5133,7 +5134,9 @@ function currentRuns(){
     if(r && r.applied === false) return;
     last[k] = c;
   });
-  return fullThenBuckets(last);
+  /* 2026-11-08 -- the way the trades flow. Trevor: "Sort them so that it goes bull high - mid - low - bear low - mid
+     - high" (bktFlow). */
+  return fullThenBuckets(last, bktFlow);
 }
 function curRound(c){
   const dir = String(c.id || "").split("/").slice(0, -1).join("/");
