@@ -2223,7 +2223,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261108-082637";
+const APP_BUILD = "20261108-160550";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -15615,7 +15615,17 @@ function lvIssues(){
                       "<b>Navigator → right-click Services → Refresh, then right-click GoldBot_LiveFeed → Add Service</b>."]);
   else if(feed.status === "stalled")
     out.push(["warn", `The MT5 feed stopped writing ${lvAgo(feed.age_s)}. Is MT5 still running on the VPS?`]);
-  if(!d.ea)
+  /* 2026-11-08 -- NO HEARTBEAT WHILE SHUT IS NOT A DETACHED EA. Trevor, Sunday: "Says we're not getting a heartbeat
+     from the EA on the VPS. I just reattached it last night." The EA writes its heartbeat once a minute FROM ITS
+     TICKS, so a shut market writes none; a version first attached after Friday's close (V3.4, 11-07) has no
+     heartbeat file at all until the first price, and the feed reads that as no EA. Shut -> say so, with the open. */
+  const mk = closed ? lvMarket() : null;
+  const nextOpen = mk && !mk.open ? mk.next : null;      // open hours but no ticks (a holiday): no open time to give
+  if(!d.ea && closed)
+    out.push(["", "No heartbeat yet. The EA writes one with each new price, and the market is closed" +
+                  (nextOpen ? `, so the first comes when it opens (${esc(lvLocal(nextOpen, Date.now()))})` : "") +
+                  ". If it is still missing a few minutes after the open, check the EA on its chart on the VPS."]);
+  else if(!d.ea)
     out.push(["warn", "No heartbeat from the EA. Is it attached to its chart on the VPS?"]);
   else if(!closed && d.ea.heartbeat_age_s != null && d.ea.heartbeat_age_s > 180)
     out.push(["warn", `The EA's last heartbeat was ${lvAgo(d.ea.heartbeat_age_s)}. Is it still attached?`]);
