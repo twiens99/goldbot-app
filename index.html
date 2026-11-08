@@ -2219,7 +2219,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-212209";
+const APP_BUILD = "20261107-221854";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8521,6 +8521,23 @@ function ckCancel(c){
 }
 /* 2026-11-01 -- EVERY RUN OF THIS CHECKPOINT ON THIS BUCKET, newest first (Trevor: "Checkpoints gonna need a history
    of each run also"): when, what it said, how close its best alternative came, what was decided. */
+/* 2026-11-07 -- WHICH VERSION A CHECKPOINT RAN ON, by when it started. Trevor: "let's put whatever checkpoints that ran in
+   v3.3 or older into the older folder. I only want to see the checkpoints that version 3.4 ran when I have a bucket
+   highlighted. The history of the checkpoints can include what version it ran on." The records carry no version; each
+   epoch's start (schedule_epoch.json's started_at at its cutover, from the NEXT_ACTIONS logs) dates them. A new epoch
+   goes on the end here at its cutover; the current one is also read from the snapshot (LOOP.since). */
+const CK_EPOCHS = [["V3.1", "2026-10-15T23:12:17Z"], ["V3.2", "2026-11-01T21:19:18Z"], ["V3.3", "2026-11-04T08:41:47Z"],
+                   ["V3.4", "2026-11-06T23:29:19Z"]];
+function ckVersion(at){
+  const t = Date.parse(at || "");
+  if(!isFinite(t)) return "";
+  let v = "V3.0";
+  CK_EPOCHS.forEach(([name, from]) => { if(t >= Date.parse(from)) v = name; });
+  const cur = pgVer(EPOCH), since = LOOP && LOOP.since ? Number(LOOP.since) * 1000 : null;
+  if(since && t >= since) v = cur;                       // the running epoch, whatever the table above says
+  return v;
+}
+const ckIsCurrent = c => ckVersion(c && c.at) === pgVer(EPOCH);
 function ckRunLine(x, now){
   const v = x.decision ? ckDecided(x.decision)
     : x.status === "running" ? "running (" + (x.runs_in || 0) + " of " + (x.runs_of || 0) + " in)"
@@ -8528,9 +8545,11 @@ function ckRunLine(x, now){
     : (CK_CHIP[x.verdict] || ["", String(x.verdict || "").toLowerCase()])[1].toLowerCase();
   const k = x.closest;
   const close = k ? "best: " + ckArm(k.setting) + ", " + k.passed + " of " + k.of + " checks" : "";
-  return '<div class="lrow"><span>' + esc(fmtWhen(x.at)) + '</span><span class="sp"></span><span>'
+  const ver = ckVersion(x.at);
+  return '<div class="lrow"><span>' + esc(fmtWhen(x.at)) + (ver ? ' <span class="ck-sub">' + esc(ver) + '</span>' : "")
+    + '</span><span class="sp"></span><span>'
     + esc([v, close].filter(Boolean).join(" · ")) + (now ? ' <span class="ck-sub">(this one)</span>' : "")
-    + (x.this_epoch === false ? ' <span class="ck-sub">earlier epoch</span>' : "") + '</span></div>';
+    + '</span></div>';
 }
 function ckRuns(c){
   const all = [Object.assign({}, c, {verdict: c.verdict})].concat(c.history || []);
@@ -8544,13 +8563,14 @@ function ckPageCard(b, c){
       + " this epoch";
   /* 2026-11-07 -- THE CHIPS ON ONE LINE: verdict, regime, bucket (named; a retired one says its version). Trevor: "The
      chips should all be on one horizontal line. This one should be HOLDS - BEAR - LOW". */
-  const old = bktRetired(b.regime, b.bucket_id);
+  /* 11-07 -- a checkpoint from an earlier version says which (V3.3 ...), retired bucket or not */
+  const ver = ckVersion(c.at), oldVer = ver && ver !== pgVer(EPOCH) ? ver : (bktRetired(b.regime, b.bucket_id) || [])[1];
   return '<div class="card" data-ckcard="' + esc(c.id || "") + '"><div class="card-in"><div class="ck">'
     + '<div class="ck-n">' + esc(c.question || ckCap(c.title)) + '</div>'
     + '<div class="ck-h">' + ckVerdictChip(c)
     + '<span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
     + bktEl(b.bucket_id, false, null, b.regime)
-    + (old ? '<span class="chip ckhold">' + esc(old[1]) + '</span>' : "") + '</div>'
+    + (oldVer ? '<span class="chip ckhold">' + esc(oldVer) + '</span>' : "") + '</div>'
     + '<div class="ck-sub">' + esc(c.switch) + ' ' + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
     + ckClose(c)
     + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
@@ -8577,18 +8597,23 @@ function renderCheckpoints(){
   const leaves = (BUCKETS || []).filter(b => b && b.leaf !== false && (b.regime === "BULL" || b.regime === "BEAR") &&
       !regimeOff(b.regime)).sort((a, b) => bktFlow(a.regime, a.bucket_id, b.regime, b.bucket_id));
   const isLeaf = x => leaves.some(b => b.regime === x.b.regime && Number(b.bucket_id) === Number(x.b.bucket_id));
+  /* 11-07 -- a bucket's section holds only what THIS version ran ("I only want to see the checkpoints that version 3.4
+     ran when I have a bucket highlighted"); every earlier one -- and anything on a bucket no longer a leaf -- is Older */
+  const mineNow = x => isLeaf(x) && ckIsCurrent(x.c);
   const card = inner => '<div class="card"><div class="card-in"><div class="tnote">' + inner + '</div></div></div>';
+  const cur = pgVer(EPOCH);
   const blocks = leaves.map(b => {
-    const mine = all.filter(x => x.b.regime === b.regime && Number(x.b.bucket_id) === Number(b.bucket_id));
+    const mine = all.filter(x => mineNow(x) && x.b.regime === b.regime && Number(x.b.bucket_id) === Number(b.bucket_id));
     return [ckBlockKey(b.regime, b.bucket_id), bktName(b.regime, b.bucket_id),
             mine.length ? mine.map(x => ckPageCard(x.b, x.c)).join("")
-                        : card("No checkpoint on this bucket yet this tree.")];
+                        : card(`No ${esc(cur)} checkpoint on this bucket yet — one starts when a round tied to it ` +
+                               `finishes here. Earlier versions' are under Older.`)];
   });
-  const older = all.filter(x => !isLeaf(x));
+  const older = all.filter(x => !mineNow(x)).sort((x, y) => String(y.c.at || "").localeCompare(String(x.c.at || "")) ||
+    bktFlow(x.b.regime, x.b.bucket_id, y.b.regime, y.b.bucket_id));
   if(older.length)
-    blocks.push(["older", "Older", '<div class="tnote" style="padding:0 2px">Buckets that are no longer leaves: ' +
-      esc([...new Set(older.map(x => bktName(x.b.regime, x.b.bucket_id)))].join(", ")) + '.</div>' +
-      older.map(x => ckPageCard(x.b, x.c)).join("")]);
+    blocks.push(["older", "Older", '<div class="tnote" style="padding:0 2px">Checkpoints from before ' + esc(cur) +
+      ', newest first; each card says the version it ran on.</div>' + older.map(x => ckPageCard(x.b, x.c)).join("")]);
   h += (blocks.length ? secBar("ck", blocks.map(([k, l]) => [k, l]), "ck3") : "")
     + '<div class="section-label">Checkpoints</div>';
   if(!all.length)
