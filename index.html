@@ -2072,6 +2072,39 @@ nav button{min-width:0;}
 .ldg-div i{position:absolute;top:0;bottom:0;border-radius:3px;}
 .ldg-need{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 8px;align-items:center;font-size:.64rem;
   color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;margin:6px 0 6px;}
+/* 2026-11-07 -- the Loop page (renderLoop) and its link at the top of Live */
+.lp-open{display:flex;align-items:center;gap:10px;width:100%;margin:8px 0 2px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:12px;background:var(--card);color:var(--dim);font:inherit;font-size:.74rem;text-align:left;cursor:pointer;}
+.lp-open > span:first-child{flex:1;min-width:0;line-height:1.4;}
+.lp-open b{display:block;color:var(--text);font-size:.86rem;font-weight:600;}
+.lp-open .lp-chev{color:var(--gold);font-size:1.2rem;}
+.lp-open:active{transform:translateY(1px);}
+.lp-sub{margin-top:10px;}
+.lp-road{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;}
+.lp-rs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 7px;align-items:start;padding:7px 8px;
+  border-radius:10px;background:var(--card-2);font-size:.68rem;color:var(--dim);line-height:1.35;}
+.lp-rs b{color:var(--text);font-size:.76rem;font-weight:600;align-self:center;}
+.lp-rs > span:last-child{grid-column:1 / -1;}
+.lp-dot{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+  background:var(--card-2);color:var(--dim);font-size:.66rem;font-weight:700;flex:0 0 auto;
+  box-shadow:inset 0 0 0 1.5px var(--faint);}
+.lp-rs .lp-dot{background:var(--card);}
+.lp-dot.ok{box-shadow:inset 0 0 0 1.5px var(--good);color:var(--good);}
+.lp-dot.wait{box-shadow:inset 0 0 0 1.5px var(--gold);color:var(--gold);}
+.lp-dot.warn{box-shadow:inset 0 0 0 1.5px var(--warn);color:var(--warn);}
+.lp-step{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;padding:9px 0;border-top:1px solid var(--line);}
+.lp-step:first-child{border-top:0;padding-top:2px;}
+.lp-step .lv-line{margin-top:3px;}
+.lp-chk{padding:9px 0;border-top:1px solid var(--line);}
+.lp-chk:first-child{border-top:0;padding-top:2px;}
+.lp-chk .lv-line{margin-top:3px;}
+.lp-t{margin-top:3px;}
+.lp-mark{margin-top:3px;font-size:.66rem;font-weight:600;letter-spacing:.02em;color:var(--dim);}
+.lp-mark.ok{color:var(--good);}
+.lp-mark.wait{color:var(--gold);}
+.lp-mark.off{color:var(--faint);}
+.lp-more,.lp-link{display:block;width:100%;margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;
+  background:transparent;color:var(--gold);font:inherit;font-size:.74rem;cursor:pointer;text-align:center;}
 </style>
 
 <div class="app">
@@ -2118,6 +2151,9 @@ nav button{min-width:0;}
          comes from the VPS, not the gist, so paint() never touches it -- the
          chart inside is built once and would be destroyed by a repaint. -->
     <section class="page" id="page-live" hidden></section>
+    <!-- LOOP (2026-11-07), no tab: opened from the top of Live. What changes what live trades on, and what live
+         teaches back. See renderLoop. -->
+    <section class="page" id="page-loop" hidden></section>
     <!-- PROGRESS (2026-11-03), a tab: every live trade since the first version, a line at each version. Its data
          is the VPS feed's /history, so paint() never touches it -- see pgShow. -->
     <section class="page" id="page-progress" hidden></section>
@@ -2175,7 +2211,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-075926";
+const APP_BUILD = "20261107-192527";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -15115,6 +15151,9 @@ function lvSkeleton(){
   return '<div class="home">'
     + '<button type="button" class="backbtn" data-go="home">‹ Home</button>'
     + secBar("lv", LV_BLOCKS)
+    /* 2026-11-07 -- the Loop page: what changes live, and what live teaches back (renderLoop). */
+    + '<button type="button" class="lp-open" data-go="loop"><span><b>Live loop</b>What changes live, and what live '
+    +   'teaches back</span><span class="lp-chev">›</span></button>'
     + '<div id="lvstatus" class="home"></div>'
     + '<div class="lv-blk" id="lvb-charts">'
     + '<div class="card" id="lvchartcard">'
@@ -17437,6 +17476,7 @@ function paint(stamp){
   repaintSchedule();
   repaintStatus();
   repaintCheckpoints();
+  repaintLoop();
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
@@ -17680,6 +17720,8 @@ function applySnapshot(d, source){
   const ldgNew = (ldg && ldg.built) !== (LDG && LDG.built);
   LDG = ldg;
   if(ldgNew){ try{ if(pgVisible()) pgPaint(); }catch(e){} }
+  /* 2026-11-07 -- the Loop page's own record (app_snapshot.collect_live_loop); null from an older publisher. */
+  LOOP = (d.live_loop && typeof d.live_loop === "object") ? d.live_loop : null;
   /* 2026-10-17 -- each backtest machine's slot service: tests running, and why it did not start another. */
   BTSLOTS = (d.backtest_slots && typeof d.backtest_slots === "object") ? d.backtest_slots : {};
   QUEUE_HELD = (d.queue_held && typeof d.queue_held === "object") ? d.queue_held : {};
@@ -20577,6 +20619,304 @@ function pgByVersion(S){
     `<span class="${lvTone(T.avgr)}">${T.avgr != null ? lvSigned(T.avgr, 2) : "—"}</span></div>`;
   return head + body + foot;
 }
+/* ---------- The Loop page (2026-11-07) ----------
+   Trevor: "I want another tracking page in the app. This one is gonna track the live loop feed back. I want to see how
+   that works, the progress and what it's currently doing." -> "Basically I want this page to show everything that we
+   are doing to influence the live trading. If something changed due to any test ran in the unseen years, or was
+   influenced Becuase if some checkpoint that told us that it was better in the live trading. This is where we display
+   it." -> "Sure. Let's start with what you come up with. We'll tweak from there."
+   Opened from the Live tab (no tab of its own; Live stays lit). Four blocks under a shortcut bar: Now (what live trades
+   on, and the newest dial's road to the VPS), Changes (every decision this epoch that moved what live trades on, newest
+   first, with why and whether the VPS has it), Checks (what each check a round's pick must survive decided), Feedback
+   (live trades back into the tests). Data: d.live_loop (app_snapshot.collect_live_loop) with the ledger, checkpoints
+   and switches the snapshot already carries. */
+let LOOP = null;            // d.live_loop
+const LP_BLOCKS = [["now", "Now"], ["changes", "Changes"], ["checks", "Checks"], ["feedback", "Feedback"]];
+const LP = {filt: "all", all: false};
+const LP_KIND = {round: ["Round", "gold"], orig: ["Original test", "ckhold"], retest: ["Re-test", "ckhold"],
+                 unseen: ["Unseen years", "warn"], ck: ["Checkpoint", "range"], hand: ["By hand", "bull"]};
+const LP_FILTERS = [["all", "All"], ["round", "Rounds"], ["checks", "Checks"], ["ck", "Checkpoints"],
+                    ["hand", "By hand"]];
+const LP_SHOWN = 25;
+function lpTs(v){
+  if(v == null || v === "") return null;
+  if(typeof v === "number") return isFinite(v) ? v : null;
+  const t = Date.parse(v);
+  return isFinite(t) ? t / 1000 : null;
+}
+const lpScore = v => v == null || !isFinite(Number(v)) ? "—" : Number(v).toFixed(2);
+const lpName = s => spaceOut(stripRegime(String(s || "")));
+const lpPlural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+function lpDays(d){
+  if(d == null || !isFinite(d)) return "—";
+  if(d <= 1) return "a day";
+  return d < 60 ? Math.round(d) + " days" : (d / 30.44).toFixed(1).replace(/\.0$/, "") + " months";
+}
+function lpPassWords(p){
+  const m = /^E(\d+)(?:P(\d+))?$/.exec(String(p || ""));
+  return m ? `epoch ${+m[1]}${m[2] ? ", pass " + +m[2] : ""}` : String(p || "");
+}
+function lpSince(){ return LOOP && LOOP.since ? Number(LOOP.since) : 0; }
+/* Every decision this epoch that moved what live trades on, newest first; a check counts once it has decided. A round
+   whose record reads pass -1 ended on the values before it -- often because a check undid its pick (the record is
+   rewritten then), so it is listed too, marked by that check. */
+function lpEvents(){
+  const since = lpSince(), ev = [], sw = Array.isArray(SWITCHES) ? SWITCHES : [];
+  const g = (LOOP && LOOP.guards) || {};
+  const undone = {};                    // regime|bucket|group -> when a check put the values before the pick back
+  (g.original || []).forEach(o => { if(o.what === "keep_original") undone[o.regime + "|" + o.bucket_id + "|" + o.group_id] = o.at; });
+  (g.retest || []).forEach(o => { if(o.what === "keep_current") undone[o.regime + "|" + o.bucket_id + "|" + o.group_id] = o.at; });
+  (LEDGER || []).forEach(r => {
+    if(!r || !r.applied || r.failed || r.counted === false || r.picked_pass == null) return;
+    const at = lpTs(r.recorded_at);
+    if(at == null || at < since) return;
+    const kept = Number(r.picked_pass) === -1;
+    const turned = kept ? [] : sw.filter(s => s && s.ref && s.ref.group === r.group_id &&
+      Number(s.ref.pass) === Number(r.picked_pass) && Number(s.bucket_id) === Number(r.bucket_id));
+    const pf = !kept && r.bucket_pf_before != null && r.bucket_pf_after != null
+      ? ` · bucket test PF ${Number(r.bucket_pf_before).toFixed(2)} → ${Number(r.bucket_pf_after).toFixed(2)}` : "";
+    const sws = turned.length ? " · " + turned.slice(0, 4).map(s => `${lpName(s.setting)} ${SW_TURNED[s.turned] || s.turned}`)
+      .join(", ") + (turned.length > 4 ? ` +${turned.length - 4}` : "") : "";
+    /* the checks keep one record per group -- its LATEST round's -- so only that round can be the one they undid */
+    const key = r.regime + "|" + r.bucket_id + "|" + r.group_id;
+    const latest = Math.max(...(LEDGER || []).filter(x => x && x.regime + "|" + x.bucket_id + "|" + x.group_id === key)
+      .map(x => Number(x.round_no) || 0));
+    ev.push({at: at, kind: "round", regime: r.regime, bucket: r.bucket_id,
+             undone: undone[key] != null && Number(r.round_no) === latest,
+             title: `${humanize(r.group_id)} · round ${r.round_no}`,
+             text: kept ? "The round ended on the values before it (see its checks)"
+                        : `The optimizer applied pass ${passLabel(r.picked_pass, r.picked_pass_style)}${pf}${sws}`});
+  });
+  (g.original || []).forEach(o => {
+    if(!o.what || o.at == null || o.at < since) return;
+    const kept = o.what === "keep_pass";
+    ev.push({at: o.at, kind: "orig", regime: o.regime, bucket: o.bucket_id, title: humanize(o.group_id),
+             text: kept ? `Kept the round's pick: it scored ${lpScore(o.pick)}, the values before it ${lpScore(o.original)}`
+                        : `Put the values before the round back: they scored ${lpScore(o.original)}, the pick ` +
+                          `${lpScore(o.pick)}` + (lpScore(o.original) === lpScore(o.pick) ? " (a tie keeps them)" : "")});
+  });
+  (g.retest || []).forEach(o => {
+    if(!o.what || o.at == null || o.at < since) return;
+    const kept = o.what === "keep_pick";
+    const moved = (o.moved || []).length ? ` (moved meanwhile: ${o.moved.slice(0, 3).map(lpName).join(", ")})` : "";
+    ev.push({at: o.at, kind: "retest", regime: o.regime, bucket: o.bucket_id, title: humanize(o.group_id),
+             text: (kept ? "The pick stays" : "The pick was undone") + `: on the bucket as it is now it scored ` +
+                   `${lpScore(o.pick)}, without it ${lpScore(o.keep)}${moved}`});
+  });
+  (g.unseen || []).forEach(c => {
+    if((c.status !== "done" && c.status !== "failed") || c.at == null || c.at < since) return;
+    const w = c.writes || [], gs = c.gates || [], held = gs.filter(x => x.decision === "keep").length;
+    ev.push({at: c.at, kind: "unseen", regime: c.regime, bucket: c.bucket_id,
+             title: `Gate check after ${lpPassWords(c.pass)}`,
+             text: w.length ? w.map(x => `${lpName(x.name)} ${swVal(x.old)} → ${swVal(x.new)}`).join(", ") +
+                              ` · ${held} of ${gs.length} held up on 2021-24`
+                            : `${lpPlural(gs.length, "gate")} checked on 2021-24 · nothing moved` +
+                              (c.message ? " · " + c.message : "")});
+  });
+  const ckById = {};
+  ((CHECKPOINTS && CHECKPOINTS.buckets) || []).forEach(b => (b.checkpoints || []).forEach(c => { ckById[c.id] = c; }));
+  ((CHECKPOINTS && CHECKPOINTS.answers) || []).forEach(a => {
+    if(!a || a.status !== "applied") return;
+    const at = lpTs(a.done_at || a.requested_at);
+    if(at == null || at < since) return;
+    const c = ckById[a.checkpoint_id] || {};
+    const moved = sw.filter(s => s && s.ref && s.ref.checkpoint === a.checkpoint_id);
+    ev.push({at: at, kind: "ck", regime: a.regime, bucket: a.bucket_id, ck: a.checkpoint_id,
+             title: ckCap(c.title || a.switch || "checkpoint"),
+             text: `${c.verdict ? ckCap(String(c.verdict).toLowerCase()) + " · " : ""}` +
+                   `${a.by === "auto" ? "the fleet applied" : "applied"} ${a.pick ? "“" + spaceOut(a.pick) + "”" : "its answer"}` +
+                   (moved.length ? " · " + moved.map(s => `${lpName(s.setting)} ${swVal(s.old)} → ${swVal(s.new)}`)
+                     .join(", ") : "") + " · tap for the checkpoint"});
+  });
+  sw.forEach(s => {
+    if(!s || s.who === "fleet" || (s.ref && (s.ref.checkpoint || s.ref.group))) return;
+    const at = lpTs(s.at);
+    if(at == null || at < since) return;
+    ev.push({at: at, kind: "hand", regime: s.regime, bucket: s.bucket_id, title: lpName(s.setting),
+             text: `${swVal(s.old)} → ${swVal(s.new)}${s.why ? " · " + s.why : ""}${s.who ? " · " + s.who : ""}`});
+  });
+  return ev.sort((a, b) => b.at - a.at);
+}
+/* Has the VPS got it? A change made before the newest dial was built is in that dial; the VPS has that dial when its
+   newest file is the same file. A round a check undid later is marked so -- it is no longer what live trades on. */
+function lpMark(e){
+  const d = (LOOP && LOOP.dial) || {};
+  if(e.undone) return {k: "off", t: "↩ undone by a check"};
+  if(e.kind === "round" && /values before it/.test(e.text)) return {k: "off", t: "– nothing changed"};
+  if(d.published_at == null) return {k: "", t: ""};
+  if(e.at > d.published_at) return {k: "wait", t: "… goes out with the next dial"};
+  if(d.on_vps === true) return {k: "ok", t: "✓ on the VPS"};
+  if(d.on_vps === false) return {k: "wait", t: "… in the dial, waiting for the push"};
+  return {k: "", t: "in the dial"};
+}
+function lpNowHtml(){
+  const L = LOOP || {}, d = L.dial || {}, now = Date.now() / 1000;
+  const marks = lpEvents().map(lpMark).filter(m => m.k !== "off");      // a round that moved nothing is no change
+  const ev = marks, waiting = marks.filter(m => m.k === "wait").length, onv = marks.filter(m => m.k === "ok").length;
+  const dial = d.published_at != null
+    ? `The newest dial was built <b>${esc(lvAgo(Math.max(0, now - d.published_at)))}</b>` +
+      (d.on_vps === true ? " and the VPS has it."
+        : d.on_vps === false ? " — the VPS does not have it yet; the push checks every 15 minutes." : ".")
+    : "No published dial found.";
+  const ea = d.ea_load
+    ? `The EA last read its dial ${d.ea_load.kind === "start" ? "when it started" : "at a daily reload"}: ` +
+      `<b>${Number(d.ea_load.rows).toLocaleString("en-US")}</b> rows (broker time ${esc(d.ea_load.at)}).` : "";
+  const road = [["1", "Decision", "a round, a check or a checkpoint changes a bucket's values"],
+                ["2", "Dial", "rebuilt from every bucket at least once an hour"],
+                ["3", "VPS", "the push sends a changed dial within 15 minutes"],
+                ["4", "EA", "reads the new dial at a daily candle, while it holds no trade"]];
+  return `<div class="lv-line">Live runs <b>${esc(pgVer(L.ea))}</b> on the VPS. ${dial}</div>` +
+    (ea ? `<div class="lv-line">${ea}</div>` : "") +
+    `<div class="lv-line">This epoch: <b>${ev.length}</b> change${ev.length === 1 ? "" : "s"} to what live trades on` +
+    (ev.length ? ` · <b>${onv}</b> on the VPS${waiting ? ` · <b>${waiting}</b> waiting` : ""}` : "") + `.</div>` +
+    `<div class="tlab lp-sub">How a change reaches live</div><div class="lp-road">` +
+    road.map(([n, t, w]) => `<div class="lp-rs"><span class="lp-dot">${n}</span><b>${t}</b><span>${w}</span></div>`)
+      .join("") + `</div>`;
+}
+function lpChangesHtml(){
+  const all = lpEvents();
+  const isCheck = e => e.kind === "orig" || e.kind === "retest" || e.kind === "unseen";
+  const pass = (e, k) => k === "all" || (k === "checks" ? isCheck(e) : e.kind === k);
+  const pick = all.filter(e => pass(e, LP.filt)), shown = LP.all ? pick : pick.slice(0, LP_SHOWN);
+  const chips = '<div class="mgrp">' + LP_FILTERS.map(([k, l]) =>
+    `<button type="button" class="gch${LP.filt === k ? " on" : ""}" data-lpf="${k}">${l}<span class="n">` +
+    `${all.filter(e => pass(e, k)).length}</span></button>`).join("") + '</div>';
+  if(!pick.length)
+    return chips + `<div class="tnote">${all.length ? "None of this kind this epoch." :
+      "Nothing this epoch has changed what live trades on yet."}</div>`;
+  const rows = shown.map(e => {
+    const tag = LP_KIND[e.kind] || [e.kind, ""], m = lpMark(e);
+    return `<div class="sw-row${e.ck ? " tap" : ""}"${e.ck ? ` data-swck="${esc(e.ck)}" role="button" tabindex="0"` : ""}>` +
+      `<div class="sw-h"><span class="tby">${esc(fmtWhen(e.at))}</span>${lvRegTag(e.regime)}` +
+      `${bktEl(e.bucket, false, null, e.regime)}<span class="chip ${tag[1]}">${esc(tag[0])}</span></div>` +
+      `<div class="sw-s lp-t">${esc(e.title)}</div><div class="tnote">${esc(e.text)}</div>` +
+      (m.t ? `<div class="lp-mark ${m.k}">${esc(m.t)}</div>` : "") + `</div>`;
+  }).join("");
+  return chips + rows + (pick.length > shown.length
+    ? `<button type="button" class="lp-more" data-lpmore>Show all ${pick.length}</button>` : "") +
+    `<div class="vhcap">Scores are the optimizer's own measure: total R over the worst R drawdown. "Next dial": made ` +
+    `after the newest dial was built, so it goes out with the next one.</div>`;
+}
+function lpChecksHtml(){
+  const g = (LOOP && LOOP.guards) || {}, since = lpSince();
+  const cnt = (xs, f) => (xs || []).filter(f).length;
+  const o = g.original || [], r = g.retest || [], u = g.unseen || [];
+  const block = (title, what, stats) => `<div class="lp-chk"><div class="sw-s">${title}</div>` +
+    `<div class="tnote">${what}</div><div class="lv-line">${stats}</div></div>`;
+  const oS = o.length ? `<b>${cnt(o, x => x.what === "keep_pass")}</b> kept the pick · <b>` +
+    `${cnt(o, x => x.what === "keep_original")}</b> put the values before it back · <b>${cnt(o, x => !x.what)}</b> ` +
+    `waiting for their round to finish`
+    : "None this epoch yet.";
+  const rS = r.length ? `<b>${cnt(r, x => x.what === "keep_pick")}</b> pick stayed · <b>` +
+    `${cnt(r, x => x.what === "keep_current")}</b> pick undone · <b>${cnt(r, x => !x.what)}</b> waiting`
+    : "None this epoch yet.";
+  const gates = [].concat(...u.map(c => c.gates || []));
+  const uOpen = cnt(u, c => c.status !== "done" && c.status !== "failed" && c.status !== "nothing");
+  const uS = u.length ? `<b>${u.length}</b> check${u.length === 1 ? "" : "s"}${uOpen ? ` (${uOpen} running)` : ""} · ` +
+    `gates: <b>${cnt(gates, x => x.decision === "keep")}</b> held up · <b>${cnt(gates, x => x.decision === "gentle")}` +
+    `</b> one step gentler · <b>${cnt(gates, x => x.decision === "off")}</b> off`
+    : "None yet — the first runs when a bucket finishes its first gate pass.";
+  const cks = [];
+  ((CHECKPOINTS && CHECKPOINTS.buckets) || []).forEach(b => (b.checkpoints || []).forEach(c => {
+    const at = lpTs(c.at);
+    if(at != null && at >= since) cks.push(c);
+  }));
+  /* a checkpoint's status: running / done (its verdict is in) / decided (an answer was applied) / failed */
+  const done = cks.filter(c => c.status === "done" || c.status === "decided");
+  const v = s => cnt(done, c => String(c.verdict || "").toUpperCase() === s);
+  const applied = cnt((CHECKPOINTS && CHECKPOINTS.answers) || [], a => a.status === "applied" &&
+    (lpTs(a.done_at || a.requested_at) || 0) >= since);
+  const yours = cnt(done, c => c.status === "done" && String(c.verdict || "").toUpperCase() === "MIXED");
+  const running = cnt(cks, c => c.status !== "done" && c.status !== "decided" && c.status !== "failed");
+  const cS = cks.length ? `<b>${done.length}</b> answered (<b>${v("HOLDS")}</b> holds · <b>${v("FLIP SUGGESTED")}</b> flip · ` +
+    `<b>${v("MIXED")}</b> mixed) · <b>${applied}</b> applied` +
+    (yours ? ` · <b>${yours}</b> mixed, waiting for your pick on Status` : "") +
+    (running ? ` · <b>${running}</b> running` : "")
+    : "None this epoch yet.";
+  return block("Original test", "Each round's pick against the values before it, on the round's own dates. The pick " +
+      "goes live only if it scores higher.", oS) +
+    block("Re-test", "When another round changed the same bucket while this one ran, its pick is tested again on the " +
+      "bucket as it is now.", rS) +
+    block("Unseen years", "Every gate the optimizer turned on, run on 2021-24 — years it never trained on — against " +
+      "the gate off. A gate that does worse there goes one step gentler, or off.", uS) +
+    block("Checkpoints", "Structure questions (shorts on or off, a give-back cap ...) answered on each year, weighted " +
+      "toward the years that look most like the market now.", cS) +
+    `<div class="vhcap">This epoch: since ${esc(fmtWhen(since))} (${esc(pgVer((LOOP && LOOP.epoch) || EPOCH))}).</div>`;
+}
+function lpFeedHtml(){
+  const L = LOOP || {}, now = Date.now() / 1000;
+  const step = (n, dot, title, what, state) => `<div class="lp-step"><span class="lp-dot ${dot}">${n}</span><div>` +
+    `<div class="sw-s">${title}</div><div class="tnote">${what}</div>${state ? `<div class="lv-line">${state}</div>` : ""}` +
+    `</div></div>`;
+  const rec = L.record, led = L.ledger, rp = L.replay, j = L.judge;
+  const recAge = rec ? Math.max(0, now - rec.at) : null;
+  const s1 = rec ? `Last copy <b>${esc(lvAgo(recAge))}</b>${rec.errors ? ` · <b>${rec.errors}</b> error${rec.errors === 1 ? "" : "s"}` : ""}`
+    : "No copy found.";
+  let s2 = "No ledger yet.";
+  if(led){
+    const bv = Object.assign({}, led.by_version || {});
+    if(L.ea && bv[L.ea] == null) bv[L.ea] = 0;
+    const vers = Object.keys(bv).sort((a, b) => String(a).localeCompare(String(b), "en", {numeric: true}));
+    const built = lpTs(led.built);
+    s2 = `<b>${led.trades}</b> live trade${led.trades === 1 ? "" : "s"} since ${esc(pgVer(led.from))} (` +
+      vers.map(k => `${esc(pgVer(k))}: ${bv[k]}`).join(" · ") + `)` +
+      (built != null ? ` · rebuilt ${esc(lvAgo(Math.max(0, now - built)))}` : "");
+  }
+  const s3 = rp ? `<b>${rp.matched}</b> of ${rp.replayed} replayed trades matched (live ${esc(lvSigned(rp.live_pips, 0))} ` +
+      `pips, tester ${esc(lvSigned(rp.tester_pips, 0))})` + (rp.last_ran ? ` · last run ${esc(fmtWhen(rp.last_ran))}` : "") +
+      (rp.waiting ? ` · <b>${rp.waiting}</b> newer live trade${rp.waiting === 1 ? "" : "s"} not replayed yet` : " · none waiting")
+    : "No replay summary yet.";
+  let s4 = "";
+  if(j){
+    const need = j.need || {buckets: 5, trades: 30};
+    const meter = (n, of) => `<span class="lv-meter"><i class="${n >= of ? "ok" : ""}" ` +
+      `style="width:${Math.min(100, n / of * 100).toFixed(0)}%"></i></span>`;
+    const bs = (j.buckets || []).slice().sort((a, b) => (b.current - a.current) || bktFlow(a.regime, a.bucket, b.regime, b.bucket));
+    s4 = (j.enough ? `<b>Enough to judge:</b> ${j.ready} buckets have ${need.trades} live trades.`
+          : `<b>${j.ready}</b> of ${need.buckets} buckets have ${need.trades} live trades` +
+            (j.eta_days != null ? ` · about <b>${esc(lpDays(j.eta_days))}</b> to go at the backtests' trade rates` : "")) +
+      `<div class="ldg-need">` + bs.map(b => `<span>${esc(bktName(b.regime, b.bucket))}</span>${meter(b.trades, need.trades)}` +
+        `<span>${b.trades} of ${need.trades}${b.current ? (b.days ? " · ~" + esc(lpDays(b.days)) : "") : " · old bucket"}</span>`)
+        .join("") + `</div>`;
+  }
+  const dot = {rec: rec && recAge < 1200 && !rec.errors ? "ok" : "warn", led: led ? "ok" : "warn",
+               rp: rp ? (rp.waiting ? "wait" : "ok") : "warn", j: j && j.enough ? "ok" : "wait"};
+  return step("1", dot.rec, "Record", "The VPS's trades, its logs and every dial it loads, copied to the fleet about " +
+      "every 5 minutes.", s1) +
+    step("2", dot.led, "Ledger", "Each live trade beside what its bucket's backtest said when it opened. Rebuilt every " +
+      "hour.", s2) +
+    step("3", dot.rp, "Replay", "Live trades re-run in the tester with the dial and start time live had — proof the " +
+      "tester trades like live. Run by hand.", s3) +
+    step("4", dot.j, "Judge", "Which backtest number predicts live. It needs 30 live trades in each of 5 buckets before " +
+      "the answer means anything.", s4) +
+    step("5", "", "Use", "Not built yet. When one backtest number tracks live, it can become what the optimizer aims " +
+      "at, or weigh what goes live. That will be your call.", "") +
+    `<button type="button" class="lp-link" data-go="progress">The full table: Progress › Backtest vs live</button>`;
+}
+function renderLoop(){
+  const back = '<button type="button" class="backbtn" data-go="live">‹ Live</button>';
+  const card = h => `<div class="card"><div class="card-in">${h}</div></div>`;
+  if(!LOOP) return '<div class="home">' + back + '<div class="section-label">Live loop</div>' +
+    card('<div class="tnote">This snapshot carries no live record yet: the publisher that builds it has not taken ' +
+         'the update.</div>') + '</div>';
+  return '<div class="home">' + back + secBar("lp", LP_BLOCKS) +
+    `<div class="lv-blk" id="lpb-now"><div class="section-label">Now</div>${card(lpNowHtml())}</div>` +
+    `<div class="lv-blk" id="lpb-changes"><div class="section-label">Changes this epoch</div>${card(lpChangesHtml())}</div>` +
+    `<div class="lv-blk" id="lpb-checks"><div class="section-label">Checks a pick must pass</div>${card(lpChecksHtml())}` +
+    `</div>` +
+    `<div class="lv-blk" id="lpb-feedback"><div class="section-label">Feedback from live</div>${card(lpFeedHtml())}</div>` +
+    '</div>';
+}
+function repaintLoop(){
+  const el = document.getElementById("page-loop");
+  if(el) el.innerHTML = renderLoop();
+}
+document.addEventListener("click", e => {
+  const f = e.target.closest("[data-lpf]");
+  if(f){ LP.filt = f.dataset.lpf; LP.all = false; repaintLoop(); return; }
+  if(e.target.closest("[data-lpmore]")){ LP.all = true; repaintLoop(); }
+});
+
 /* ---------- Backtest vs live (2026-11-05) ----------
    Trevor: "The part that we have learning about the trades and attempting to predict trades ... I want to implement
    into the app so I can visually see what is going on" -> "Yes Build it". The live-vs-backtest ledger, from the
@@ -20800,7 +21140,7 @@ document.addEventListener("click", e => {
    added HERE renders correctly and can never be reached -- it stays
    hidden, because the handler only ever unhides what this lists. */
 const PAGES = ["home", "active", "results", "status", "schedule", "settings", "live", "track",
-               "finance", "efficiency", "checkpoints", "progress"];
+               "finance", "efficiency", "checkpoints", "progress", "loop"];
 document.querySelectorAll("nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach(b =>
@@ -20923,8 +21263,10 @@ function go(page){
     const el = document.getElementById("page-" + p);
     if(el) el.hidden = (p !== page);
   });
+  /* 2026-11-07 -- the Loop page is opened from Live and goes back to it, so Live stays lit while you are on it. */
+  const lit = page === "loop" ? "live" : "home";
   document.querySelectorAll("nav button").forEach(b =>
-    b.setAttribute("aria-selected", String(b.dataset.p === "home")));
+    b.setAttribute("aria-selected", String(b.dataset.p === lit)));
   window.scrollTo(0, 0);
   /* Live builds its chart the first time it is SHOWN: a chart created inside a
      hidden section measures zero wide. */
