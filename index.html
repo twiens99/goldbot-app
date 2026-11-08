@@ -170,6 +170,10 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .agbar{display:flex;align-items:flex-end;width:9px;height:100%;background:rgba(255,255,255,.06);border-radius:2px;}
 .agbar i{display:block;width:100%;background:var(--gold);opacity:.75;border-radius:2px;}
 .agnote{font-size:12px;opacity:.65;}
+.agmeter{flex-wrap:wrap;}
+.epocheta{opacity:.9;margin-left:auto;line-height:1.25;text-align:right;}
+.epocheta b{color:var(--gold);}
+.eprange{opacity:.7;font-size:11px;}
 .contrib{display:flex;flex-direction:column;gap:6px;}
 .cbrow{display:grid;grid-template-columns:58px 1fr auto;gap:8px;align-items:center;font-size:12px;}
 .cbname{opacity:.85;font-weight:600;}
@@ -2219,7 +2223,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261108-064351";
+const APP_BUILD = "20261108-082637";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2235,6 +2239,7 @@ let PICKS = [];
    the time. {} until a machine has actually lent something. */
 let AGENTEFF = {};
 let FAHIST = null;   // 2026-10-06 -- fleet_agents_history, see fleetAgentBars
+let EPOCHETA = null; // 2026-11-08 -- epoch_eta, see epochEtaNote
 let EFF = null;      // 2026-10-06 -- efficiency, see renderEfficiency
 let EFFMODEL = null; // 2026-10-17 -- d.efficiency_model, see effModelCard
 let SCHEFF = null;   // 2026-10-20 -- d.schedule_efficiency, see renderSchedule (the Schedule Efficiency page)
@@ -5297,7 +5302,24 @@ function fleetAgentBars(){
   }).join("");
   const today = days[days.length - 1] || {};
   return `<div class="agmeter"><div class="agbars">${bars}</div><div class="agnote">${
-    today.pct != null ? esc(String(today.pct)) + "% today" : "not measured today"}</div></div>`;
+    today.pct != null ? esc(String(today.pct)) + "% today" : "not measured today"}</div>${epochEtaNote()}</div>`;
+}
+/* 2026-11-08 -- THE EPOCH'S ETA, beside the 7-day meter. Trevor: "in the GOLDbot header at the top beside the efficiency
+   7 day history meter. I want an ETA for the entire current epoch. Based on the updated learned ETAs that we are
+   constantly updating." epoch_eta (app_snapshot.collect_epoch_eta): every group left this epoch at what rounds of its
+   size have really cost (running ones at their own live ETA), over the copies that run at once; the range is the
+   costs' middle half. The tap-and-hold text says what it stands on. */
+function epochEtaNote(){
+  const e = EPOCHETA;
+  if(!e || !e.eta_at) return "";
+  const day = (t, wd) => new Date(t * 1000).toLocaleDateString("en-US",
+    wd ? {weekday: "short", month: "short", day: "numeric"} : {month: "short", day: "numeric"});
+  const left = Math.max(0, e.eta_at - Date.now() / 1000) / 86400;
+  const tip = `${e.basis || ""}. Range ${day(e.eta_lo)} - ${day(e.eta_hi)}.`;
+  /* two short lines, so it sits BESIDE the meter at phone width (one line needed ~250 px, the row has ~160) */
+  return `<div class="agnote epocheta" title="${esc(tip)}"><div>Epoch ETA <b>${esc(day(e.eta_at))}</b> · ${
+    left < 1 ? "under a day" : Math.round(left) + " d"}</div><div class="eprange">${esc(day(e.eta_lo))} – ${
+    esc(day(e.eta_hi))}</div></div>`;
 }
 
 /* Groups, not rounds. "26 rounds this epoch" answered a question nobody was
@@ -13568,7 +13590,15 @@ function renderSettings(){
         + '<div class="tnote">' + esc(SETTINGS_ERROR) + '</div></div></div>' : "")
     + leaseBadge()
     + machineSettingsBadge()
+    + appInfoBadge()
     + '</div>';
+}
+/* 2026-11-08 -- WHICH BUILD THIS PHONE RUNS, and where its numbers come from: moved here from the header (Trevor: "The
+   App# Can move somewhere in the settings tab"). */
+function appInfoBadge(){
+  return '<div class="section-label">App</div><div class="card"><div class="card-in">'
+    + `<div class="tnote">Build <b>${esc(APP_BUILD)}</b>${SNAP_SOURCE ? ` · numbers from <b>${esc(SNAP_SOURCE)}</b>` : ""}`
+    + `${EPOCH ? ` · epoch ${esc(EPOCH)}` : ""}</div></div></div>`;
 }
 
 /* ---------- 1. LEASES ---------- */
@@ -17722,11 +17752,11 @@ function paint(stamp){
   /* The snapshot's age and the PAGE's build are different questions, and only
      one of them was ever on screen. A stale snapshot under a current app and a
      current snapshot under a stale app look identical without this. */
-  document.getElementById("stamp").textContent = stamp + " · app " + APP_BUILD;
+  document.getElementById("stamp").textContent = stamp;      // the build: Settings (appInfoBadge), 2026-11-08
   /* 2026-10-15 -- "6 running" was every machine on the list; four of them had been silent for hours. A machine past
      the staleness window is not running (activeSummary's rule). */
-  document.getElementById("hsub").textContent =
-    FLEET.filter(f => !stale(f)).length + " of " + FLEET.length + " running · " + campaignProgress();
+  /* 2026-11-08 -- "9 of 9 running" taken out (Trevor); the epoch's groups stay. */
+  document.getElementById("hsub").textContent = campaignProgress();
   const fa = fleetAgents(), hag = document.getElementById("hagents");
   hag.hidden = !fa;
   if(fa) hag.innerHTML = (fa.avail ? `Cores: <b>${fa.busy}</b> of ${fa.avail} working (${
@@ -17863,10 +17893,12 @@ function holdNote(blindSnap){
        + "'s newer publish can't see the shared drive";
 }
 
+/* 2026-11-08 -- SHORTER. Trevor: "I don't need the following info. "9 of 9 running" "Githhub" "Epoch" "app#" The App#
+   Can move somewhere in the settings tab. V 3.4.0, Date and Time, Live, 4m old. Is all fine to keep." The source and
+   the app build are on the Settings page now (appInfoBadge). */
 function liveStamp(){
-  return "live · " + (SNAP_SOURCE ? SNAP_SOURCE + " · " : "")
-       + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
-       + " · epoch " + EPOCH + SNAP_NOTE + REFRESH_NOTE + " · app " + APP_BUILD;
+  return "live · " + fmtWhen(LAST_SNAPSHOT.generated_at) + snapAge(LAST_SNAPSHOT)
+       + " · " + EPOCH + SNAP_NOTE + REFRESH_NOTE;
 }
 
 function snapAge(d){
@@ -17902,6 +17934,7 @@ function applySnapshot(d, source){
   FLEET = oneRowPerMachine(d.fleet);
   AGENTEFF = d.agent_efficiency || {};
   FAHIST = d.fleet_agents_history || null;
+  EPOCHETA = d.epoch_eta || null;
   EFF = d.efficiency || null;
   EFFMODEL = (d.efficiency_model && typeof d.efficiency_model === "object") ? d.efficiency_model : null;
   SCHEFF = (d.schedule_efficiency && typeof d.schedule_efficiency === "object" && !d.schedule_efficiency.error)
@@ -17977,9 +18010,8 @@ function applySnapshot(d, source){
      it did. Recomputed on every repaint, so the poll below keeps it honest. */
   LAST_SNAPSHOT = d;
   try{ lvBandsMaybeChanged(); }catch(e){}
-  paint(source + (source === "live" && SNAP_SOURCE ? " · " + SNAP_SOURCE : "") +
-        " · " + fmtWhen(d.generated_at) + snapAge(d) +
-        " · epoch " + EPOCH + (source === "live" ? SNAP_NOTE + REFRESH_NOTE : ""));
+  paint(source + " · " + fmtWhen(d.generated_at) + snapAge(d) +
+        " · " + EPOCH + (source === "live" ? SNAP_NOTE + REFRESH_NOTE : ""));
   return true;
 }
 
@@ -18226,7 +18258,8 @@ const POLL_MS = 10000;
   setInterval(() => {
     if(document.hidden || !LAST_SNAPSHOT) return;
     const el = document.getElementById("stamp");
-    /* THE BUILD GOES HERE TOO, and forgetting it is why this ticker was a bug
+    /* 2026-11-08 -- the build moved to Settings (appInfoBadge); the rest of this note is history.
+       THE BUILD GOES HERE TOO, and forgetting it is why this ticker was a bug
        the day the stamp shipped: the id appeared on load and vanished five
        seconds later, so the one question it exists to answer -- which build is
        this phone running -- could only be answered in the instant after a
