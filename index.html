@@ -1731,6 +1731,10 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 header .lv-tabs{position:static;margin-top:6px;}
 header .lv-tabs.stuck{box-shadow:none;}
 .lv-tabs[hidden]{display:none;}
+/* 2026-11-07 -- the Checkpoints page's six bucket shortcuts: three a row (Bull, then Bear), "Older" small at the end */
+.lv-tabs.ck3{flex-wrap:wrap;}
+.lv-tabs.ck3 button{flex:1 1 28%;}
+.lv-tabs.ck3 button[data-secgo="ckb-older"]{flex:0 0 auto;padding:8px 7px;}
 .lv-ohlc{
   font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;color:var(--dim);
   padding:0 13px 4px;min-height:1.4em;font-variant-numeric:tabular-nums;
@@ -2215,7 +2219,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261107-210107";
+const APP_BUILD = "20261107-212209";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2656,11 +2660,18 @@ function bktNamesFrom(list){
   BKT_NAMES = out;
 }
 const bktKey = (regime, id) => String(regime || "").toUpperCase() + "|" + id;
-const bktTier = (regime, id) => (BKT_NAMES[bktKey(regime, Number(id))] || {}).tier || "";
-/* "Bull High" -- or "BULL 1600" where the bucket has no name. */
+/* 2026-11-07 -- A RETIRED LEAF KEEPS THE NAME IT HAD. Trevor: "All numbered buckets should be pushed out in favour of
+   High, mid and low" ("is 2400 low or high?"). V3.3 ran two Bear buckets, 800 = High and 2400 = Low; V3.4 re-cut 2400
+   into Bear Mid (2000) and Bear Low (2800), so 2400 is a parent now, but everything recorded on it -- checkpoints, live
+   trades -- was on V3.3's Bear Low. {key: [tier, the version it was a leaf in]}. */
+const BKT_RETIRED = {"BEAR|2400": ["Low", "V3.3"]};
+const bktRetired = (regime, id) => BKT_NAMES[bktKey(regime, Number(id))] ? null : (BKT_RETIRED[bktKey(regime, Number(id))] || null);
+const bktTier = (regime, id) => (BKT_NAMES[bktKey(regime, Number(id))] || {}).tier ||
+  (bktRetired(regime, id) || [])[0] || "";
+/* "Bull High" -- "Bear Low (V3.3)" for a retired leaf -- or "BULL 1600" where the bucket has no name. */
 function bktName(regime, id){
-  const t = bktTier(regime, id), r = String(regime || "");
-  if(t) return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() + " " + t;
+  const t = bktTier(regime, id), r = String(regime || ""), old = bktRetired(regime, id);
+  if(t) return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() + " " + t + (old ? ` (${old[1]})` : "");
   return (r ? r.toUpperCase() + " " : "") + (id == null ? "" : String(id));
 }
 /* Strongest first within a regime, BULL before BEAR -- the order Trevor listed them in. */
@@ -4465,8 +4476,25 @@ function taskBadges(tasks, open, rep, picked){
    block. A gate job = a gate group, fixed (<R>_ENTRY_G<n>_GATE_<name>) or mixed (..._GATE_MIX). */
 function gatesChip(r){
   if(!r || !/_GATE_/.test(String(r.group_id || "")) || r.bucket_id == null || !r.regime) return "";
-  return `<button type="button" class="cchip" data-rgates="${esc(bktKey(r.regime, r.bucket_id))}">Gates</button>`;
+  /* 2026-11-07 -- and beside it, the bucket's checkpoints. Trevor: "beside that new Gate chip in the results tab should
+     be a shortcut to the Checkpoints that that bucket uses." -> the Checkpoints page at that bucket's section. */
+  return `<button type="button" class="cchip" data-rgates="${esc(bktKey(r.regime, r.bucket_id))}">Gates</button>` +
+    `<button type="button" class="cchip" data-rcks="${esc(ckBlockKey(r.regime, r.bucket_id))}">Checkpoints</button>`;
 }
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-rcks]");
+  if(!c) return;
+  const k = String(c.dataset.rcks);
+  SEC.cur.cktabs = "ckb-" + k;
+  go("checkpoints");
+  repaintCheckpoints();
+  /* after the page's own (two-row) bar has mounted in the header and the header re-measured, or the block lands under
+     the taller header */
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById("ckb-" + k);
+    if(el) el.scrollIntoView({block: "start"}); else window.scrollTo(0, 0);
+  }));
+});
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-rgates]");
   if(!g) return;
@@ -4479,8 +4507,10 @@ document.addEventListener("click", e => {
   SEC.cur.rstabs = "rsb-gates";
   go("results");
   document.getElementById("page-results").innerHTML = renderResults();
-  const el = document.getElementById("rsb-gates");
-  if(el) el.scrollIntoView({block: "start"}); else window.scrollTo(0, 0);
+  requestAnimationFrame(() => requestAnimationFrame(() => {     // once the list's bar is in the header (as above)
+    const el = document.getElementById("rsb-gates");
+    if(el) el.scrollIntoView({block: "start"}); else window.scrollTo(0, 0);
+  }));
 });
 function renderResultsJob(r){
   if(!r) { RESULTS_JOB = null; return renderResultsList(); }
@@ -4712,10 +4742,10 @@ function jobCheckpoints(r){
    own rules are written on the bare `nav` element (fixed, centred). */
 const SEC = {cur: {}, quiet: {}};
 let _secRaf = 0;
-function secBar(page, blocks){
+function secBar(page, blocks, cls){
   const id = page + "tabs", ids = blocks.map(([k]) => page + "b-" + k);
   const cur = ids.indexOf(SEC.cur[id]) >= 0 ? SEC.cur[id] : ids[0];
-  return `<div class="lv-tabs secbar" id="${id}" role="navigation" aria-label="Page sections">` +
+  return `<div class="lv-tabs secbar${cls ? " " + cls : ""}" id="${id}" role="navigation" aria-label="Page sections">` +
     blocks.map(([k, l], i) => `<button type="button" data-secgo="${ids[i]}" aria-current="${ids[i] === cur}">${
       esc(l)}</button>`).join("") + `</div>`;
 }
@@ -8512,12 +8542,16 @@ function ckPageCard(b, c){
   const allot = a.retired ? "cancelled on this bucket for the rest of the epoch"
     : "re-check " + esc(a.used != null ? a.used : "–") + " of " + esc(a.allowed != null ? a.allowed : "–")
       + " this epoch";
+  /* 2026-11-07 -- THE CHIPS ON ONE LINE: verdict, regime, bucket (named; a retired one says its version). Trevor: "The
+     chips should all be on one horizontal line. This one should be HOLDS - BEAR - LOW". */
+  const old = bktRetired(b.regime, b.bucket_id);
   return '<div class="card" data-ckcard="' + esc(c.id || "") + '"><div class="card-in"><div class="ck">'
-    + '<div class="ck-h"><span class="ck-n">' + esc(c.question || ckCap(c.title)) + '</span>' + ckVerdictChip(c)
-    + '</div>'
-    + '<div class="ck-sub"><span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span> '
-    + esc(bktTier(b.regime, b.bucket_id) || "Bucket " + b.bucket_id) + ' · ' + esc(c.switch) + ' '
-    + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
+    + '<div class="ck-n">' + esc(c.question || ckCap(c.title)) + '</div>'
+    + '<div class="ck-h">' + ckVerdictChip(c)
+    + '<span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
+    + bktEl(b.bucket_id, false, null, b.regime)
+    + (old ? '<span class="chip ckhold">' + esc(old[1]) + '</span>' : "") + '</div>'
+    + '<div class="ck-sub">' + esc(c.switch) + ' ' + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
     + ckClose(c)
     + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
     + '<div class="ck-sub">Tied to: ' + esc(ckTriggers(c) || "—") + '</div>'
@@ -8527,18 +8561,41 @@ function ckPageCard(b, c){
     + '<details class="ck-more"><summary>Every setting, both years</summary>' + ckTable(c)
     + '</details></div></div></div>';
 }
+/* 2026-11-07 -- EACH BUCKET ITS OWN SECTION, SIX SHORTCUTS. Trevor: "Let's also add the 6 bucket chips as shortcuts in
+   the checkpoint tabs and sort each checkpoint in their respective buckets." The live leaves in the way the trades
+   flow (bktFlow: Bull High - Mid - Low - Bear Low - Mid - High), each with its checkpoints (open first, newest first, as
+   before) or a line saying there are none yet; a bucket that is no leaf now (Bear 2400 -- V3.3's Bear Low) goes under
+   "Older". Block ids ckb-<REGIME>_<id> (ckBlockId), so the Results tab's Checkpoints chip can land on one. */
+const ckBlockKey = (regime, id) => String(regime || "").toUpperCase() + "_" + id;
 function renderCheckpoints(){
   const home = '<button type="button" class="backbtn" data-go="home">‹ Home</button>';
   const all = ckAll().sort(function(x, y){
     return (CK_ORDER[x.c.status] != null ? CK_ORDER[x.c.status] : 9) - (CK_ORDER[y.c.status] != null
       ? CK_ORDER[y.c.status] : 9) || String(y.c.at || "").localeCompare(String(x.c.at || ""));
   });
-  let h = '<div class="home">' + home + '<div class="section-label">Checkpoints</div>';
+  let h = '<div class="home">' + home;
+  const leaves = (BUCKETS || []).filter(b => b && b.leaf !== false && (b.regime === "BULL" || b.regime === "BEAR") &&
+      !regimeOff(b.regime)).sort((a, b) => bktFlow(a.regime, a.bucket_id, b.regime, b.bucket_id));
+  const isLeaf = x => leaves.some(b => b.regime === x.b.regime && Number(b.bucket_id) === Number(x.b.bucket_id));
+  const card = inner => '<div class="card"><div class="card-in"><div class="tnote">' + inner + '</div></div></div>';
+  const blocks = leaves.map(b => {
+    const mine = all.filter(x => x.b.regime === b.regime && Number(x.b.bucket_id) === Number(b.bucket_id));
+    return [ckBlockKey(b.regime, b.bucket_id), bktName(b.regime, b.bucket_id),
+            mine.length ? mine.map(x => ckPageCard(x.b, x.c)).join("")
+                        : card("No checkpoint on this bucket yet this tree.")];
+  });
+  const older = all.filter(x => !isLeaf(x));
+  if(older.length)
+    blocks.push(["older", "Older", '<div class="tnote" style="padding:0 2px">Buckets that are no longer leaves: ' +
+      esc([...new Set(older.map(x => bktName(x.b.regime, x.b.bucket_id)))].join(", ")) + '.</div>' +
+      older.map(x => ckPageCard(x.b, x.c)).join("")]);
+  h += (blocks.length ? secBar("ck", blocks.map(([k, l]) => [k, l]), "ck3") : "")
+    + '<div class="section-label">Checkpoints</div>';
   if(!all.length)
-    return h + '<div class="card"><div class="card-in"><div class="tnote">' + CK_NONE + '</div></div></div></div>';
-  h += '<div class="card"><div class="card-in"><div class="tnote">' + ckSummary() + '. '
-    + esc(CHECKPOINTS.rule || "") + '</div></div></div>';
-  return h + all.map(function(x){ return ckPageCard(x.b, x.c); }).join("") + '</div>';
+    return h + card(CK_NONE) + '</div>';
+  h += card(ckSummary() + '. ' + esc(CHECKPOINTS.rule || ""));
+  return h + blocks.map(([k, l, inner]) => `<div class="lv-blk" id="ckb-${k}"><div class="section-label">${esc(l)}` +
+    `</div>${inner}</div>`).join("") + '</div>';
 }
 function repaintCheckpoints(){
   const el = document.getElementById("page-checkpoints");
