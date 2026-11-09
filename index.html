@@ -44,6 +44,8 @@
      Everything else here is earned by a regime or a severity; LOCKED is neither,
      it is DONE, and it needed a colour that is not competing with either. */
   --done:#A98BE0;
+  /* 2026-11-08 -- a baseline row in the Results tab's compare block: the gold of its edge, faint. */
+  --base-tint:rgba(224,180,87,.08);
 }
 
 *{box-sizing:border-box;}
@@ -2223,7 +2225,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261108-160550";
+const APP_BUILD = "20261108-180802";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4909,11 +4911,12 @@ function renderResultsList(){
      2026-11-05 -- A FOURTH, right above the baselines. Trevor: "Right above the baseline block in the results tab.
      Let's have another block that looks the same, but let's make it current status. Add the shortcut bar to compliment
      it." -> Jobs - Gates - Current - Baselines. */
-  /* 2026-11-06 (V3.4.0, #7b) -- + Switches, right after the gate settings it explains. */
+  /* 2026-11-06 (V3.4.0, #7b) -- + Switches, right after the gate settings it explains.
+     2026-11-08 -- Current and Baselines are ONE block (compareSection): Trevor, "combine the baseline and current blocks
+     so it's easier to compare the two". -> Jobs - Gates - Switches - Current. */
   const blocks = [["jobs", "Jobs", jobs], ["gates", "Gates", gateSettingsSection()],
                   ["sw", "Switches", switchesSection()],
-                  ["cur", "Current", currentSection()],
-                  ["base", "Baselines", baselinesSection()]].filter(x => x[2]);
+                  ["cur", "Current", compareSection()]].filter(x => x[2]);
   return secBar("rs", blocks) +
     blocks.map(([k, , h]) => `<div class="lv-blk" id="rsb-${k}" style="gap:12px">${h}</div>`).join("");
 }
@@ -5073,32 +5076,30 @@ function baselineRuns(){
    same"). open: {curve id: true}; attr: the row's data attribute -- each block opens its own lines, because one line
    can sit in both (a bucket no round has changed yet); more(c): extra html {when, pf, after} for a row, or nothing. */
 const TEST_GRID = "grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,1fr))";
-function testTable(runs, open, attr, more){
-  const num = (v, f) => v == null || !isFinite(Number(v)) ? "\u2014" : f(Number(v));
+function testHead(){
   return `<div class="optr opth" style="${TEST_GRID}"><span style="text-align:left">Test</span><span>PF</span>` +
-    `<span>Trades</span><span>Net</span><span>Max DD</span></div>` + runs.map(c => {
-    const m = c.m || {};
-    const x = (more && more(c)) || {};
-    const name = c.scope === "all" ? "Full test" : bktName(c.regime, c.bucket);
-    const isOpen = !!open[c.id];
-    return `<button type="button" class="optr ro" style="${TEST_GRID};width:100%;background:transparent;border:0;` +
-      `color:inherit;font:inherit;text-align:right;cursor:pointer" ${attr}="${esc(c.id)}">` +
-      `<span style="text-align:left;white-space:nowrap">${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}<br><span class="tnote">${
-        x.when != null ? x.when : esc(eqWhen(c))}</span></span>` +
-      `<span>${num(m.pf != null ? m.pf : c.pf, v => v.toFixed(2))}${x.pf || ""}</span>` +
-      `<span>${num(m.trades != null ? m.trades : c.trades, v => v.toLocaleString("en-US"))}</span>` +
-      `<span>${num(m.net, eqMoney)}</span><span>${num(m.dd, eqMoney)}</span></button>` + (x.after || "") +
-      (isOpen && c.t && c.t.length ? `<div style="margin:4px 0 10px">${equityChart(c, null)}</div>` : "");
-  }).join("");
+    `<span>Trades</span><span>Net</span><span>Max DD</span></div>`;
 }
-function baselinesSection(){
-  const runs = baselineRuns();
-  if(!runs.length) return "";
-  const ver = String(runs[0].id || "").split("/")[0].replace(/^GoldBot_/, "");
-  return `<div class="section-label">Baselines \u00b7 ${esc(ver)}</div><div class="card"><div class="card-in">` +
-    testTable(runs, BASEOPEN, "data-baseopen") +
-    `<div class="vhcap">The first full test and each bucket's first bucket test of this version, on the whole bucket.
-      Tap one for its balance line.</div></div></div>`;
+/* One row. base: a baseline row -- shaded, with a gold edge (the compare block's legend). */
+function testRow(c, open, attr, more, base){
+  const num = (v, f) => v == null || !isFinite(Number(v)) ? "\u2014" : f(Number(v));
+  const m = c.m || {};
+  const x = (more && more(c)) || {};
+  const name = c.scope === "all" ? "Full test" : bktName(c.regime, c.bucket);
+  const isOpen = !!open[c.id];
+  const look = base ? "background:var(--base-tint);border:0;border-left:3px solid var(--gold);padding-left:6px;"
+                    : "background:transparent;border:0;";
+  return `<button type="button" class="optr ro" style="${TEST_GRID};width:100%;${look}` +
+    `color:inherit;font:inherit;text-align:right;cursor:pointer" ${attr}="${esc(c.id)}">` +
+    `<span style="text-align:left;white-space:nowrap">${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}<br><span class="tnote">${
+      x.when != null ? x.when : esc(eqWhen(c))}</span></span>` +
+    `<span>${num(m.pf != null ? m.pf : c.pf, v => v.toFixed(2))}${x.pf || ""}</span>` +
+    `<span>${num(m.trades != null ? m.trades : c.trades, v => v.toLocaleString("en-US"))}</span>` +
+    `<span>${num(m.net, eqMoney)}</span><span>${num(m.dd, eqMoney)}</span></button>` + (x.after || "") +
+    (isOpen && c.t && c.t.length ? `<div style="margin:4px 0 10px">${equityChart(c, null)}</div>` : "");
+}
+function testTable(runs, open, attr, more){
+  return testHead() + runs.map(c => testRow(c, open, attr, more)).join("");
 }
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-baseopen]");
@@ -5160,18 +5161,35 @@ function curChangedSince(c){
   return ((CHECKPOINTS || {}).answers || []).filter(a => a && a.choice === "accept" && a.status === "applied" &&
     a.regime === c.regime && String(a.bucket_id) === String(c.bucket) && String(a.done_at || "") > at);
 }
-function currentSection(){
-  const runs = currentRuns();
-  if(!runs.length) return "";
-  const ver = String(runs[0].id || "").split("/")[0].replace(/^GoldBot_/, "");
-  const base = {};
-  baselineRuns().forEach(b => { base[curveKey(b)] = b; });
+/* 2026-11-08 -- the current tests and their baselines in one block. Trevor: "can you combine the baseline and current blocks so it's
+   easier to compare the two? Maybe colorize the baselines different than the current. And stack each bucket on top of
+   each other." One table: each test kind -- the full test, then the buckets the way the trades flow (bktFlow) -- its
+   baseline (shaded, a gold edge: testRow's base) right above where it stands now, the change since the baseline under
+   the current PF. A kind no round has moved yet (its newest test IS its baseline) shows one row; a baseline whose
+   bucket no longer trades (a split parent, a range re-cut away) shows none. Each row opens its own balance line. */
+function compareSection(){
+  const runs = currentRuns(), bases = baselineRuns();
+  if(!runs.length && !bases.length) return "";
+  const ver = String((runs[0] || bases[0]).id || "").split("/")[0].replace(/^GoldBot_/, "");
+  const base = {}, now = {};
+  bases.forEach(b => { base[curveKey(b)] = b; });
+  runs.forEach(c => { now[curveKey(c)] = c; });
+  const trades = {};
+  (BUCKETS || []).forEach(b => { if(b && b.leaf !== false) trades[b.regime + "|" + b.bucket_id] = true; });
+  const kinds = {};
+  Object.keys(now).concat(Object.keys(base)).forEach(k => {
+    if(kinds[k] || (!now[k] && k !== "all" && !trades[k])) return;
+    const c = now[k] || base[k];
+    kinds[k] = {k, regime: c.regime, bucket: c.bucket};
+  });
   const pfOf = c => { const m = c.m || {}; const v = m.pf != null ? m.pf : c.pf; return v == null ? NaN : Number(v); };
+  const baseMore = b => ({when: `Baseline \u00b7 ${esc(eqWhen(b).slice(5))}`});
   const more = c => {
     const r = curRound(c), b = base[curveKey(c)];
     const day = esc(eqWhen(c).slice(5));
-    const when = r && r.round_no != null ? `${day} \u00b7 round ${esc(r.round_no)}` : b && b.id === c.id ? `${day} \u00b7 baseline`
-                                                                                : esc(eqWhen(c));
+    // short: the sub-line does not wrap, and at phone width a longer one runs under the PF change
+    const when = r && r.round_no != null ? `${day} \u00b7 round ${esc(r.round_no)}`
+               : b && b.id === c.id ? `${day} \u00b7 no round yet` : esc(eqWhen(c));
     let pf = "";
     if(b && b.id !== c.id && isFinite(pfOf(b)) && isFinite(pfOf(c))){
       const d = Math.round((pfOf(c) - pfOf(b)) * 100) / 100;
@@ -5185,10 +5203,19 @@ function currentSection(){
           .join(", ")}. Its next test reads them.</div>` : "";
     return {when, pf, after};
   };
-  return `<div class="section-label">Current status \u00b7 ${esc(ver)}</div><div class="card"><div class="card-in">` +
-    testTable(runs, CUROPEN, "data-curopen", more) +
-    `<div class="vhcap">The newest full test and each bucket's newest bucket test of this version, at the settings it
-      trades now. Under each PF, the change since its baseline. Tap one for its balance line.</div></div></div>`;
+  const rows = fullThenBuckets(kinds, bktFlow).map(({k}, i) => {
+    const b = base[k], c = now[k];
+    const gap = i ? `<div style="height:8px"></div>` : "";
+    if(c && (!b || b.id === c.id)) return gap + testRow(c, CUROPEN, "data-curopen", more);
+    return gap + (b ? testRow(b, BASEOPEN, "data-baseopen", baseMore, true) : "") +
+      (c ? testRow(c, CUROPEN, "data-curopen", more) : "");
+  }).join("");
+  return `<div class="section-label">Current vs baseline \u00b7 ${esc(ver)}</div><div class="card"><div class="card-in">` +
+    testHead() + rows +
+    `<div class="vhcap">Each test's baseline (shaded, gold edge: this version's first full test and each bucket's last
+      bucket test before its first round) right above where it stands now (the newest full test and each bucket's
+      newest bucket test, at the settings it trades now). Under the current PF, the change since its baseline. Tap a
+      row for its balance line.</div></div></div>`;
 }
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-curopen]");
