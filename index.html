@@ -2225,7 +2225,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261109-190645";
+const APP_BUILD = "20261109-231933";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8397,20 +8397,27 @@ function ckVerdictChip(c){
 /* 2026-11-06 (V3.4.0, #18) -- a V3.4 checkpoint reads in R (units "R"): net in R, the dollars under it. And S1 /
    S2's run on the unseen 2021-24 years (U), which decides whether the fleet may take its pick by itself. */
 function ckR(x){ const v = Number(x); return isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(1) + " R" : "–"; }
+/* 2026-11-09 -- positions and spacing (E1) are judged on net R ÷ worst R drawdown too: its column shows when the
+   readings carry it */
 function ckTable(c){
   const inR = c.units === "R";
   const hasU = (c.rows || []).some(r => r.U !== undefined);
+  const hasD = (c.rows || []).some(r => ["Y1", "Y2"].some(k => r[k] && r[k].rdd != null));
+  const n = hasD ? 3 : 2;
   const cell = function(y){
-    if(!y) return '<td>–</td><td>–</td>';
-    if(y.error) return '<td colspan="2">' + esc(y.error) + '</td>';
+    if(!y) return '<td>–</td>'.repeat(n);
+    if(y.error) return '<td colspan="' + n + '">' + esc(y.error) + '</td>';
     const net = inR ? ckR(y.net) + (y.net_usd != null ? '<div class="ck-sub">' + recurMoney(y.net_usd) + '</div>' : "")
                     : recurMoney(y.net);
-    return '<td title="' + esc(y.trades) + ' trades">' + net + '</td><td>' + ckPf(y.pf) + '</td>';
+    return '<td title="' + esc(y.trades) + ' trades">' + net + '</td><td>' + ckPf(y.pf) + '</td>'
+      + (hasD ? '<td title="worst drop ' + esc(y.maxdd_r != null ? Number(y.maxdd_r).toFixed(1) + ' R' : '–') + '">'
+               + ckPf(y.rdd) + '</td>' : '');
   };
-  return '<table class="ck-t"><tr><th></th><th colspan="2">Y1</th><th colspan="2">Y2</th>'
-    + (hasU ? '<th colspan="2">2021-24</th>' : '') + '<th></th></tr>'
-    + '<tr><th>Setting</th><th>net</th><th>PF</th><th>net</th><th>PF</th>'
-    + (hasU ? '<th>net</th><th>PF</th>' : '') + '<th>t</th></tr>'
+  const heads = '<th>net</th><th>PF</th>' + (hasD ? '<th>R÷DD</th>' : '');
+  return '<table class="ck-t"><tr><th></th><th colspan="' + n + '">Y1</th><th colspan="' + n + '">Y2</th>'
+    + (hasU ? '<th colspan="' + n + '">2021-24</th>' : '') + '<th></th></tr>'
+    + '<tr><th>Setting</th>' + heads + heads
+    + (hasU ? heads : '') + '<th>t</th></tr>'
     + (c.rows || []).map(function(r){
         const cls = r.current ? "cur" : r.mark === "passes" ? "pass" : r.mark === "y1_guard" ? "guard" : "";
         const name = (r.current ? "Current" : esc(ckArm(r.setting)))
@@ -8590,7 +8597,7 @@ function ckClose(c){
   const line = function(ch){
     /* 2026-11-02 -- the market-weighted rule: the lead year may be Y1, and its guard may be 0 */
     const money = / net$/.test(String(ch.name || ""));
-    const v = function(x){ return money ? recurMoney(x) : ckPf(x); };
+    const v = function(x){ return money ? (c.units === "R" ? ckR(x) : recurMoney(x)) : ckPf(x); };   // 11-09: R nets
     const extra = ch.drop != null ? ' <span class="ck-sub">(' + (ch.drop > 0 ? "−" : "+")
       + Math.abs(Math.round(ch.drop * 100)) + '%, limit −' + Math.round((ch.limit != null ? ch.limit : 0.15) * 100)
       + '%)</span>' : "";
