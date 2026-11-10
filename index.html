@@ -2226,7 +2226,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-023425";
+const APP_BUILD = "20261110-032609";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7138,6 +7138,15 @@ function slopeMetric(d){
    beside it carries identity. */
 const EQ_CUR = "#c98500", EQ_HIST = "#3987e5";
 const EQ_IDLE = "rgba(140,160,172,.11)";
+/* 2026-11-10 -- THE NO-TRADE WINDOW IS CUT OUT OF THE TIME AXIS (Trevor: "let's take the flat out of all the charts,
+   let's just assume that it didnt exist"). [from, to) in the chart's minutes, from the snapshot's no_trade (the bull run
+   the tests open no trade in); none from an older publisher = the axis as before. */
+let EQ_CUT = null;
+function eqWarp(cut){
+  if(!cut) return {f: t => t, inv: t => t};
+  const a = cut[0], b = cut[1], g = b - a;
+  return {f: t => t < a ? t : t < b ? a : t - g, inv: w => w < a ? w : w + g};
+}
 const EQSTATE = {};   // {current curve id: index into its history}
 const EQLIST = {};    // {current curve id: true} -- the list of earlier runs is open
 const EQ_REG = {};    // {current curve id: {cur, hist, t0, t1}} -- for the crosshair
@@ -7207,7 +7216,10 @@ function equityChart(cur, hist){
   let v1 = Math.max.apply(null, all.map(c => Math.max.apply(null, c.v)));
   const pad = Math.max(1, (v1 - v0) * 0.06);
   v0 -= pad; v1 += pad;
-  const x = t => P.l + (W - P.l - P.r) * ((t - t0) / Math.max(1, t1 - t0));
+  /* the cut applies only when the runs reach across it */
+  const cut = EQ_CUT && t0 < EQ_CUT[0] && t1 > EQ_CUT[1] ? EQ_CUT : null;
+  const wp = eqWarp(cut), w0 = wp.f(t0), w1 = wp.f(t1);
+  const x = t => P.l + (W - P.l - P.r) * ((wp.f(t) - w0) / Math.max(1, w1 - w0));
   const y = v => P.t + (H - P.t - P.b) * (1 - (v - v0) / (v1 - v0));
   const step = c => {
     let d = "M" + x(c.t[0]).toFixed(1) + "," + y(c.v[0]).toFixed(1);
@@ -7215,10 +7227,12 @@ function equityChart(cur, hist){
       d += "H" + x(c.t[i]).toFixed(1) + "V" + y(c.v[i]).toFixed(1);
     return d;
   };
-  const bands = (cur.idle || []).map(s =>
+  const bands = (cur.idle || []).filter(s => x(s[1]) - x(s[0]) >= 1).map(s =>
     `<rect x="${x(s[0]).toFixed(1)}" y="${P.t}" width="${
       Math.max(1, x(s[1]) - x(s[0])).toFixed(1)}" height="${H - P.t - P.b}" fill="${
-      EQ_IDLE}"></rect>`).join("");
+      EQ_IDLE}"></rect>`).join("") +
+    (cut ? `<line x1="${x(cut[0]).toFixed(1)}" x2="${x(cut[0]).toFixed(1)}" y1="${P.t}" y2="${H - P.b}" ` +
+           `stroke="rgba(140,160,172,.35)" stroke-width="1" stroke-dasharray="2 3"></line>` : "");
   const grid = [0, 0.5, 1].map(f => {
     const v = v0 + pad + (v1 - v0 - 2 * pad) * f, yy = y(v);
     return `<line x1="${P.l}" x2="${W - P.r}" y1="${yy.toFixed(1)}" y2="${
@@ -7252,7 +7266,7 @@ function equityChart(cur, hist){
   const labels = lab.map(l => `<text x="${(Math.min(l.x, W - P.r) - 3).toFixed(1)}" y="${
       Math.min(H - P.b - 2, Math.max(P.t + 8, l.y + (l.dy || -6))).toFixed(1)}" ` +
       `fill="#8CA0AC" font-size="9" text-anchor="end">${esc(l.word)}</text>`).join("");
-  EQ_REG[cur.id] = {cur: cur, hist: hist, t0: t0, t1: t1};
+  EQ_REG[cur.id] = {cur: cur, hist: hist, t0: t0, t1: t1, cut: cut};
   return `<div class="eqwrap" data-eqbox="${esc(cur.id)}">` +
     `<svg class="eqsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Balance over time, ` +
     `this test${hist ? " against an earlier one" : ""}">` + bands + grid + lines +
@@ -7314,7 +7328,9 @@ function equityBadge(t, rep){
        report carries no equity line, so a trade’s floating P&amp;L is not in
        it. Steps, because the balance only moves when a trade closes.
        <span style="background:${EQ_IDLE};padding:0 4px;border-radius:3px">Shaded</span>:
-       5+ days with no position open in this test. ▲ ▼ step through
+       5+ days with no position open in this test.${EQ_CUT ? " The no-trade window (the " +
+       "bull run, " + esc(eqDate(EQ_CUT[0]).slice(0, 7)) + " to " + esc(eqDate(EQ_CUT[1] - 1).slice(0, 7)) +
+       ") is cut out: the dashed line is the seam." : ""} ▲ ▼ step through
        ${esc(scope)}, oldest to newest.</div>` + list + `</div></div>`;
 }
 
@@ -7351,7 +7367,8 @@ function eqHover(box, clientX){
   const r = svg.getBoundingClientRect();
   const vx = Math.max(EQ_PAD.l, Math.min(EQ_W - EQ_PAD.r,
     (clientX - r.left) / r.width * EQ_W));
-  const t = reg.t0 + (vx - EQ_PAD.l) / (EQ_W - EQ_PAD.l - EQ_PAD.r) * (reg.t1 - reg.t0);
+  const wp = eqWarp(reg.cut), w0 = wp.f(reg.t0);
+  const t = wp.inv(w0 + (vx - EQ_PAD.l) / (EQ_W - EQ_PAD.l - EQ_PAD.r) * (wp.f(reg.t1) - w0));
   const line = svg.querySelector(".eqx");
   line.setAttribute("x1", vx.toFixed(1)); line.setAttribute("x2", vx.toFixed(1));
   line.setAttribute("visibility", "visible");
@@ -18052,6 +18069,8 @@ function applySnapshot(d, source){
   /* 2026-11-07 -- the mixed groups' contents, for their names (mixedName); {} from an older publisher */
   MIXED = (d.mixed_groups && typeof d.mixed_groups === "object") ? d.mixed_groups : {};
   GROUP_WORDS = (d.group_words && typeof d.group_words === "object") ? d.group_words : {};
+  EQ_CUT = (d.no_trade && isFinite(d.no_trade.from_min) && isFinite(d.no_trade.to_min))
+    ? [Number(d.no_trade.from_min), Number(d.no_trade.to_min)] : null;
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
      snapshot from an older publisher, which leaves the badge saying so. */
