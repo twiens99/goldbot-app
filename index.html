@@ -447,6 +447,7 @@ article.jrow{cursor:default;}
 .jc-sm .meta{padding:7px 0;font-size:.72rem;}
 .jc-sm .row-pf{font-size:.72rem;}
 .jc-note{font-size:.67rem;color:var(--warn);line-height:1.4;}
+.jc-why{font-size:.72rem;color:var(--dim);line-height:1.45;margin-top:8px;}
 
 /* (the hand-built badge's own styles went with it) */
 
@@ -2231,7 +2232,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-055212";
+const APP_BUILD = "20261110-161136";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4387,6 +4388,54 @@ function passLabel(n, style){
   return String(n);
 }
 
+/* 2026-11-10 -- WHY A ROUND ENDED ON ITS ORIGINAL VALUES. Trevor, on Bull High's exit G1 (round 181): "why this round
+   Took the original values. There is clearly better passes." -> "Ya let's add that label." The card said only
+   "Original (kept)", next to a sweep table whose passes all beat the original. The check that decided it was on the Loop
+   page alone: the original test (the values before the round, on its window) or the re-test on the bucket as it is now
+   (live_retest.py: other rounds moved the bucket while this one ran -- round 181's pick lost 5.56 to 7.25 there, while
+   every pass in its table was measured on the bucket as it was at the start). The checks keep ONE record per group, its
+   latest round's, so only the group's newest round on Results can be the one decided, and only by a verdict between its
+   start and two days after it was recorded (the next round of a group is an epoch away). `short` = the list card. */
+function keptStart(r){
+  const t = (((r || {}).reports || {}).tasks || [])[0];
+  const s = t && t.at ? String(t.at) : "";
+  if(!s) return null;
+  return lpTs(/(Z|[+-]\d\d:?\d\d)$/.test(s) ? s : s + "Z");     // report stamps are UTC
+}
+const kwScore = v => v != null && Number(v) <= -900 ? "none (too few trades)" : lpScore(v);   // original_test.DQ
+function keptWhy(r, short){
+  if(!r || r.failed || Number(r.picked_pass) !== -1) return "";
+  const g = (typeof LOOP !== "undefined" && LOOP && LOOP.guards) || {};
+  const key = r.regime + "|" + r.bucket_id + "|" + r.group_id;
+  const same = o => o && o.regime + "|" + o.bucket_id + "|" + o.group_id === key;
+  const latest = Math.max(0, ...(LEDGER || []).filter(same).map(x => Number(x.round_no) || 0));
+  if((Number(r.round_no) || 0) < latest) return "";
+  const t0 = keptStart(r), t1 = lpTs(r.recorded_at);
+  const fits = o => same(o) && o.at != null && (t0 == null || o.at >= t0 - 3600) &&
+                    (t1 == null || o.at <= t1 + 2 * 86400);
+  const orig = (g.original || []).find(fits);
+  const pick = orig && orig.pass != null && Number(orig.pass) >= 0 ? `pass ${orig.pass}` : "the pick";
+  const rt = (g.retest || []).find(o => fits(o) && o.what === "keep_current");
+  if(rt){
+    const tie = kwScore(rt.pick) === kwScore(rt.keep) ? " (a tie keeps them)" : "";
+    if(short) return `Undone by the re-test on the bucket as it is now: Result ${kwScore(rt.pick)} with ${pick}, ` +
+                     `${kwScore(rt.keep)} without${tie}`;
+    const mv = rt.moved || [];
+    const names = mv.map(lpName).join(", ");          // all of them: the snapshot keeps up to 8
+    return `Why the original: other rounds changed this bucket while this one ran` + (names ? ` (${names})` : "") +
+           `. Re-tested on the bucket as it is now, ${pick} scored Result ${kwScore(rt.pick)} and the values before ` +
+           `it ${kwScore(rt.keep)}${tie}, so the pick was undone. The sweep's passes were measured before those changes.`;
+  }
+  if(orig && orig.what === "keep_original"){
+    const tie = kwScore(orig.original) === kwScore(orig.pick) ? " (a tie keeps them)" : "";
+    if(short) return `Kept by the original test: Result ${kwScore(orig.original)} vs ${kwScore(orig.pick)} for ` +
+                     `${pick}${tie}`;
+    return `Why the original: the original test re-ran the values before this round on its window. They scored ` +
+           `Result ${kwScore(orig.original)} and ${pick} ${kwScore(orig.pick)}${tie}, so the round kept them.`;
+  }
+  return "";
+}
+
 function jobCard(r, rep, condensed, hint, cadence){
   const rc = REGIME_CLASS[r.regime] || "";
   rep = rep || {};
@@ -4441,6 +4490,8 @@ function jobCard(r, rep, condensed, hint, cadence){
            list" for ANY unopenable condensed card -- which reads as nonsense ON
            the results list, where that is where you already are. Only the home
            badge knows its tap goes somewhere else, so only it says so. */
+        /* 2026-11-10 -- which check kept the original values (keptWhy). */
+        ((w => w ? `<div class="jc-why">${esc(w)}</div>` : "")(keptWhy(r, condensed))) +
         (hint ? `<div class="jc-note">${esc(hint)}</div>` : "") +
         /* THE TRADE BAND LIVES IN THE CARD NOW. Trevor, 2026-09-17: *"Insert the
            Trade Band inside the uncondensed Job card."* It used to render bare
