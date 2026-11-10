@@ -661,6 +661,7 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .ck .lrow{font-size:.76rem;gap:6px;font-variant-numeric:tabular-nums;}
 .chip.ckok{background:rgba(95,190,149,.14);color:var(--good);}
 .chip.ckhold{background:rgba(140,160,172,.14);color:var(--dim);}
+.chip.ckkind{background:transparent;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(140,160,172,.4);}
 .sw-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 8px;}
 .sw-k{font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;}
 .sw-v{font-size:.95rem;font-weight:700;font-variant-numeric:tabular-nums;}
@@ -2225,7 +2226,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-000743";
+const APP_BUILD = "20261110-005923";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2287,6 +2288,8 @@ const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>
    collect_mixed_groups), or its count of settings. A snapshot from an older publisher has no mixed_groups: the name
    still reads, without the list. The canonical id still travels for every lookup. */
 let MIXED = {};
+/* 2026-11-10 -- groups with their own words (the snapshot's group_words, from Python's table): read first by humanize */
+let GROUP_WORDS = {};
 const MIX_LANE = {CADENCE: "cadence", SCORE: "score", EMA: "EMA"};
 function mixedName(gid){
   const s = String(gid || "");
@@ -2313,6 +2316,7 @@ function mixedName(gid){
    still look the group up. */
 function humanize(gid){
   if(!gid) return "";
+  if(GROUP_WORDS[gid]) return GROUP_WORDS[gid];
   const mx = mixedName(gid);
   if(mx) return mx;
   let n = String(gid).replace(/^(BULL|BEAR|RANGING|GLOBALS)_/, "");
@@ -4727,7 +4731,7 @@ function jobCheckpoints(r){
     if(c.decision) return ckDecided(c.decision) + (c.decision.choice === "accept" ? " \u2014 the bucket now runs it"
       : c.decision.choice === "trial" ? " \u2014 optimizing it in the bucket" : " \u2014 the current setting stays");
     if(c.status === "running") return "still testing";
-    if(c.status === "failed") return "did not finish";
+    if(c.status === "failed") return c.closed ? "closed on purpose" : "did not finish";
     if(c.verdict === "HOLDS") return "the current setting holds \u2014 nothing changed";
     if(c.verdict === "FLIP SUGGESTED") return "suggests " + ckArm(c.pick) + " \u2014 waiting on you (Status)";
     if(c.verdict === "MIXED") return "mixed \u2014 pick one on Status";
@@ -8367,9 +8371,12 @@ function ckTrial(c){
     + (t.phase === "confirming" ? " (" + esc(t.in) + " of " + esc(t.of) + " runs in)" : "") + '</div>'
     + (t.rows && t.rows.length ? ckTable({rows: t.rows}) : "");
 }
+const LIVE_WHY = {SLOTS_FULL: "it kept filling every slot", FOLLOW_UPS_LOSING: "its follow-up trades were losing"};
 function ckTrigger(tr){
   const s = String(tr || "");
   if(s.indexOf("@") > 0) return humanize(s.split("@")[0]) + " tuned on bucket " + s.split("@")[1];
+  /* 2026-11-10 -- started early by the live slot watch (Live -> Live loop -> Slot watch) */
+  if(s.indexOf("LIVE:") === 0) return "live trading: " + (LIVE_WHY[s.slice(5)] || s.slice(5).toLowerCase());
   return s.indexOf("LANE:") === 0 ? "the " + s.slice(5) + " lane finished its pass" : humanize(s);
 }
 /* What needs a tap from Trevor: a FLIP SUGGESTED nobody has answered, from here or the snapshot. */
@@ -8390,7 +8397,10 @@ function ckVerdictChip(c){
     return d.choice === "accept" ? '<span class="chip ckok">Accepted</span>'
                                  : '<span class="chip ckhold">Rejected</span>';
   }
-  if(c.status === "failed") return '<span class="chip warn">Incomplete</span>';   // not seeded, or a run gave no result
+  /* 2026-11-10 -- Closed (grey): the fleet closed it on purpose (moved, retired, its trigger moved, its round undone);
+     Incomplete (orange): a run gave no result, or it could not be seeded */
+  if(c.status === "failed") return c.closed ? '<span class="chip ckhold">Closed</span>'
+                                            : '<span class="chip warn">Incomplete</span>';
   const m = CK_CHIP[c.verdict] || ["", c.verdict || ""];
   return '<span class="chip ' + m[0] + '">' + esc(m[1]) + '</span>';
 }
@@ -8473,7 +8483,7 @@ function ckHistory(c){
 }
 function ckCard(c){
   return '<div class="ck" data-ckcard="' + esc(c.id || "") + '"><div class="ck-h"><span class="ck-n">' + esc(ckCap(c.title)) + '</span>'
-    + ckVerdictChip(c) + '<span class="sp"></span><span class="tby">' + esc(c.switch) + '</span></div>'
+    + ckVerdictChip(c) + ckKindChip(c) + '<span class="sp"></span><span class="tby">' + esc(c.switch) + '</span></div>'
     + '<div class="ck-sub">After ' + esc(ckTrigger(c.trigger)) + ' · ' + esc(fmtWhen(c.at)) + '</div>'
     + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
     + ckTable(c) + ckAnswer(c) + ckHistory(c) + '</div>';
@@ -8643,7 +8653,7 @@ const ckIsCurrent = c => ckVersion(c && c.at) === pgVer(EPOCH);
 function ckRunLine(x, now){
   const v = x.decision ? ckDecided(x.decision)
     : x.status === "running" ? "running (" + (x.runs_in || 0) + " of " + (x.runs_of || 0) + " in)"
-    : x.status === "failed" ? "incomplete" : x.status === "cancelled" ? "cancelled"
+    : x.status === "failed" ? (x.closed ? "closed" : "incomplete") : x.status === "cancelled" ? "cancelled"
     : (CK_CHIP[x.verdict] || ["", String(x.verdict || "").toLowerCase()])[1].toLowerCase();
   const k = x.closest;
   const close = k ? "best: " + ckArm(k.setting) + ", " + k.passed + " of " + k.of + " checks" : "";
@@ -8658,6 +8668,11 @@ function ckRuns(c){
   return '<div class="ck-sub">Runs on this bucket (' + all.length + ')</div>'
     + all.map(function(x, i){ return ckRunLine(x, i === 0); }).join("");
 }
+/* 2026-11-10 -- the checkpoint's type (Trevor: "I want a checkpoint type chip added. Gate, trigger etc."): Trigger,
+   Gate, Open trades, Exit, Counter-trades, Entry score, Regime -- checkpoints.KIND, carried on each card as `kind` */
+function ckKindChip(c){
+  return c && c.kind ? '<span class="chip ckkind">' + esc(c.kind) + '</span>' : "";
+}
 function ckPageCard(b, c){
   const a = c.allotment || {};
   const allot = a.retired ? "cancelled on this bucket for the rest of the epoch"
@@ -8671,7 +8686,7 @@ function ckPageCard(b, c){
     + '<div class="ck-n">' + esc(c.question || ckCap(c.title)) + '</div>'
     + '<div class="ck-h">' + ckVerdictChip(c)
     + '<span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
-    + bktEl(b.bucket_id, false, null, b.regime)
+    + bktEl(b.bucket_id, false, null, b.regime) + ckKindChip(c)
     + (oldVer ? '<span class="chip ckhold">' + esc(oldVer) + '</span>' : "") + '</div>'
     + '<div class="ck-sub">' + esc(c.switch) + ' ' + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
     + ckClose(c)
@@ -18036,6 +18051,7 @@ function applySnapshot(d, source){
   STATE_TEXT = (d.state_text && typeof d.state_text === "object") ? d.state_text : {};
   /* 2026-11-07 -- the mixed groups' contents, for their names (mixedName); {} from an older publisher */
   MIXED = (d.mixed_groups && typeof d.mixed_groups === "object") ? d.mixed_groups : {};
+  GROUP_WORDS = (d.group_words && typeof d.group_words === "object") ? d.group_words : {};
   TIMELINES = Array.isArray(d.timelines) ? d.timelines : [];
   /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
      snapshot from an older publisher, which leaves the badge saying so. */
@@ -20959,7 +20975,8 @@ function pgByVersion(S){
    (live trades back into the tests). Data: d.live_loop (app_snapshot.collect_live_loop) with the ledger, checkpoints
    and switches the snapshot already carries. */
 let LOOP = null;            // d.live_loop
-const LP_BLOCKS = [["now", "Now"], ["changes", "Changes"], ["checks", "Checks"], ["feedback", "Feedback"]];
+const LP_BLOCKS = [["now", "Now"], ["changes", "Changes"], ["checks", "Checks"], ["feedback", "Feedback"],
+                   ["slots", "Slots"]];
 const LP = {filt: "all", all: false};
 const LP_KIND = {round: ["Round", "gold"], orig: ["Original test", "ckhold"], retest: ["Re-test", "ckhold"],
                  unseen: ["Unseen years", "warn"], ck: ["Checkpoint", "range"], hand: ["By hand", "bull"]};
@@ -21275,7 +21292,28 @@ function renderLoop(){
     `<div class="lv-blk" id="lpb-checks"><div class="section-label">Checks a pick must pass</div>${card(lpChecksHtml())}` +
     `</div>` +
     `<div class="lv-blk" id="lpb-feedback"><div class="section-label">Feedback from live</div>${card(lpFeedHtml())}</div>` +
+    `<div class="lv-blk" id="lpb-slots"><div class="section-label">Slot watch</div>${card(lpSlotsHtml())}</div>` +
     '</div>';
+}
+/* 2026-11-10 -- THE SLOT WATCH (app_snapshot._loop_slots / slot_watch.snapshot): per bucket, how its trades open at
+   once live -- the follow-ups (the 2nd / 3rd / 4th trade) and their R, the share of time it sat at its cap, the
+   follow-ups turned away -- and the last check live started early. It never changes a setting. */
+const SLOT_KIND = {SLOTS_FULL: "slots full", LOSING: "follow-ups losing", TOO_STRICT: "too strict"};
+function lpSlotsHtml(){
+  const s = LOOP && LOOP.slots;
+  if(!s || !Array.isArray(s.rows) || !s.rows.length)
+    return '<div class="tnote">No reading yet: the publisher that builds this has not taken the update.</div>';
+  const r1 = x => (x >= 0 ? "+" : "") + Number(x).toFixed(1) + " R";
+  const line = r => {
+    const at = r.cap_share == null ? "under 20 live trades" : `${Math.round(r.cap_share * 100)}% of its time at the cap`;
+    const due = (r.due || []).map(k => SLOT_KIND[k] || k).join(", ");
+    const last = r.last ? ` · last started ${esc(fmtWhen(r.last.at))}: ${esc((r.last.kinds || []).map(k => SLOT_KIND[k] || k).join(", "))}` : "";
+    return `<div class="lp-chk"><div class="sw-s">${esc(bktName(r.regime, r.bucket_id))} · ${r.cap} at once</div>` +
+      `<div class="lv-line"><b>${r.trades}</b> live trade${r.trades === 1 ? "" : "s"} · <b>${r.follow_ups}</b> follow-up` +
+      `${r.follow_ups === 1 ? "" : "s"} (${r1(r.follow_up_r)}; first trades ${r1(r.first_r)}) · ${at} · ` +
+      `<b>${r.skips}</b> turned away in 14 days${due ? ` · <b>due: ${esc(due)}</b>` : ""}${last}</div></div>`;
+  };
+  return s.rows.map(line).join("") + `<div class="tnote">${esc(s.rule || "")}</div>`;
 }
 function repaintLoop(){
   const el = document.getElementById("page-loop");
