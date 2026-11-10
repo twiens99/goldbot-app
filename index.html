@@ -2225,7 +2225,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261108-180802";
+const APP_BUILD = "20261109-190645";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -7935,20 +7935,29 @@ function priorBucketTest(f, before){
     .sort((a, b) => String(a.stamp).localeCompare(String(b.stamp)));
   return mine.length ? mine[mine.length - 1] : null;
 }
+/* 2026-11-09 -- THE ROUND'S OWN "BEFORE". Trevor: "this original values test must have been during a stacked bucket"
+   -> "Ya might as well fix it." It was the bucket's newest test of ANY round -- one run after this round started, on
+   another round's frozen values. Now: this round's own original-values test (f.original_test: the bucket exactly as
+   the round froze it), else the last bucket test from before its job started (f.job_stamp). */
 function priorCompare(top, f){
-  const c = priorBucketTest(f);
-  if(!top || !c) return "";
-  const m = c.m || {};
+  if(!top || !f) return "";
+  const o = f.original_test;
+  const c = (o && o.pf != null) ? null : priorBucketTest(f, f.job_stamp || null);
+  if(!(o && o.pf != null) && !c) return "";
+  const m = (c && c.m) || {};
   const grid = "grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr))";
   const num = (v, fmt) => v == null || !isFinite(Number(v)) ? "\u2014" : fmt(Number(v));
   const row = (label, pf, tr, net) => `<div class="optr ro" style="${grid}"><span style="text-align:left">${label}</span>` +
     `<span>${num(pf, v => v.toFixed(2))}</span><span>${num(tr, v => v.toLocaleString("en-US"))}</span>` +
     `<span>${num(net, eqMoney)}</span></div>`;
+  const before = c
+    ? row(`Bucket test before this round<br><span class="tnote">${esc(eqWhen(c))} \u00b7 ${esc(humanize(c.group) || c.group)}</span>`,
+          m.pf != null ? m.pf : c.pf, m.trades != null ? m.trades : c.trades, m.net)
+    : row(`Original values<br><span class="tnote">this round's start${o.at ? " \u00b7 tested " + esc(fmtWhen(o.at)) : ""}</span>`,
+          o.pf, o.trades, o.net);
   return `<div style="margin:0 0 8px"><div class="optr opth" style="${grid}"><span></span><span>PF</span>` +
     `<span>Trades</span><span>Net</span></div>` +
-    row(`Best so far <b>#${esc(top.pass)}</b>`, top.pf, top.trades, top.profit) +
-    row(`Bucket test before<br><span class="tnote">${esc(eqWhen(c))} \u00b7 ${esc(humanize(c.group) || c.group)}</span>`,
-        m.pf != null ? m.pf : c.pf, m.trades != null ? m.trades : c.trades, m.net) + `</div>`;
+    row(`Best so far <b>#${esc(top.pass)}</b>`, top.pf, top.trades, top.profit) + before + `</div>`;
 }
 
 function livePassesCard(f){
