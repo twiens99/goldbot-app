@@ -2226,7 +2226,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-005923";
+const APP_BUILD = "20261110-011351";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -21000,6 +21000,9 @@ function lpDays(d){
   return d < 60 ? Math.round(d) + " days" : (d / 30.44).toFixed(1).replace(/\.0$/, "") + " months";
 }
 function lpPassWords(p){
+  /* 2026-11-10 -- R<n>: a round check (the gates a gate round turned on or moved; the first is the catch-up) */
+  const r = /^R(\d+)$/.exec(String(p || ""));
+  if(r) return `gate round check ${+r[1]}`;
   const m = /^E(\d+)(?:P(\d+))?$/.exec(String(p || ""));
   return m ? `epoch ${+m[1]}${m[2] ? ", pass " + +m[2] : ""}` : String(p || "");
 }
@@ -21202,7 +21205,7 @@ function lpChecksHtml(){
   const uS = u.length ? `<b>${u.length}</b> check${u.length === 1 ? "" : "s"}${uOpen ? ` (${uOpen} running)` : ""} · ` +
     `gates: <b>${cnt(gates, x => x.decision === "keep")}</b> held up · <b>${cnt(gates, x => x.decision === "gentle")}` +
     `</b> one step gentler · <b>${cnt(gates, x => x.decision === "off")}</b> off`
-    : "None yet — the first runs when a bucket finishes its first gate pass.";
+    : "None yet — one runs as soon as a bucket has a gate on that no check has judged, and again at each gate pass's end.";
   const cks = [];
   ((CHECKPOINTS && CHECKPOINTS.buckets) || []).forEach(b => (b.checkpoints || []).forEach(c => {
     const at = lpTs(c.at);
@@ -21224,8 +21227,9 @@ function lpChecksHtml(){
       "goes live only if it scores higher.", oS) +
     block("Re-test", "When another round changed the same bucket while this one ran, its pick is tested again on the " +
       "bucket as it is now.", rS) +
-    block("Unseen years", "Every gate the optimizer turned on, run on 2021-24 — years it never trained on — against " +
-      "the gate off. A gate that does worse there goes one step gentler, or off.", uS) +
+    block("Unseen years", "Every gate the optimizer turns on, run on 2021-24 — years it never trained on — against " +
+      "the gate off: after each gate round for what it changed, and at each pass's end for every gate together. A gate " +
+      "that does worse there goes one step gentler, or off.", uS) +
     block("Checkpoints", "Structure questions (shorts on or off, a give-back cap ...) answered on each year, weighted " +
       "toward the years that look most like the market now.", cS) +
     `<div class="vhcap">This epoch: since ${esc(fmtWhen(since))} (${esc(pgVer((LOOP && LOOP.epoch) || EPOCH))}).</div>`;
