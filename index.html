@@ -1723,6 +1723,11 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
 .lv-seg button[aria-pressed="true"]{background:var(--card-2);color:var(--text);box-shadow:inset 0 -2px 0 var(--gold);}
 .lv-seg.small button{min-width:0;padding:5px 7px;font-family:inherit;font-size:.72rem;}
 .lv-seg button:focus-visible{outline:2px solid var(--gold);outline-offset:1px;}
+/* 2026-11-10 -- the trend chips (lvTrendChips): seven timeframes, so they wrap on a phone; each with its line's colour */
+#lvtrend{flex-wrap:wrap;}
+.lv-seglab{align-self:center;padding:0 4px 0 6px;color:var(--dim);font-size:.68rem;}
+.lv-seg button:disabled{opacity:.45;cursor:default;}
+.lv-trend-ink{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px;}
 /* 2026-11-05 -- THE LIVE PAGE'S SHORTCUT BAR (lvSkeleton): sticky under the header (--hdr, as .gbadge), opaque, a
    shade once it holds the top (syncStuck's "stuck"). A block it scrolls to comes to rest under both. */
 .lv-tabs{position:sticky;top:var(--hdr,64px);z-index:4;display:flex;gap:2px;padding:3px;
@@ -2226,7 +2231,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-032609";
+const APP_BUILD = "20261110-055212";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14137,6 +14142,10 @@ let LV = {
   gateOn: (() => { try{ const v = JSON.parse(localStorage.getItem("gb.live.gates") || "[]");
                         return Array.isArray(v) ? v : []; }catch(e){ return []; } })(),
   gser: {},
+  /* 2026-11-10 -- the trend lines switched on (timeframes) and their series (lvTrendSet) */
+  trendOn: (() => { try{ const v = JSON.parse(localStorage.getItem("gb.live.trend") || "[]");
+                         return Array.isArray(v) ? v : []; }catch(e){ return []; } })(),
+  trendSer: {},
   tf: "M5", style: "candles", sel: [], hf: "all",   // sel: the trades toggled on (lvShown)
   built: false, editing: false, formErr: "", busy: false, timer: null, runsBusy: false,
   liveAt: 0,          // Date.now() of the last /live (the joins); /now moves `at`
@@ -14386,6 +14395,7 @@ function lvPaintFast(){
 }
 async function lvMaybeBars(force){
   if(await lvMaybeAxisBars()) lvStudiesSet();
+  if(await lvMaybeTrendBars()) lvTrendSet();
   if(await lvMaybeStepBars()) lvStudiesSet();
   lvMaybeSlopes();
   lvMaybeGates();
@@ -15508,6 +15518,7 @@ function lvSkeleton(){
     +   '<div class="lv-controls">'
     +     '<div class="lv-seg" id="lvtf" role="group" aria-label="Timeframe"></div>'
     +     '<div class="lv-seg small" id="lvstyle" role="group" aria-label="Chart style"></div>'
+    +     '<div class="lv-seg small" id="lvtrend" role="group" aria-label="Trend lines"></div>'
     +     '<div class="lv-seg small" id="lvstopt" role="group" aria-label="Every trade on the chart, or none"></div>'
     +     '<div class="lv-seg small" id="lvtrades" role="group" aria-label="Trades on the chart" hidden></div>'
     +   '</div>'
@@ -15531,7 +15542,9 @@ function lvSkeleton(){
     +       '<span class="lv-band" style="background:var(--gold)"></span>Gate strips above it, switched on in '
     +       '&ldquo;How close to a trade&rdquo; (top = first row): passed / blocked / both in that candle; '
     +       'grey = not reached (the EA stops at the first gate that fails)</span>'
-    +     '<span><span style="color:var(--gold)">━</span>Bucket-slope average · 4H dotted = simulated</span>'
+    +     '<span><span style="color:var(--gold)">━</span>Bucket-slope average (on its own timeframe)</span>'
+    +     '<span>Trend chips: each timeframe\'s fast line solid, slow line dashed, in its chip\'s colour -- they cross '
+    +       'where that timeframe\'s trend turns</span>'
     +     '<span><span style="color:#A9DEC4">━</span><span style="color:#2E9F6E">━</span>'
     +       '<span style="color:#F2A79C">━</span><span style="color:#D8463A">━</span>'
     +       'Slope line = the slope the EA trades on, a step each time it re-reads it, coloured by bucket '
@@ -15618,10 +15631,146 @@ async function lvShow(){
   }
 }
 
+/* 2026-11-10 -- THE TREND LINES (Trevor: "I want the trend timelines on a clickable chip. So each timeline would then get
+   its own trend line. Both lines so I can see the crossovers."). One chip per trend timeframe (M1 .. D1); on, that
+   timeframe's FAST and SLOW line are drawn on the candles -- fast solid, slow dashed, one colour per timeframe -- so
+   its crossovers show where the two lines cross. The definition is private: the snapshot's trend_ladder, kept on this
+   phone like the axis; without one the chips say so. On a shorter chart a longer timeframe's line is its value at each
+   candle's close (its bar still forming); on a longer chart a shorter one's value at the candle's close. M30 is built
+   from M15 bars (the feed serves no M30). */
+const LV_TREND_TFS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+const LV_TREND_SEC = {M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400};
+const LV_TREND_INK = {M1: "#8CA0AC", M5: "#6FA8D4", M15: "#A98BE0", M30: "#E0B457", H1: "#5FBE95", H4: "#E08B4A",
+                      D1: "#F2A79C"};
+function lvTrendDef(){
+  let t = null;
+  try{ t = LAST_SNAPSHOT && LAST_SNAPSHOT.trend_ladder; }catch(e){}
+  if(t && t.fast > 0 && t.slow > 0){
+    try{ localStorage.setItem("gb.trend.v1", JSON.stringify(t)); }catch(e){}
+    return t;
+  }
+  /* a snapshot from a machine on older code: the one this phone last saw */
+  try{ t = JSON.parse(localStorage.getItem("gb.trend.v1") || "null"); }catch(e){ t = null; }
+  return t && t.fast > 0 && t.slow > 0 ? t : null;
+}
+function lvTrendSrcTf(tf){ return tf === "M30" ? "M15" : tf; }
+function lvTrendBars(tf){
+  const s = lvTrendSrcTf(tf), c = LV.bars[s], src = c && Array.isArray(c.bars) ? c.bars.slice() : [];
+  const f = s !== LV.tf && LV.data && LV.data.forming && LV.data.forming[s];
+  if(f && (!src.length || f[0] > src[src.length - 1].time))
+    src.push({time: f[0], open: f[1], high: f[2], low: f[3], close: f[4]});
+  if(tf !== "M30") return src;
+  const out = [];
+  src.forEach(b => {
+    const t = b.time - (b.time % 1800), o = out[out.length - 1];
+    if(o && o.time === t){ o.high = Math.max(o.high, b.high); o.low = Math.min(o.low, b.low); o.close = b.close; }
+    else out.push({time: t, open: b.open, high: b.high, low: b.low, close: b.close});
+  });
+  return out;
+}
+/* each level of the average (EMA: one; TEMA: three), so a forming value can be stepped from the bar before */
+function lvTrendLevels(cl, p, n){
+  const a = 2 / (p + 1), lv = [];
+  let src = cl;
+  for(let L = 0; L < n; L++){
+    const e = new Array(src.length);
+    for(let i = 0; i < src.length; i++) e[i] = i ? src[i] * a + e[i - 1] * (1 - a) : src[i];
+    lv.push(e); src = e;
+  }
+  return {a, lv};
+}
+function lvTrendValue(L, j, price){
+  /* price given: the forming bar j at that price, stepped from j - 1 */
+  const n = L.lv.length, e = [];
+  let x = price;
+  for(let k = 0; k < n; k++){
+    const v = price == null ? L.lv[k][j] : (j >= 1 ? x * L.a + L.lv[k][j - 1] * (1 - L.a) : x);
+    e.push(v); x = v;
+  }
+  return n === 3 ? 3 * e[0] - 3 * e[1] + e[2] : e[0];
+}
+function lvTrendPoints(tf, def, from){
+  const tb = lvTrendBars(tf), cb = lvBars(), span = LV_TF_SEC[LV.tf] || 60, tsp = LV_TREND_SEC[tf];
+  if(!tb.length || !cb.length) return null;
+  const cl = tb.map(b => b.close), n = def.ma === "TEMA" ? 3 : 1;
+  const i0 = from == null ? 0 : Math.max(0, lvIdx(cb, from));
+  const out = {};
+  [["fast", def.fast], ["slow", def.slow]].forEach(([k, p]) => {
+    const L = lvTrendLevels(cl, p, n), pts = [];
+    for(let i = i0; i < cb.length; i++){
+      const T = cb[i].time + span, j = lvIdx(tb, T - 1);
+      if(j < 0 || j < p){ pts.push({time: cb[i].time}); continue; }
+      let v;
+      if(tb[j].time + tsp <= cb[i].time)                     // its bar not in yet: a new one, forming at this close
+        v = lvTrendValue(L, j + 1, cb[i].close);
+      else if(tb[j].time + tsp > T)                          // a longer bar, still forming at this candle's close
+        v = lvTrendValue(L, j, cb[i].close);
+      else v = lvTrendValue(L, j, null);
+      pts.push({time: cb[i].time, value: v});
+    }
+    out[k] = pts;
+  });
+  return out;
+}
+function lvTrendSet(from){
+  if(!LV.chart || !LV.LC) return;
+  const def = lvTrendDef(), on = new Set(def ? LV.trendOn : []);
+  LV.trendSer = LV.trendSer || {};
+  Object.keys(LV.trendSer).forEach(tf => {
+    if(on.has(tf)) return;
+    const s = LV.trendSer[tf];
+    [s.fast, s.slow].forEach(x => { try{ LV.chart.removeSeries(x); }catch(e){} });
+    delete LV.trendSer[tf];
+  });
+  on.forEach(tf => {
+    const s0 = LV.trendSer[tf], whole = from == null || !s0 || s0.tf !== LV.tf;
+    const pts = lvTrendPoints(tf, def, whole ? null : from);
+    if(!pts) return;
+    if(!s0){
+      const base = {lineWidth: 1, color: LV_TREND_INK[tf], priceLineVisible: false, lastValueVisible: false,
+                    crosshairMarkerVisible: false};
+      LV.trendSer[tf] = {fast: LV.chart.addLineSeries(base),
+                         slow: LV.chart.addLineSeries(Object.assign({}, base, {lineStyle: LV.LC.LineStyle.Dashed}))};
+    }
+    const s = LV.trendSer[tf];
+    if(whole){ s.fast.setData(pts.fast); s.slow.setData(pts.slow); s.tf = LV.tf; }
+    else{
+      try{ pts.fast.forEach(p => s.fast.update(p)); pts.slow.forEach(p => s.slow.update(p)); }
+      catch(e){ s.fast.setData(lvTrendPoints(tf, def).fast); s.slow.setData(lvTrendPoints(tf, def).slow); }
+    }
+  });
+}
+/* the bars a switched-on trend line needs from another timeframe: the short ones each minute, the rest each 10 */
+async function lvMaybeTrendBars(){
+  let got = false;
+  const need = new Set(LV.trendOn.map(lvTrendSrcTf).filter(tf => tf !== LV.tf));
+  for(const tf of need){
+    const c = LV.bars[tf], age = (LV_TF_SEC[tf] || 60) <= 900 ? 60000 : 600000;
+    if(c && Date.now() - c.at < age) continue;
+    try{
+      const d = await lvGet("/bars?tf=" + tf);
+      LV.bars[tf] = {at: Date.now(), bars: (Array.isArray(d.bars) ? d.bars : [])
+        .map(b => ({time: b[0], open: b[1], high: b[2], low: b[3], close: b[4]}))};
+      got = true;
+    }catch(e){
+      if(!c) LV.bars[tf] = {at: Date.now(), bars: [], err: lvErrText(e)};
+    }
+  }
+  return got;
+}
+function lvTrendChips(){
+  const def = lvTrendDef();
+  return `<span class="lv-seglab">Trend</span>` + LV_TREND_TFS.map(tf =>
+    `<button type="button" data-lvtrend="${tf}" aria-pressed="${LV.trendOn.indexOf(tf) >= 0}"` +
+    (def ? "" : ` disabled title="No trend definition in this snapshot yet"`) +
+    `><span class="lv-trend-ink" style="background:${LV_TREND_INK[tf]}"></span>${tf}</button>`).join("");
+}
 function lvPaintControls(){
   const tf = document.getElementById("lvtf");
   if(tf) tf.innerHTML = LV_TFS.map(k =>
     `<button type="button" data-lvtf="${k}" aria-pressed="${LV.tf === k}">${LV_TF_LABEL[k]}</button>`).join("");
+  const trn = document.getElementById("lvtrend");
+  if(trn) trn.innerHTML = lvTrendChips();
   const st = document.getElementById("lvstyle");
   if(st) st.innerHTML = [["candles", "Candles"], ["bars", "Bars"]].map(([k, l]) =>
     `<button type="button" data-lvstyle="${k}" aria-pressed="${LV.style === k}">${l}</button>`).join("");
@@ -16745,7 +16894,7 @@ function lvDestroyChart(){
   if(LV.chart){ try{ LV.chart.remove(); }catch(e){} }
   [LV.slopeChart, LV.macdChart].forEach(c => { if(c){ try{ c.remove(); }catch(e){} } });
   LV.chart = LV.chartP = LV.series = LV.band = LV.path = LV.ma = null;
-  LV.tser = {}; LV.gser = {};
+  LV.tser = {}; LV.gser = {}; LV.trendSer = {};
   LV.slopeChart = LV.macdChart = LV.slope = LV.slopeNow = LV.macdH = LV.macdS = null;
   LV.slopeLines = []; LV.studyAxis = "";
   LV.lines = []; LV.sig = "";
@@ -17063,7 +17212,9 @@ function lvAxisSlopes(a){
    point at its last candle. Drawn DOTTED: between those landings it is a
    what-if, never a value the EA used. No other timeframe gets it (asked for
    these two). */
-const LV_MA_SIM = ["H4"];
+/* 2026-11-10 -- off the 4H chart too (Trevor: "We can take the simulated D1 slope off the 4h chart."): the average
+   shows on its own timeframe only. */
+const LV_MA_SIM = [];
 function lvAxisMa(a){
   if(!a) return null;
   const bars = lvBars(), n = bars.length, out = new Array(n).fill(null);
@@ -17279,6 +17430,7 @@ function lvStudiesSet(){
     LV.ma.setData(st.ma ? M : []);
   }
   lvSlopeCutoffs(st.axis);
+  lvTrendSet();
   lvPaneLabels(null);
   const r = LV.chart && LV.chart.timeScale().getVisibleLogicalRange();
   if(r) [LV.slopeChart, LV.macdChart].forEach(c => { if(c) c.timeScale().setVisibleLogicalRange(r); });
@@ -17315,6 +17467,7 @@ function lvStudiesFrom(t){
     if(LV.slopeNow) LV.slopeNow.update(p.n);
     if(LV.ma && LV.study.ma) LV.ma.update(p.m);
   }
+  lvTrendSet(t);
 }
 /* The axis bars when another timeframe is showing: every 10 min is plenty for
    a value that moves once per axis bar. True when fresh bars arrived. */
@@ -17755,6 +17908,17 @@ document.addEventListener("click", e => {
   /* Trevor, 2026-10-22: "If I click on a different time frame. I still want to see those lines, don't go back to
      default." The toggled-on trades stay; the new timeframe is framed on them (lvSetSeriesData -> lvFit). */
   if(tf){ lvSetTf(tf.dataset.lvtf, false); return; }
+  /* 2026-11-10 -- a trend chip: that timeframe's fast + slow lines on or off (lvTrendSet) */
+  const trc = e.target.closest("[data-lvtrend]");
+  if(trc){
+    const k = trc.dataset.lvtrend, i = LV.trendOn.indexOf(k);
+    if(i >= 0) LV.trendOn.splice(i, 1); else LV.trendOn.push(k);
+    try{ localStorage.setItem("gb.live.trend", JSON.stringify(LV.trendOn)); }catch(err){}
+    lvPaintControls();
+    lvTrendSet();
+    lvMaybeTrendBars().then(got => { if(got) lvTrendSet(); });
+    return;
+  }
   /* "Stop Turns to All or Clear. All Data on or All data off." -- and either one turns every trade toggle off. */
   const al = e.target.closest("[data-lvall]");
   if(al){
