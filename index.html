@@ -2225,7 +2225,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261109-231933";
+const APP_BUILD = "20261110-000743";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8397,12 +8397,12 @@ function ckVerdictChip(c){
 /* 2026-11-06 (V3.4.0, #18) -- a V3.4 checkpoint reads in R (units "R"): net in R, the dollars under it. And S1 /
    S2's run on the unseen 2021-24 years (U), which decides whether the fleet may take its pick by itself. */
 function ckR(x){ const v = Number(x); return isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(1) + " R" : "–"; }
-/* 2026-11-09 -- positions and spacing (E1) are judged on net R ÷ worst R drawdown too: its column shows when the
-   readings carry it */
+/* 2026-11-10 -- positions and spacing (E1) weigh profit against the worst drawdown (net less 1.5 x the drop): the
+   drop's column shows when the readings carry it, R ÷ drawdown on hover */
 function ckTable(c){
   const inR = c.units === "R";
   const hasU = (c.rows || []).some(r => r.U !== undefined);
-  const hasD = (c.rows || []).some(r => ["Y1", "Y2"].some(k => r[k] && r[k].rdd != null));
+  const hasD = (c.rows || []).some(r => ["Y1", "Y2"].some(k => r[k] && r[k].maxdd_r != null));
   const n = hasD ? 3 : 2;
   const cell = function(y){
     if(!y) return '<td>–</td>'.repeat(n);
@@ -8410,10 +8410,10 @@ function ckTable(c){
     const net = inR ? ckR(y.net) + (y.net_usd != null ? '<div class="ck-sub">' + recurMoney(y.net_usd) + '</div>' : "")
                     : recurMoney(y.net);
     return '<td title="' + esc(y.trades) + ' trades">' + net + '</td><td>' + ckPf(y.pf) + '</td>'
-      + (hasD ? '<td title="worst drop ' + esc(y.maxdd_r != null ? Number(y.maxdd_r).toFixed(1) + ' R' : '–') + '">'
-               + ckPf(y.rdd) + '</td>' : '');
+      + (hasD ? '<td title="R ÷ drawdown ' + esc(ckPf(y.rdd)) + '">'
+               + (y.maxdd_r != null ? Number(y.maxdd_r).toFixed(1) + ' R' : '–') + '</td>' : '');
   };
-  const heads = '<th>net</th><th>PF</th>' + (hasD ? '<th>R÷DD</th>' : '');
+  const heads = '<th>net</th><th>PF</th>' + (hasD ? '<th>drop</th>' : '');
   return '<table class="ck-t"><tr><th></th><th colspan="' + n + '">Y1</th><th colspan="' + n + '">Y2</th>'
     + (hasU ? '<th colspan="' + n + '">2021-24</th>' : '') + '<th></th></tr>'
     + '<tr><th>Setting</th>' + heads + heads
