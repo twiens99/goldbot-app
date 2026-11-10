@@ -2232,7 +2232,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-161136";
+const APP_BUILD = "20261110-165422";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14337,7 +14337,20 @@ function lvErrText(e){
   if(e && e.name === "TypeError") return "no answer";
   return String((e && e.message) || e);
 }
-async function lvGet(path){
+/* 2026-11-10 -- ONE REQUEST PER PATH IN FLIGHT. Opening the chart asked the feed for /bars?tf=D1 and /bars?tf=M5 twice
+   each: lvShow's own lvMaybeBars and the first poll's raced before either had stored its answer, and the feed server
+   answers one request at a time. A second caller of a path already on its way now shares the first one's answer. */
+const LV_INFLIGHT = new Map();
+function lvGet(path){
+  const on = LV_INFLIGHT.get(path);
+  if(on) return on;
+  const p = lvFetch(path);
+  LV_INFLIGHT.set(path, p);
+  const done = () => { if(LV_INFLIGHT.get(path) === p) LV_INFLIGHT.delete(path); };
+  p.then(done, done);
+  return p;
+}
+async function lvFetch(path){
   const base = liveUrl();
   if(!base) throw new Error("no address");
   const ctl = new AbortController();
