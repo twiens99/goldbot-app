@@ -448,6 +448,7 @@ article.jrow{cursor:default;}
 .jc-sm .row-pf{font-size:.72rem;}
 .jc-note{font-size:.67rem;color:var(--warn);line-height:1.4;}
 .jc-why{font-size:.72rem;color:var(--dim);line-height:1.45;margin-top:8px;}
+.jc-why + .jc-why{margin-top:4px;}
 
 /* (the hand-built badge's own styles went with it) */
 
@@ -2232,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261111-022318";
+const APP_BUILD = "20261111-173836";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -4436,13 +4437,46 @@ function keptWhy(r, short){
   return "";
 }
 
+/* 2026-11-11 -- WHY A ROUND IS NOT COUNTED, in a few words. Every uncounted row read "seed", but most are a part of a
+   split group (a group too big for one round runs in parts; only the last part counts) or an extra re-run on a spare
+   copy. The publisher says which (`uncounted`); an older one says nothing and the row stays a seed. */
+function uncountedLabel(r){
+  const u = (r && r.uncounted) || {};
+  if(u.kind === "part" && u.part && u.of) return `part ${u.part} of ${u.of} · not counted`;
+  if(u.kind === "extra") return "extra re-run · not counted";
+  return "seed · not counted";
+}
+
+/* 2026-11-11 -- A NOTE UNDER AN UNUSUAL JOB CARD. Trevor: "If we get an unusual report, can we have a little note
+   beneath the job card? ... Id classify unusual by anything other than the ones that ran on schedule, picked a pass
+   and changed the pf. A full description can be inserted inside the job block." The publisher writes the notes
+   (`notes`: a short line for the list card, a full one for the job's own card); a round that kept its original values
+   is explained by keptWhy when the loop guards know why, in place of the publisher's general line -- unless the
+   original came from an app pick, which says so itself. */
+function jobNotes(r, short){
+  const notes = (r && Array.isArray(r.notes)) ? r.notes : [];
+  const kw = keptWhy(r, short);
+  const byPick = notes.some(n => n && n.kind === "kept" && n.by_pick);
+  const lines = [];
+  let kwUsed = false;
+  notes.forEach(n => {
+    if(!n) return;
+    if(n.kind === "kept" && !n.by_pick && kw){ lines.push(kw); kwUsed = true; return; }
+    const t = short ? n.short : (n.full || n.short);
+    if(t) lines.push(t);
+  });
+  if(kw && !kwUsed && !byPick) lines.push(kw);
+  return lines.map(t => `<div class="jc-why">${esc(t)}</div>`).join("");
+}
+
 function jobCard(r, rep, condensed, hint, cadence){
   const rc = REGIME_CLASS[r.regime] || "";
   rep = rep || {};
   const cells = [
     /* 2026-09-26 -- a narrow seed's round has no fleet round number: it is
-       shown here and charged to nothing (collect_uncounted). */
-    ["Round", r.counted === false ? "seed · not counted" : "r" + r.round_no],
+       shown here and charged to nothing (collect_uncounted). 2026-11-11 -- or a
+       split group's part, or an extra re-run (uncountedLabel). */
+    ["Round", r.counted === false ? uncountedLabel(r) : "r" + r.round_no],
     ["Pass picked", passLabel(r.picked_pass, r.picked_pass_style)],
     ["Mode", r.ticks_mode === "real_ticks" ? "Real Ticks"
            : r.ticks_mode === "ohlc" ? "OHLC" : null, "gold"],
@@ -4490,8 +4524,9 @@ function jobCard(r, rep, condensed, hint, cadence){
            list" for ANY unopenable condensed card -- which reads as nonsense ON
            the results list, where that is where you already are. Only the home
            badge knows its tap goes somewhere else, so only it says so. */
-        /* 2026-11-10 -- which check kept the original values (keptWhy). */
-        ((w => w ? `<div class="jc-why">${esc(w)}</div>` : "")(keptWhy(r, condensed))) +
+        /* 2026-11-10 -- which check kept the original values (keptWhy). 2026-11-11 -- and any unusual job's
+           note (jobNotes): the short line here on the list, the full one on the job's own card. */
+        jobNotes(r, condensed) +
         (hint ? `<div class="jc-note">${esc(hint)}</div>` : "") +
         /* THE TRADE BAND LIVES IN THE CARD NOW. Trevor, 2026-09-17: *"Insert the
            Trade Band inside the uncondensed Job card."* It used to render bare
@@ -9086,7 +9121,7 @@ function stGroupPage(){
         : '<div class="sthist">')
       + `<div class="lrow"><span class="stname">${esc(fmtWhen(r.recorded_at))}</span>`
       + stEpochPill(key, runIdx[stRowKey(r)], true)
-      + (r.counted === false ? '<span class="chip">seed · not counted</span>' : "")
+      + (r.counted === false ? `<span class="chip">${esc(uncountedLabel(r))}</span>` : "")
       + `<span class="stmeta">${esc(r.machine || "")}</span>`
       + (r.round_no != null ? '<span class="hcar">›</span>' : "") + '</div>'
       + `<div class="stmeta">${r.failed ? '<span class="stdn">failed — did not count</span>'
