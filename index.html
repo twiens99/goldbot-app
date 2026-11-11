@@ -2232,7 +2232,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261110-165422";
+const APP_BUILD = "20261111-022318";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5135,10 +5135,20 @@ function baselineRuns(){
 /* 2026-11-05 -- the baselines' table, SHARED WITH THE CURRENT STATUS ABOVE IT (Trevor: "another block that looks the
    same"). open: {curve id: true}; attr: the row's data attribute -- each block opens its own lines, because one line
    can sit in both (a bucket no round has changed yet); more(c): extra html {when, pf, after} for a row, or nothing. */
-const TEST_GRID = "grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,1fr))";
+/* 2026-11-11 -- + Win, after Trades. Trevor: "On the current tab. Can we add a trade win% column?" -- the run's own
+   metrics (m.win: the report's profitable trades over its trades), shown as a whole percent with its sign (beside the
+   trade count a bare "46.5" read as part of it); its metrics card keeps the decimal (Win rate). Six columns do not fit 375 px at even widths ("$2,541$353" ran together): the rows' numbers are 14 px,
+   each number column gets the width its widest value needs at phone size, and the test's sub-line wraps at its " · "
+   (never inside a date) instead of running under the PF change. */
+const TEST_GRID = "grid-template-columns:minmax(88px,1.6fr) minmax(30px,.6fr) minmax(37px,.8fr) minmax(29px,.65fr) " +
+  "minmax(44px,1fr) minmax(44px,1fr);column-gap:4px";
+/* A sub-line that breaks only at its " · " separators. */
+function subLine(html){
+  return String(html).split(" · ").map(p => `<span style="white-space:nowrap">${p}</span>`).join(" · ");
+}
 function testHead(){
   return `<div class="optr opth" style="${TEST_GRID}"><span style="text-align:left">Test</span><span>PF</span>` +
-    `<span>Trades</span><span>Net</span><span>Max DD</span></div>`;
+    `<span>Trades</span><span>Win</span><span>Net</span><span>Max DD</span></div>`;
 }
 /* One row. base: a baseline row -- shaded, with a gold edge (the compare block's legend). */
 function testRow(c, open, attr, more, base){
@@ -5150,11 +5160,12 @@ function testRow(c, open, attr, more, base){
   const look = base ? "background:var(--base-tint);border:0;border-left:3px solid var(--gold);padding-left:6px;"
                     : "background:transparent;border:0;";
   return `<button type="button" class="optr ro" style="${TEST_GRID};width:100%;${look}` +
-    `color:inherit;font:inherit;text-align:right;cursor:pointer" ${attr}="${esc(c.id)}">` +
-    `<span style="text-align:left;white-space:nowrap">${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}<br><span class="tnote">${
-      x.when != null ? x.when : esc(eqWhen(c))}</span></span>` +
+    `color:inherit;font:inherit;font-size:14px;text-align:right;cursor:pointer" ${attr}="${esc(c.id)}">` +
+    `<span style="text-align:left"><span style="white-space:nowrap">${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}</span>` +
+    `<br><span class="tnote">${subLine(x.when != null ? x.when : esc(eqWhen(c)))}</span></span>` +
     `<span>${num(m.pf != null ? m.pf : c.pf, v => v.toFixed(2))}${x.pf || ""}</span>` +
     `<span>${num(m.trades != null ? m.trades : c.trades, v => v.toLocaleString("en-US"))}</span>` +
+    `<span>${num(m.win, v => Math.round(v) + "%")}</span>` +
     `<span>${num(m.net, eqMoney)}</span><span>${num(m.dd, eqMoney)}</span></button>` + (x.after || "") +
     (isOpen && c.t && c.t.length ? `<div style="margin:4px 0 10px">${equityChart(c, null)}</div>` : "");
 }
@@ -5247,8 +5258,10 @@ function compareSection(){
   const more = c => {
     const r = curRound(c), b = base[curveKey(c)];
     const day = esc(eqWhen(c).slice(5));
-    // short: the sub-line does not wrap, and at phone width a longer one runs under the PF change
-    const when = r && r.round_no != null ? `${day} \u00b7 round ${esc(r.round_no)}`
+    // short: at phone width a longer sub-line wraps to a third line (11-11: it used to run under the PF change)
+    // 2026-11-11 -- a seeded round's round_no is its seed key (seed:bucket:group:n), not a number
+    const when = r && r.round_no != null ? (/^\d+$/.test(String(r.round_no)) ? `${day} \u00b7 round ${esc(r.round_no)}`
+                                                                             : `${day} \u00b7 seeded round`)
                : b && b.id === c.id ? `${day} \u00b7 no round yet` : esc(eqWhen(c));
     let pf = "";
     if(b && b.id !== c.id && isFinite(pfOf(b)) && isFinite(pfOf(c))){
