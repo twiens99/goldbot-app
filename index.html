@@ -2233,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261111-173836";
+const APP_BUILD = "20261113-051610";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -20881,10 +20881,11 @@ const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
 let PG_REG = null;      // the chart as drawn, for the crosshair
 const PG = (() => {
   const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "all", filt: "all", axis: "date", vsel: "",
-             lfrom: "", lopen: ""};
+             lfrom: "", lopen: "", ver: ""};
   try{
     const v = JSON.parse(localStorage.getItem(PG_KEY) || "null");
     if(v && typeof v.lfrom === "string") s.lfrom = v.lfrom;
+    if(v && typeof v.ver === "string") s.ver = v.ver;
     if(v && Array.isArray(v.on)) s.on = v.on.filter(k => PG_M.some(m => m[0] === k));
     if(v && PG_WINS.some(w => w[0] === v.win)) s.win = v.win;
     if(v && typeof v.filt === "string") s.filt = v.filt;
@@ -20894,7 +20895,7 @@ const PG = (() => {
 })();
 function pgSave(){
   try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis,
-                                                      lfrom: PG.lfrom})); }catch(e){}
+                                                      lfrom: PG.lfrom, ver: PG.ver})); }catch(e){}
 }
 
 async function pgLoad(){
@@ -21021,11 +21022,27 @@ function pgFilters(all){
   return out;
 }
 
+/* 2026-11-13 -- THE VERSION TOGGLE. Trevor: "The each version button, I want to change that to a toggle switch. It will
+   cycle between all versions. Each version will change the graph and the info block above it. The metrics below will
+   also go with it." (and: "the version button doesn't seem like it does anything" -- the old Each version only
+   restarted the window's own lines at each version line, so with Balance alone on, nothing moved). Every version,
+   oldest first: the feed's version lines, then any version a trade names that has no line. The first tap shows the
+   newest; each tap after it the next older one, round again. */
+function pgVerList(d, all){
+  const tags = (d.versions || []).slice().sort((a, b) => Number(a.from) - Number(b.from)).map(v => v.tag);
+  (all || []).forEach(t => { if(t.version && tags.indexOf(t.version) < 0) tags.push(t.version); });
+  return tags;
+}
+
 /* THE SERIES: one point per event -- a deposit, a version's first heartbeat, a trade closing -- carrying every
    metric for the window in force at that moment, so a line on the graph and a value in the crosshair are the same
-   number. Balance runs on every trade; the window, on the filtered ones. */
-function pgSeries(d, all){
-  const tr = all.filter(t => pgMatch(t, PG.filt));
+   number. Balance runs on every trade; the window, on the filtered ones.
+   2026-11-13 -- `vtag`: ONE version only (the toggle). Its stretch, from its first run to the next version's (or now --
+   later, when a trade it opened closed after that); only the trades it opened, every line from zero where it starts;
+   Balance is the account's across that stretch. No version lines inside it. */
+function pgSeries(d, all, vtag){
+  const inV = t => !vtag || t.version === vtag;
+  const tr = all.filter(t => pgMatch(t, PG.filt) && inV(t));
   const vers = (d.versions || []).map(v => ({tag: v.tag, from: Number(v.from)})).sort((a, b) => a.from - b.from);
   const cash = (d.cash || []).map(c => [Number(c[0]), Number(c[1])]).sort((a, b) => a[0] - b[0]);
   const t1 = Number(d.served_gmt) + Number(d.gmt_offset || 0);
@@ -21041,20 +21058,36 @@ function pgSeries(d, all){
   cash.forEach(c => ev.push({t: c[0], k: 1, amt: c[1]}));
   all.forEach(t => ev.push({t: Number(t.exit_time), k: 2, tr: t}));
   ev.sort((a, b) => a.t - b.t || a.k - b.k);
-  /* `i` places a point on the by-trade axis: trade k sits at k, a version's line half a step after the trades
-     before it. `ver` marks a version's point, `brk` one where Each version starts every line again. */
-  let bal = open || null, win = [], k = 0;
-  const pts = [{t: t0, i: 0, s: pgStats([]), bal: bal}];
-  ev.forEach(e => {
-    const p = {t: e.t, i: k};
-    if(e.k === 1) bal = (bal || 0) + e.amt;
-    else if(e.k === 0){
-      e.v.i = p.i = k + 0.5; p.ver = true;
-      if(PG.win === "ver"){ win = []; p.brk = true; }
+  /* One version's stretch (the toggle): from its first run to the next version's, or now -- later when a trade it
+     opened closed after that. */
+  let lo = -Infinity, hi = Infinity;
+  if(vtag){
+    const vi = vers.findIndex(v => v.tag === vtag);
+    const closes = all.filter(t => t.version === vtag).map(t => Number(t.exit_time));
+    lo = vi >= 0 ? vers[vi].from : (closes.length ? Math.min.apply(null, closes) : t1);
+    hi = vi >= 0 && vi + 1 < vers.length ? vers[vi + 1].from : t1;
+    if(closes.length){                              // every trade it opened sits inside its stretch
+      lo = Math.min(lo, Math.min.apply(null, closes));
+      hi = Math.max(hi, Math.max.apply(null, closes));
     }
-    else{
-      if(bal != null) bal += Number(e.tr.profit) || 0;
-      if(!pgMatch(e.tr, PG.filt)) return;
+  }
+  /* `i` places a point on the by-trade axis: trade k sits at k, a version's line half a step after the trades
+     before it. `ver` marks a version's point. The balance runs on every event, drawn or not. */
+  let bal = open || null, win = [], k = 0, started = !vtag;
+  const pts = vtag ? [] : [{t: t0, i: 0, s: pgStats([]), bal: bal}];
+  ev.forEach(e => {
+    const inside = !vtag || (e.t >= lo && e.t <= hi);
+    if(inside && !started){ started = true; pts.push({t: lo, i: 0, s: pgStats([]), bal: bal}); }
+    if(e.k === 1) bal = (bal || 0) + e.amt;
+    else if(e.k === 2 && bal != null) bal += Number(e.tr.profit) || 0;
+    if(!inside) return;
+    const p = {t: e.t, i: k};
+    if(e.k === 0){
+      if(vtag) return;                              // one version: no version lines inside it
+      e.v.i = p.i = k + 0.5; p.ver = true;
+    }
+    else if(e.k === 2){
+      if(!pgMatch(e.tr, PG.filt) || !inV(e.tr)) return;
       win.push(e.tr);
       if(PG.win === "last" && win.length > PG_LAST) win.shift();
       p.i = ++k; p.tr = e.tr;
@@ -21062,6 +21095,9 @@ function pgSeries(d, all){
     p.s = pgStats(win); p.bal = bal;
     pts.push(p);
   });
+  if(vtag && !started) pts.push({t: lo, i: 0, s: pgStats([]), bal: bal});
+  if(vtag) return {pts: pts, t0: lo, t1: Math.max(hi, lo + 86400), vers: [], tr: tr, n: k, vtag: vtag,
+                   vlo: lo, vhi: hi, vnow: hi >= t1};
   return {pts: pts, t0: t0, t1: Math.max(t1, t0 + 86400), vers: vers, tr: tr, n: k};
 }
 /* What is drawn: the rows switched on, less Balance under a bucket -- and Net in its place when Balance was the
@@ -21239,11 +21275,12 @@ function pgByVersion(S){
     : `<span class="pg-mv ${a > b ? "up" : "dn"}">${a > b ? "▲" : "▼"}</span>`;
   const head = '<div class="pg-vr pg-vh"><span>Version</span><span>Trades</span><span>Won</span><span>PF</span>' +
                '<span>Net</span><span>R/trade</span></div>';
+  const sel = PG.win === "ver" ? PG.ver : PG.vsel;    // 2026-11-13 -- the toggle's version is the lit row
   const body = rows.map(r => {
     const s = r.s, cmp = prev;
     if(s.n) prev = s;
-    return `<button type="button" class="pg-vr${PG.vsel === r.tag ? " on" : ""}${s.n ? "" : " none"}" ` +
-      `data-pgv="${esc(r.tag)}" aria-pressed="${PG.vsel === r.tag}"><span class="pg-vn"><b>${esc(pgVer(r.tag))}</b>` +
+    return `<button type="button" class="pg-vr${sel === r.tag ? " on" : ""}${s.n ? "" : " none"}" ` +
+      `data-pgv="${esc(r.tag)}" aria-pressed="${sel === r.tag}"><span class="pg-vn"><b>${esc(pgVer(r.tag))}</b>` +
       `<i>${r.from != null ? pgDate(r.from) : ""}</i></span><span>${s.n || "—"}</span>` +
       `<span>${s.n ? Math.round(s.win) + "%" : "—"}</span>` +
       `<span>${s.pf != null ? s.pf.toFixed(2) : "—"}${s.n && cmp ? arrow(s.pf, cmp.pf) : ""}</span>` +
@@ -21793,9 +21830,19 @@ function pgHtml(){
   if(!d) return wrap(card(PG.err ? pgErrLine() : '<div class="lv-line">Reading every trade from the VPS…</div>') +
                      pgLedgerHtml());
   const all = pgTrades(d);
-  const filters = pgFilters(all);
+  let filters = pgFilters(all);
   if(!filters.some(f => f[0] === PG.filt)) PG.filt = "all";
-  const S = pgSeries(d, all), on = pgOn(), T = pgStats(S.tr);
+  /* 2026-11-13 -- the version toggle: one version (PG.ver) in force, or the whole record. A version no longer in the
+     feed falls back to the newest. The chips keep every bucket; their counts are the version's own. */
+  const vlist = pgVerList(d, all);
+  if(PG.win === "ver" && vlist.indexOf(PG.ver) < 0) PG.ver = vlist[vlist.length - 1] || "";
+  const vtag = PG.win === "ver" ? PG.ver : "";
+  if(vtag){
+    const mine = all.filter(t => t.version === vtag);
+    filters = filters.map(f => [f[0], f[1], mine.filter(t => pgMatch(t, f[0])).length]);
+  }
+  const S = pgSeries(d, all, vtag), on = pgOn(), T = pgStats(S.tr);
+  const SA = vtag ? pgSeries(d, all, "") : S;      // the By version table: every version, whatever is shown
   const fname = (filters.find(f => f[0] === PG.filt) || [])[1] || "All";
   const tile = (k, v) => `<div class="lv-stat"><span class="lv-k">${k}</span><span class="lv-v">${v}</span></div>`;
   const tiles = '<div class="lv-stats">' +
@@ -21816,26 +21863,34 @@ function pgHtml(){
       `${esc(label)}</span><span class="vv">${pgFmt(k, pgVal(last, k))}</span><span></span></button>` +
       (i >= 0 ? `<div class="mdf">${esc(what)}</div>` : "");
   }).join("");
-  const winSay = PG.win === "ver" ? " Each version: every line starts again at its version’s line."
+  const winSay = vtag ? ` ${pgVer(vtag)} only: the trades it opened, every line from zero where it starts (Balance is ` +
+      `the account’s across it). Tap the version button for the next one.`
     : PG.win === "last" ? ` Last ${PG_LAST} trades: each point counts the ${PG_LAST} trades before it.` : "";
   const dealsFrom = d.deals_from != null ? ` The broker’s list reaches back to ${pgDate(d.deals_from, true)}.` : "";
+  /* The toggle's face: the version in force with its place in the list (newest = last), or the invitation. */
+  const vpos = vtag ? vlist.indexOf(vtag) + 1 : 0;
+  const wins = PG_WINS.map(w => w[0] !== "ver" ? w
+    : ["ver", vtag ? `${pgVer(vtag)} ↻ ${vpos}/${vlist.length}` : "Each version ↻"]);
+  const title = vtag
+    ? `${esc(fname)} · ${esc(pgVer(vtag))}, ${esc(pgDate(S.vlo, true))} – ${S.vnow ? "now" : esc(pgDate(S.vhi, true))}`
+    : `${esc(fname)} · since ${first ? esc(pgVer(first.tag)) + ", " : ""}${esc(pgDate(S.t0, true))}`;
   return wrap(tiles +
-    card(`<div class="tlab">${esc(fname)} · since ${first ? esc(pgVer(first.tag)) + ", " : ""}` +
-           `${esc(pgDate(S.t0, true))}</div>` +
+    card(`<div class="tlab">${title}</div>` +
          chipRow(filters, "pgf", PG.filt) +
-         chipRow(PG_WINS, "pgw", PG.win).replace(/<\/div>$/, '<span class="pg-sep"></span>' +
+         chipRow(wins, "pgw", PG.win).replace(/<\/div>$/, '<span class="pg-sep"></span>' +
            PG_AXES.map(a => `<button type="button" class="gch${PG.axis === a[0] ? " on" : ""}" ` +
                             `data-pgx="${a[0]}">${a[1]}</button>`).join("") + '</div>') +
          pgChart(S, on) +
          `<div class="vhcap">${PG.axis === "trade" ? "By trade: one point per closed trade, evenly spaced. " +
            "Dashed lines: where each version starts" : "Steps: a number moves only when a trade closes. Dashed " +
-           "lines: the day each version first ran on the VPS"}; tap a version below to shade its stretch.${on.length > 1 ? " Each line is " +
+           "lines: the day each version first ran on the VPS"}; ${vtag ? "tap a version below to show it" : "tap a " +
+           "version below to shade its stretch"}.${on.length > 1 ? " Each line is " +
            "scaled to its own range, so compare a line with itself, not with the others — the rows hold the " +
            "numbers." : ""}${winSay} Times are server time.</div>` +
          `<div class="mhd"><span>Metric</span><span>${PG.win === "all" ? "Now" : PG.win === "ver"
             ? "This version" : "Last " + PG_LAST}</span><span></span></div>` + rows) +
     '<div class="section-label">By version</div>' +
-    card(pgByVersion(S) +
+    card(pgByVersion(SA) +
          `<div class="vhcap">Each version’s own trades${PG.filt === "all" ? "" : " in " + esc(fname)}. ` +
            `A trade belongs to the version that opened it. ▲ ▼: PF and R per trade against the last version ` +
            `before it that traded. Net counts swap and commission; R is the price move over the trade’s ` +
@@ -21860,11 +21915,25 @@ document.addEventListener("click", e => {
   const ax = e.target.closest("[data-pgx]");
   if(ax){ PG.axis = ax.getAttribute("data-pgx"); pgSave(); pgPaint(); return; }
   const w = e.target.closest("[data-pgw]");
-  if(w){ PG.win = w.getAttribute("data-pgw"); pgSave(); pgPaint(); return; }
+  if(w){
+    const k = w.getAttribute("data-pgw");
+    /* 2026-11-13 -- the version toggle: the first tap the newest version, each tap after it the next older one, round
+       again (pgVerList). */
+    if(k === "ver"){
+      const d = PG.data && pgFrom(PG.data), list = d ? pgVerList(d, d.trades || []) : [];
+      const at = list.indexOf(PG.ver);
+      PG.ver = PG.win !== "ver" || at < 0 ? (list[list.length - 1] || "") : list[(at - 1 + list.length) % list.length];
+    }
+    PG.win = k; pgSave(); pgPaint(); return;
+  }
   const f = e.target.closest("[data-pgf]");
   if(f){ PG.filt = f.getAttribute("data-pgf"); pgSave(); pgPaint(); return; }
   const v = e.target.closest("[data-pgv]");
-  if(v){ const tag = v.getAttribute("data-pgv"); PG.vsel = PG.vsel === tag ? "" : tag; pgPaint(); return; }
+  if(v){
+    const tag = v.getAttribute("data-pgv");
+    if(PG.win === "ver"){ PG.ver = tag; pgSave(); pgPaint(); return; }   // 2026-11-13 -- a row shows that version
+    PG.vsel = PG.vsel === tag ? "" : tag; pgPaint(); return;
+  }
   /* Backtest vs live: a start version; a bucket opens / closes. */
   const lf = e.target.closest("[data-pglf]");
   if(lf){ PG.lfrom = lf.getAttribute("data-pglf"); PG.lopen = ""; pgSave(); pgPaint(); return; }
