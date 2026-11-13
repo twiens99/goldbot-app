@@ -2233,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-051853";
+const APP_BUILD = "20261113-053550";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -20880,7 +20880,9 @@ const PG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
 let PG_REG = null;      // the chart as drawn, for the crosshair
 const PG = (() => {
-  const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "all", filt: "all", axis: "date", vsel: "",
+  /* 2026-11-13 -- the tab OPENS ON THE CURRENT VERSION (Trevor: "Progress tab opens up on the current version"):
+     win starts at "ver" every load and is not restored; the version is the newest (pgHtml). */
+  const s = {data: null, at: 0, err: "", busy: false, timer: null, on: ["balance"], win: "ver", filt: "all", axis: "date", vsel: "",
              lfrom: "", lopen: "", ver: ""};
   try{
     const v = JSON.parse(localStorage.getItem(PG_KEY) || "null");
@@ -20888,14 +20890,13 @@ const PG = (() => {
     /* 2026-11-13 -- the version toggle is NOT remembered: every load starts it at the current version (Trevor: "That
        Version button will default to the current version"); pgHtml sets it from the feed. */
     if(v && Array.isArray(v.on)) s.on = v.on.filter(k => PG_M.some(m => m[0] === k));
-    if(v && PG_WINS.some(w => w[0] === v.win)) s.win = v.win;
     if(v && typeof v.filt === "string") s.filt = v.filt;
     if(v && PG_AXES.some(a => a[0] === v.axis)) s.axis = v.axis;
   }catch(e){}
   return s;
 })();
 function pgSave(){
-  try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis,
+  try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, filt: PG.filt, axis: PG.axis,
                                                       lfrom: PG.lfrom})); }catch(e){}
 }
 
