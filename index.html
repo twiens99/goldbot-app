@@ -2233,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-061757";
+const APP_BUILD = "20261113-161819";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -19853,6 +19853,9 @@ function pfBudget(d){
    plan out (personal.schedule); this page lists it, and takes today's real balances. */
 function pfStepText(x){
   const a = finMoney(x.amount);
+  /* 2026-11-13: the card's turn -- drawn back off the line of credit, then paid, on that day */
+  if(x.turn && x.do === "borrow") return "On " + pfDay(x.when) + ": draw " + a + " from the " + x.from + " into " + x.to;
+  if(x.turn) return "On " + pfDay(x.when) + ": pay " + a + " to " + x.to + " from " + x.from;
   /* 2026-10-27: a payment that waits for a pay landing before the due date */
   if(x.do === "pay" && x.when) return "On " + pfDay(x.when) + ", when your pay is in: pay " + a + " to " + x.to;
   if(x.do === "pay") return "Pay " + a + " to " + x.to + " from " + x.from;
@@ -19873,6 +19876,12 @@ function pfWhen(s){
   const al = s.allocation;
   if(!al) return "";
   const card = (s.card || {}).name || "card";
+  /* 2026-11-13: the line of credit first -- today's moves are for today; the card waits for its turn */
+  const o = s.order;
+  if(o && o.first === "loc" && (s.steps || []).some(x => !x.when))
+    return `<div class="fin-note">📅 <b>Do the first steps now</b> — spare money pays the line of credit down ` +
+      `the day it lands. The ${esc(card)}'s turn is ${esc(pfDay(o.card_on))}: upload the month-end statements ` +
+      "first, and check this again.</div>";
   const lead = al.date > s.as_of ? `📅 Do this on <b>${esc(pfDay(al.date))}</b>`
     : al.date === s.as_of ? "📅 <b>Today's the day</b>" : `📅 The day was ${esc(pfDay(al.date))} — do it now`;
   return `<div class="fin-note">${lead} — ` + (al.before_statements
@@ -19880,6 +19889,33 @@ function pfWhen(s){
     : `TD's and Wealthsimple Chequing's month-end statements are out by then (upload them first), and the ${esc(card)} ` +
       `payment still lands before its ${esc(finDate(al.card_due))} due date. The TFSA and Crypto ones come ` +
       `later (about the 8th): type today's balances for those. Then every month on about the 3rd.`) + "</div>";
+}
+/* 2026-11-13 -- WHICH GOES FIRST. Trevor: *"Yes change it so that it pays line of credit first. Then on the 1st of
+   every month. We switch that instruction so that the mastercard gets paid first. On the next payday, we go back to
+   paying down the line of credit with what's in the accounts."* (personal.which_first) */
+function pfOrder(s){
+  const o = s.order, c = s.card || {}, l = s.loc || {};
+  if(!o) return "";
+  const card = esc(c.name || "Mastercard"), loc = esc(l.name || "line of credit");
+  let t = "";
+  if(o.first === "loc" && l.owed > 0.005)
+    t = c.due > 0.005
+      ? `<b>${loc} first.</b> The ${card} charges no interest on a statement paid in full by its due date; the ` +
+        `line of credit charges every day. So spare money pays the line down now, and on ${esc(pfDay(o.card_on))} ` +
+        `it's the card's turn: its statement, drawn back off the line of credit` +
+        (o.card_due ? `, before its ${esc(finDate(o.card_due))} due date` : "") + ". Your next pay goes back to the line."
+      : `<b>${loc} first</b> — nothing to pay on the ${card} right now. From the 1st, its statement goes first ` +
+        "until your next pay.";
+  else if(o.first === "card" && o.why === "interest")
+    t = `<b>${card} first.</b> Its last statement charged interest, and its ${esc(c.rate)}% is more than the ` +
+      `line of credit's ${esc(l.rate)}%. Once a statement is paid in full by its due date, the line of credit goes first again.`;
+  else if(o.first === "card" && o.why === "turn")
+    t = `<b>The ${card}'s turn</b> — from the 1st until your next pay` +
+      (o.turn_ends ? ` (${esc(pfDay(o.turn_ends))})` : "") + ": its statement first, drawn from the line of credit " +
+      "if chequing is short. Then your pay goes back to the line of credit.";
+  else if(o.first === "card" && o.why === "due")
+    t = `<b>${card} first</b> — it's due ${esc(finDate(o.card_due))}, before its turn on the 1st.`;
+  return t ? `<div class="fin-note">${t}</div>` : "";
 }
 function pfSpan(months){
   const m = Number(months) || 0;
@@ -19889,7 +19925,7 @@ function pfSpan(months){
 function pfNowCard(s, title){
   const typedAll = String((s.chequing || {}).from || "").startsWith("typed");
   const kept = s.crypto_kept;
-  return `<div class="section-label">${esc(title)}</div>` + pfWhen(s) +
+  return `<div class="section-label">${esc(title)}</div>` + pfWhen(s) + pfOrder(s) +
     '<div class="card"><div class="fin-rows">' + (s.steps.length ? s.steps.map((x, i) =>
       '<div class="fin-row" style="cursor:default">' +
       `<div><div class="fin-rt">${esc((i + 1) + ". " + pfStepText(x))}</div>` +
@@ -20032,7 +20068,9 @@ function pfSchedule(d){
   h += `<div class="fin-note">Chequing keeps ${esc(finMoney(s.reserve))}: ${esc(finMoney(s.need))} for the bills ` +
     `until the next pay covers them, plus a <b>${esc(finMoney(bf.amount))} buffer</b>${esc(bfTill)} ` +
     `(${esc(bfFrom)}) so nothing dips into the overdraft. Everything above that goes to the debts — the ` +
-    "highest rate first.</div>";
+    /* 2026-11-13: the line of credit first while the card waits for its turn */
+    (s.order && s.order.first === "loc" ? "line of credit first, the card on its turn.</div>"
+      : "highest rate first.</div>");
   /* CHEQUING, DAY BY DAY */
   if((s.calendar || []).length)
     h += `<div class="section-label">${esc(s.chequing.name)} until ${esc(finDate(s.next_plan))}</div>` + finCard(
