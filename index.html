@@ -2233,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-053550";
+const APP_BUILD = "20261113-061757";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -20093,9 +20093,11 @@ function pfSchedule(d){
   h += '<div class="section-label">Balances and rules</div>';
   if(f){
     h += '<div class="card"><div class="fin-form">' +
-      '<div class="fin-note">Type what each account shows today (blank = its last statement). For the card ' +
-      "and the line of credit, type what you owe.</div>" +
-      s.balances.map(b => pfFormField(esc(b.name + (b.owed ? " — owed" : "")), "bal:" + b.id, f["bal:" + b.id] || "",
+      '<div class="fin-note">Type what each account shows today; the ones you typed before stay until you change ' +
+      "them. Clear a box to go back to its last statement. For the card and the line of credit, type what you " +
+      "owe.</div>" +
+      s.balances.map(b => pfFormField(esc(b.name + (b.owed ? " — owed" : "") +
+          (b.typed_on ? " · typed " + finDate(b.typed_on) : "")), "bal:" + b.id, f["bal:" + b.id] || "",
         `inputmode="decimal" placeholder="${finAttr(finNum(b.balance))}"`)).join("") +
       pfFormField(`Chequing buffer (blank = automatic: ${esc(finMoney(bf.auto, false))})`, "buffer", f.buffer) +
       '<div class="fin-note">Type one when you know something\'s coming up; clear it to go back to the automatic one.</div>' +
@@ -20748,10 +20750,17 @@ document.addEventListener("click", e => {
     PF.form = {kind: "sched", overdraft_rate: String(od.rate ?? ""), goldbot_months: String(c.months ?? ""),
                crypto_fee_pct: c.sell_pct === c.buy_pct && c.typed ? String(c.sell_pct) : "",
                buffer: bf.typed != null ? String(bf.typed) : ""};
+    /* 2026-11-13 -- the form opens WITH what he typed before (Trevor: "Each time I did that either another account
+       changed its balance or went back to what the statements were"): it opened empty, with the balances only as
+       grey hints, and a save sent just the boxes typed into -- dropping the rest. */
+    (s.balances || []).forEach(b => {
+      if(b.typed != null) PF.form["bal:" + b.id] = String(b.owed ? Math.abs(b.typed) : b.typed);   // a debt: what's owed
+    });
   }
   else if(act === "schedsave" && PF.form && PF.form.kind === "sched"){
+    /* every box, blank too: a blank one goes back to its statement, a filled one is kept (2026-11-13) */
     const f = PF.form, bal = {};
-    Object.keys(f).filter(k => k.startsWith("bal:") && String(f[k]).trim()).forEach(k => { bal[k.slice(4)] = f[k]; });
+    ((d.schedule || {}).balances || []).forEach(b => { bal[b.id] = String(f["bal:" + b.id] ?? "").trim(); });
     pfSend({op: "schedule", balances: bal, overdraft_rate: f.overdraft_rate, goldbot_months: f.goldbot_months,
             crypto_fee_pct: f.crypto_fee_pct, buffer: f.buffer}, () => { PF.form = null; });
     return;
