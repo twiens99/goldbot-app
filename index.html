@@ -2233,7 +2233,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-051610";
+const APP_BUILD = "20261113-051853";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -20885,7 +20885,8 @@ const PG = (() => {
   try{
     const v = JSON.parse(localStorage.getItem(PG_KEY) || "null");
     if(v && typeof v.lfrom === "string") s.lfrom = v.lfrom;
-    if(v && typeof v.ver === "string") s.ver = v.ver;
+    /* 2026-11-13 -- the version toggle is NOT remembered: every load starts it at the current version (Trevor: "That
+       Version button will default to the current version"); pgHtml sets it from the feed. */
     if(v && Array.isArray(v.on)) s.on = v.on.filter(k => PG_M.some(m => m[0] === k));
     if(v && PG_WINS.some(w => w[0] === v.win)) s.win = v.win;
     if(v && typeof v.filt === "string") s.filt = v.filt;
@@ -20895,7 +20896,7 @@ const PG = (() => {
 })();
 function pgSave(){
   try{ localStorage.setItem(PG_KEY, JSON.stringify({on: PG.on, win: PG.win, filt: PG.filt, axis: PG.axis,
-                                                      lfrom: PG.lfrom, ver: PG.ver})); }catch(e){}
+                                                      lfrom: PG.lfrom})); }catch(e){}
 }
 
 async function pgLoad(){
@@ -21867,10 +21868,11 @@ function pgHtml(){
       `the account’s across it). Tap the version button for the next one.`
     : PG.win === "last" ? ` Last ${PG_LAST} trades: each point counts the ${PG_LAST} trades before it.` : "";
   const dealsFrom = d.deals_from != null ? ` The broker’s list reaches back to ${pgDate(d.deals_from, true)}.` : "";
-  /* The toggle's face: the version in force with its place in the list (newest = last), or the invitation. */
-  const vpos = vtag ? vlist.indexOf(vtag) + 1 : 0;
+  /* The toggle's face: the version in force with its place in the list (newest = last); off, the current version it
+     opens on (11-13: "That Version button will default to the current version"). */
+  const vpos = vtag ? vlist.indexOf(vtag) + 1 : 0, vnow = vlist[vlist.length - 1];
   const wins = PG_WINS.map(w => w[0] !== "ver" ? w
-    : ["ver", vtag ? `${pgVer(vtag)} ↻ ${vpos}/${vlist.length}` : "Each version ↻"]);
+    : ["ver", vtag ? `${pgVer(vtag)} ↻ ${vpos}/${vlist.length}` : vnow ? `${pgVer(vnow)} ↻` : "Each version ↻"]);
   const title = vtag
     ? `${esc(fname)} · ${esc(pgVer(vtag))}, ${esc(pgDate(S.vlo, true))} – ${S.vnow ? "now" : esc(pgDate(S.vhi, true))}`
     : `${esc(fname)} · since ${first ? esc(pgVer(first.tag)) + ", " : ""}${esc(pgDate(S.t0, true))}`;
