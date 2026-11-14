@@ -312,6 +312,12 @@ button.chip.on::before{content:"\2713\00a0";}
 .copytag{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;
   border-radius:50%;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;
   color:#fff;vertical-align:middle;}
+/* 2026-11-13 -- a backtest's computer (machineTag), and a queued job past the preview (qRestRow) */
+.mtag{display:inline-flex;align-items:center;flex:none;height:20px;padding:0 7px;border-radius:4px;
+  font-family:"Segoe UI",Arial,sans-serif;font-size:12px;font-weight:700;line-height:1;letter-spacing:.02em;
+  color:#fff;vertical-align:middle;}
+.jrow.qrest{cursor:default;}
+.qn{color:var(--faint);font-weight:600;margin-right:2px;}
 .agline.box{cursor:default;}
 .agnote.warn{color:var(--warn);opacity:1;}
 /* 2026-10-06 -- THE EFFICIENCY PAGE. See renderEfficiency. */
@@ -2233,7 +2239,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-161819";
+const APP_BUILD = "20261113-204029";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2242,6 +2248,8 @@ let CURVES = [];
 let QUEUE = null;
 let QUEUE_HELD = {};
 let QCOUNTS = null;     // 2026-11-05 -- d.queue_counts: every backtest waiting (the Active bar's "Queued N")
+let QREST = [];         // 2026-11-13 -- d.queue_rest: every queued job past the preview's few, light (Show all)
+const QALL = {opt: false, test: false};   // ...which lanes' Show all is open (not saved: each visit starts short)
 let LDG = null;         // 2026-11-05 -- d.live_ledger: Progress's Backtest vs live (app_snapshot.collect_live_ledger)
 /* Rounds waiting on a PASS PICK, in Telegram's own numbering. */
 let PICKS = [];
@@ -3998,6 +4006,16 @@ function slotLetter(by){
   return parts[0] ? parts[0].charAt(0).toUpperCase() : "";
 }
 const slotTag = l => l ? `<span class="slottag" style="background:${COPY_COLORS[l] || "#6b7686"}">${esc(l)}</span>` : "";
+/* 2026-11-13 -- THE COMPUTER, ON A BACKTEST'S CARD. Trevor (an Active screenshot): "instead of having the tray icon and
+   it's Letter. Let's insert which computer is running it. T7910 or Laptop. (backtests only)". A copy's id is its box
+   and its letter (T7910-C), a slot's its copy and the slot (Laptop~Twin2): the box is the computer. */
+function boxName(machine){
+  const m = String(machine || "").split("~")[0];
+  const f = (FLEET || []).find(x => x.machine === m);
+  return (f && f.box) || m.replace(/-[A-Z]$/, "");
+}
+const MTAG_COLORS = {T7910: "#3b5b8c", Laptop: "#2f7d6d"};
+const machineTag = b => b ? `<span class="mtag" style="background:${MTAG_COLORS[b] || "#6b7686"}">${esc(b)}</span>` : "";
 function poolStrip(p){
   return '<div class="agstrip">' + (p.agents || []).map(a => {
     const c = a[2] ? (COPY_COLORS[a[2]] || "var(--dim)") : "";
@@ -5850,7 +5868,7 @@ function taskJob(f){
   return {
     id: "m:" + f.machine, section: "Running now",
     helper: isAgent(f),               // an agent machine's task opens its job card, not its lending card
-    fleet: ff, seed: sd,
+    fleet: ff, seed: sd, machine: f.machine,
     title: (ckSeed(sd && sd.label) || {}).title || (sd && sd.label) || humanize(ff.group_id) || "Working",
     /* 2026-10-17 -- ONE CHIP, THE COPY'S LETTER (Trevor: "The Job's can have one Machine Id chip that goes with it. A
        or B. I'll know if the laptop is runing on A or B because it'll be a different type of test"). */
@@ -5883,7 +5901,7 @@ function leaseJob(t){
   return {
     id: "o:" + [t.regime, t.bucket_id, t.group_id, t.part].join("|"), section: "Running now",
     title: humanize(t.group_id) || t.group_id, regime: t.regime, cls: RC[t.regime] || "",
-    chip: t.part, copy: null, slot: slotLetter(t.by),
+    chip: t.part, copy: null, slot: slotLetter(t.by), machine: t.by,
     line: [bktName(t.regime, t.bucket_id), "owed reading", `1 core: ${parts[0]}`].join(" · "),
     eta: "no ETA yet",
   };
@@ -5897,7 +5915,7 @@ function slotJob(sd){
   return {
     id: "s:" + sd.seed_id, section: "Running now", seed: sd,
     title: (ck && ck.title) || sd.label || humanize(sd.group_id) || "Seeded test",
-    slot: slotLetter(sd.claimed_by),
+    slot: slotLetter(sd.claimed_by), machine: sd.claimed_by,
     line: [sd.bucket_id != null && sd.regime ? bktName(sd.regime, sd.bucket_id) : "", ck && ck.detail,
            `1 core: ${parts[0]}`].filter(Boolean).join(" · "),
     eta: (began ? "running " + dur(Math.max(0, Date.now() / 1000 - began)) + " · " : "") + "no ETA yet",
@@ -6055,6 +6073,7 @@ function jobsModel(){
      rides in (ref), where the test stays as one of the round's tasks. */
   jobs.filter(o => (o.tasks || []).length).forEach(p => p.tasks.forEach(t => jobs.push({
     id: "t:" + t.id, ref: p.id, section: "Running now", seed: t.seed, slot: t.slot, copy: null,
+    machine: (t.seed && t.seed.claimed_by) || t.machine || null,
     title: t.title,
     line: ["inside " + (p.copy ? "copy " + p.copy + "\u2019s" : "the") + " round", t.line,
            "1 core: " + String((t.seed && t.seed.claimed_by) || "").split("~")[0]].filter(Boolean).join(" \u00b7 "),
@@ -6474,6 +6493,42 @@ function jobBucket(j){
   const m = /^o:(BULL|BEAR|RANGING)\|(\d+)\|/.exec(String(j.id || ""));
   return m ? {regime: m[1], id: Number(m[2])} : null;
 }
+/* 2026-11-13 -- a running BACKTEST with its computer known (machineTag); sweeps and halts keep the copy's letter */
+function testOnBox(j){
+  return j.lane === "test" && j.section === "Running now" && !!j.machine && !(j.fleet && j.fleet.halt);
+}
+/* 2026-11-13 -- A QUEUED JOB PAST THE PREVIEW (QREST), one short row: its place in line, what it is, its bucket. Trevor:
+   "I also want the option to view the full list of backtests and optimization jobs." Not a button: the publisher
+   sends these light (no variables), so there is no card to open. */
+function qRestRow(q, n){
+  const sd = q.seed_id ? (SEEDS || []).find(x => x.seed_id === q.seed_id) : null;
+  const lbl = (sd && sd.label) || q.label;
+  const ck = ckSeed(lbl) || {};
+  const bk = q.bucket_id != null && q.regime ? {regime: String(q.regime).toUpperCase(), id: Number(q.bucket_id)} : null;
+  const line = [ck.detail, queueLine(q)].filter(Boolean).join(" · ")
+    .split(" · ").filter(x => !bk || x !== bktName(bk.regime, bk.id)).join(" · ");
+  const chips = (q.regime ? `<span class="chip ${esc(RC[q.regime] || "")}">${esc(q.regime)}</span>` : "") +
+    (bk ? bktEl(bk.id, false, null, bk.regime) : "") +
+    queueChips(q).map(c => `<span class="chip${TEST_KINDS.has(c) ? " gold" : ""}">${esc(c)}</span>`).join("");
+  return `<div class="hbtn jrow qrest">
+      <div class="hstripe ${esc(RC[q.regime] || "")}"></div>
+      <div class="hrow"><span class="hb">
+        <span class="jtop"><span class="qn">${n}.</span><span class="hname">${esc(ck.title || lbl ||
+          humanize(q.group_id) || "Queued work")}</span></span>` +
+        (chips ? `<span class="jchips">${chips}</span>` : "") +
+        (line ? `<span class="hsubline">${esc(line)}</span>` : "") + `</span></div></div>`;
+}
+/* ...and the lane's Show all / Show fewer, under its last queued row. `shown`: the lane's rows already drawn. */
+function qAllBlock(lane, shown){
+  const rest = (QREST || []).filter(q => q.lane === lane);
+  if(!rest.length) return "";
+  const open = !!QALL[lane];
+  return (open ? rest.map((q, i) => qRestRow(q, shown + i + 1)).join("") +
+      (lane === "opt" ? '<div class="notebody">The rounds the schedule can take now, in its order. The epoch’s ' +
+        "other groups join as the schedule reaches them.</div>" : "") : "") +
+    `<button type="button" class="fin-more" data-qall="${esc(lane)}">${open ? "Show fewer"
+      : "Show all " + (shown + rest.length) + " queued"}</button>`;
+}
 function jobRow(j){
   const bk = jobBucket(j);
   /* ...and the line stops repeating it ("Bear High · 46 agents" -> "46 agents"). */
@@ -6483,7 +6538,7 @@ function jobRow(j){
       <div class="hstripe ${esc(j.cls || "")}"></div>
       <div class="hrow">
         <span class="hb">
-          <span class="jtop">${copyTag(j.copy)}${slotTag(j.slot)}<span class="hname">${esc(j.title)}</span></span>` +
+          <span class="jtop">${testOnBox(j) ? machineTag(boxName(j.machine)) : copyTag(j.copy) + slotTag(j.slot)}<span class="hname">${esc(j.title)}</span></span>` +
           /* 2026-11-07 -- THE CHIPS ON THEIR OWN LINE, all together. Trevor (an Active screenshot): "The chips should
              be all on the same line. So Bull mid optimize chips should all be on the same horizontal line similar to
              the bear high optimize chips" -- they sat inline after the name, so a short name kept the regime beside
@@ -6543,16 +6598,32 @@ function renderJobList(){
   };
   if(at < 0) out += note;
   const laned = sec => sec === "Running now" || sec === "Queued up next" || sec === "Queued after that";
+  /* 2026-11-13 -- the tests running now name the computers they are on (each card says which); and under each lane's
+     last queued row, its Show all */
+  const boxOrder = (a, z) => (a === "Laptop") - (z === "Laptop") || a.localeCompare(z);   // the Laptop last, always
+  const testBoxes = [...new Set(jobs.filter(testOnBox).map(j => boxName(j.machine)).filter(Boolean))].sort(boxOrder);
+  const lastQ = {}, nQ = {opt: 0, test: 0};
+  jobs.forEach((j, i) => { if(isQ(j)) lastQ[j.lane || "opt"] = i; });
   jobs.forEach((j, i) => {
     enter(blk(j));
     const key = j.section + (laned(j.section) ? "|" + (j.lane || "opt") : "");
     if(key !== section){
       section = key;
+      /* ...and a queued test goes to whichever computer frees up first (the backtest pool): every one is named */
+      const anyBox = [...new Set((FLEET || []).map(f => f.box || boxName(f.machine)).filter(Boolean))].sort(boxOrder);
+      const ln = j.lane === "test" && j.section === "Running now" && testBoxes.length ? testBoxes.join(" + ")
+        : j.lane === "test" && anyBox.length ? anyBox.join(" + ")
+        : laneName(j.lane || "opt");
       out += '<div class="section-label">' + esc(j.section) +
-        (laned(j.section) ? " \u2014 " + esc(laneName(j.lane || "opt")) : "") + '</div>';
+        (laned(j.section) ? " \u2014 " + esc(ln) : "") + '</div>';
       if(j.lane === "test" && j.section === "Queued up next") out += slotsWaitNote();
     }
     out += jobRow(j);
+    if(isQ(j)){
+      const lane = j.lane || "opt";
+      nQ[lane]++;
+      if(i === lastQ[lane]) out += qAllBlock(lane, nQ[lane]);
+    }
     if(i === at) out += note;
   });
   enter(null);
@@ -18353,6 +18424,7 @@ function applySnapshot(d, source){
   CURVES = Array.isArray(d.curves) ? d.curves : [];
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
   QCOUNTS = (d.queue_counts && typeof d.queue_counts === "object") ? d.queue_counts : null;
+  QREST = Array.isArray(d.queue_rest) ? d.queue_rest : [];
   /* 2026-11-05 -- the live-vs-backtest ledger; a NEW build repaints Progress (every snapshot would wipe its crosshair). */
   const ldg = (d.live_ledger && typeof d.live_ledger === "object" && Array.isArray(d.live_ledger.views))
     ? d.live_ledger : null;
@@ -22530,6 +22602,13 @@ document.addEventListener("click", e => {
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-go]");
   if(b) go(b.dataset.go);
+  /* 2026-11-13 -- a lane's Show all / Show fewer (qAllBlock): repaints Active where it stands */
+  const qa = e.target.closest("[data-qall]");
+  if(qa){
+    QALL[qa.dataset.qall] = !QALL[qa.dataset.qall];
+    paintActive();
+    return;
+  }
   const j = e.target.closest("[data-job]");
   if(j){
     // "" is the back button. Repaints ONLY the Active page: opening a job is
