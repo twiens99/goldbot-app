@@ -1966,6 +1966,25 @@ header .lv-tabs.stuck{box-shadow:none;}
 }
 .fin-tbl td:first-child{text-align:left;font-family:inherit;padding-left:0;white-space:normal;}
 .fin-tbl td .fin-sub{display:block;}
+/* 2026-11-13 -- a category's months, each opening its payments (pfCatRow) */
+.pf-mlist{display:flex;flex-direction:column;}
+.pf-mhead,.pf-mrow{display:grid;grid-template-columns:1fr auto 4.6rem 12px;gap:0 8px;align-items:center;}
+.pf-mhead{
+  font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:0 0 6px;
+  white-space:nowrap;
+}
+.pf-mhead span:not(:first-child){text-align:right;}
+.pf-mrow{
+  width:100%;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);
+  font:inherit;font-size:.8rem;padding:9px 0;text-align:left;cursor:pointer;
+}
+.pf-mrow > span:nth-child(2),.pf-mrow > span:nth-child(3){
+  text-align:right;font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.pf-mrow .pf-chev{color:var(--faint);text-align:center;transition:transform .15s;}
+.pf-mrow[aria-expanded="true"] .pf-chev{transform:rotate(90deg);color:var(--gold);}
+.pf-mrow:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+.pf-mtx{margin:0 -13px;background:var(--card);border-top:1px solid var(--line);}
 .fin-more{border:0;background:transparent;color:var(--gold);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:10px 13px;text-align:left;}
 /* 2026-10-23 -- Finance tabs: GOLDbot / Statements / Budget */
 .fin-tabs{display:flex;gap:4px;padding:3px;border-radius:11px;background:var(--card);border:1px solid var(--line);}
@@ -2239,7 +2258,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-204029";
+const APP_BUILD = "20261113-223147";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -15305,9 +15324,16 @@ function tunerCard(T){
    out of the efficiency setup. It's only doing backtests. its the optimizations that are the time consumer and it
    needs to be efficient."* Efficiency counts the optimization box only (app_snapshot.serves_another_box); a machine
    that serves another box shows its running tests here instead (its beacon's own count: its job's test + its slots). */
+/* 2026-11-13 -- EVERY BACKTEST RUNNING, ON EVERY COMPUTER. Trevor: "At the top where it counts how many laptop
+   backtests are running. Let's change that to total current backtests. Count the t79 backtests too." The beacons'
+   count (EFF.backtests_running) was the tests machine's only. This is the Active tab's own: its backtests Running now
+   (jobsModel -- a copy's test, a slot's, a lease's, a round's pretest), a halted one left out -- so the header and the
+   Backtests cards always agree. */
+function backtestsRunning(){
+  return jobsModel().filter(j => j.lane === "test" && j.section === "Running now" && !(j.fleet && j.fleet.halt)).length;
+}
 function backtestLines(){
-  const bt = (EFF && EFF.backtests_running) || {};
-  return Object.keys(bt).sort().map(m => `${esc(m)} backtests: <b>${esc(String(bt[m]))}</b> running`);
+  return [`Backtests: <b>${backtestsRunning()}</b> running`];
 }
 function effLeftOutNote(){
   const out = (EFF && EFF.left_out) || [];
@@ -20570,13 +20596,26 @@ function pfCatRow(s, c, mk, top){
   if(!open) return h;
   const f = PF.form && PF.form.kind === "goal" && PF.form.category === c.id ? PF.form : null;
   const months = Object.keys(c.months).sort().reverse();
+  /* 2026-11-13 -- A MONTH OPENS ITS PAYMENTS. Trevor: "I want to be able to click a month and below it will bring up
+     all the transactions for that month. Then, if I click the transaction, I want to be able to edit the transaction
+     like it was unsorted." One month open at a time -- the month picked above to start (its payments were the list
+     under this card) -- and each payment opens the editor an unsorted one does (pfTxnRow -> tagopen). */
+  const openMo = PF.catMo == null ? mk : PF.catMo;
   h += '<div class="fin-form">' +
-    '<table class="fin-tbl"><tr><th>Month</th><th>Spent</th><th>vs goal</th></tr>' +
+    '<div class="pf-mlist"><div class="pf-mhead"><span>Month</span><span>Spent</span><span>vs goal</span><span></span></div>' +
     months.map(x => {
-      const a = c.months[x];
-      return `<tr><td>${esc(finMonth(x))}</td><td>${a == null ? "not counted" : esc(finMoney(a, false))}</td>` +
-        `<td>${a == null || c.goal == null ? "" : a > c.goal + 0.004 ? "⚠ over" : "✓ under"}</td></tr>`;
-    }).join("") + "</table>" +
+      const a = c.months[x], open = x === openMo;
+      const row = `<button type="button" class="pf-mrow" data-pf="catmonth" data-m="${finAttr(x)}" ` +
+        `aria-expanded="${open}"><span>${esc(finMonth(x))}</span>` +
+        `<span>${a == null ? "not counted" : esc(finMoney(a, false))}</span>` +
+        `<span>${a == null || c.goal == null ? "" : a > c.goal + 0.004 ? "⚠ over" : "✓ under"}</span>` +
+        '<span class="pf-chev" aria-hidden="true">›</span></button>';
+      if(!open) return row;
+      const txns = (s.txns || []).filter(t => t.category === c.id && !t.for && t.date.slice(0, 7) === x);
+      return row + '<div class="pf-mtx">' + (txns.length ? txns.map(t => pfTxnRow(s, t)).join("")
+        : `<div class="fin-note" style="padding:10px 13px">No ${esc(c.label.toLowerCase())} in ${esc(finMonth(x))}.</div>`) +
+        "</div>";
+    }).join("") + "</div>" +
     (c.avg != null ? `<div class="fin-note">Usually <b>${esc(finMoney(c.avg))}</b> a month ` +
       `(${esc(c.avg_months.map(finMonth).join(", "))}).</div>` : "");
   if(f){
@@ -20590,11 +20629,7 @@ function pfCatRow(s, c, mk, top){
     h += `<div class="fin-acts"><button type="button" class="fin-btn" data-pf="goal" data-id="${finAttr(c.id)}">` +
       `${c.goal != null ? "Change the goal" : "Set a goal"}</button></div>`;
   }
-  h += "</div>";
-  const txns = (s.txns || []).filter(t => t.category === c.id && !t.for && t.date.slice(0, 7) === mk);
-  h += txns.length ? txns.map(t => pfTxnRow(s, t)).join("")
-    : `<div class="fin-note" style="padding:10px 13px">No ${esc(c.label.toLowerCase())} in ${esc(finMonth(mk))}.</div>`;
-  return h;
+  return h + "</div>";
 }
 
 function pfAdviceNote(){
@@ -20792,10 +20827,16 @@ document.addEventListener("click", e => {
     else{ pfSend({op: "bill", id: PF.form.id, remove: true}, () => { PF.form = null; }); return; }
   }
   /* the Spending tab */
-  else if(act === "month"){ PF.month = mo; PF.cat = ""; PF.form = null; }
+  else if(act === "month"){ PF.month = mo; PF.cat = ""; PF.catMo = null; PF.form = null; }
   else if(act === "cat"){
     PF.cat = PF.cat === id ? "" : id;
+    PF.catMo = null;                    /* a category opens on the month picked above (2026-11-13) */
     if(PF.form && PF.form.kind === "goal") PF.form = null;
+  }
+  /* 2026-11-13 -- a category's month opens its payments; tapped again, it closes (one open at a time) */
+  else if(act === "catmonth"){
+    PF.catMo = (PF.catMo == null ? PF.month : PF.catMo) === mo ? "" : mo;
+    if(PF.form && (PF.form.kind === "tag" || PF.form.kind === "split")) PF.form = null;
   }
   else if(act === "goal"){
     const c = ((d.spending || {}).categories || []).find(x => x.id === id);
