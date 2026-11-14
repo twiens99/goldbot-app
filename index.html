@@ -1986,6 +1986,13 @@ header .lv-tabs.stuck{box-shadow:none;}
 .pf-mrow:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
 .pf-mtx{margin:0 -13px;background:var(--card);border-top:1px solid var(--line);}
 #pf-sim{scroll-margin-top:calc(var(--hdr,64px) + 10px);}          /* Find similar's list, clear of the header */
+/* 2026-11-14 -- Find similar's tick boxes: the ticked ones change all at once */
+.pf-pick{display:flex;align-items:stretch;border-bottom:1px solid var(--line);}
+.pf-pick:last-child{border-bottom:0;}
+.pf-pick:has(input:checked){background:rgba(224,180,87,.08);}
+.pf-pick > .fin-row{flex:1;min-width:0;border-bottom:0;padding-left:2px;}
+.pf-tick{display:flex;align-items:center;justify-content:center;flex:none;width:44px;cursor:pointer;}
+.pf-tick input{width:20px;height:20px;margin:0;accent-color:var(--gold);cursor:pointer;}
 .fin-more{border:0;background:transparent;color:var(--gold);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:10px 13px;text-align:left;}
 /* 2026-10-23 -- Finance tabs: GOLDbot / Statements / Budget */
 .fin-tabs{display:flex;gap:4px;padding:3px;border-radius:11px;background:var(--card);border:1px solid var(--line);}
@@ -2259,7 +2266,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-225811";
+const APP_BUILD = "20261114-004517";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6520,6 +6527,29 @@ function testOnBox(j){
 /* 2026-11-13 -- A QUEUED JOB PAST THE PREVIEW (QREST), one short row: its place in line, what it is, its bucket. Trevor:
    "I also want the option to view the full list of backtests and optimization jobs." Not a button: the publisher
    sends these light (no variables), so there is no card to open. */
+/* 2026-11-14 -- THE REST OF THE EPOCH, under the sweeps' Show all. Trevor: "When I click on show all for the
+   Optimization in the active tab. Only 10 show up? But the epoch has 131 more? I want to scroll down to see all of
+   them." The publisher's queue is the schedule's look-ahead -- the dozen or so rounds it can take now (that night, the
+   gate rounds alone); the epoch's other groups are the Status page's: every runnable group of every leaf not yet run
+   this epoch (STATUS.buckets -- the bar's own "Queued N", epochCounts). Each bucket's in its own order, the buckets in
+   the trades' flow; which bucket goes next is the schedule's call when it gets there, so these carry no place in line.
+   Left out: what the look-ahead already lists, a round running now (its lease), one waiting on a pass pick. */
+function epochLater(){
+  const key = (r, b, g) => String(r || "").toUpperCase() + "|" + Number(b) + "|" + g;
+  const optQ = q => q.lane ? q.lane === "opt"
+    : q.source !== "backtest" && /^(OPTIM|SWEEP$)/.test(String(q.kind || "").toUpperCase());
+  const skip = new Set([...(QUEUE || []), ...(QREST || [])].filter(q => q && q.group_id && optQ(q))
+    .map(q => key(q.regime, q.bucket_id, q.group_id)));
+  (LEASES || []).forEach(l => {
+    const m = /^([A-Z]+)\|(\d+)\|(.+)$/.exec(String((l || {}).key || ""));
+    if(m) skip.add(key(m[1], m[2], m[3]));
+  });
+  ((QUEUE_HELD || {}).pending || []).forEach(p => skip.add(key(p.regime, p.bucket_id, p.group_id)));
+  return (STATUS.buckets || []).filter(b => !regimeOff(b.regime))
+    .slice().sort((a, z) => bktFlow(a.regime, a.bucket_id, z.regime, z.bucket_id))
+    .map(b => ({b, rows: (b.groups || []).filter(g => !g.done && !g.parked && !skip.has(key(b.regime, b.bucket_id, g.group_id)))}))
+    .filter(x => x.rows.length);
+}
 function qRestRow(q, n){
   const sd = q.seed_id ? (SEEDS || []).find(x => x.seed_id === q.seed_id) : null;
   const lbl = (sd && sd.label) || q.label;
@@ -6533,7 +6563,7 @@ function qRestRow(q, n){
   return `<div class="hbtn jrow qrest">
       <div class="hstripe ${esc(RC[q.regime] || "")}"></div>
       <div class="hrow"><span class="hb">
-        <span class="jtop"><span class="qn">${n}.</span><span class="hname">${esc(ck.title || lbl ||
+        <span class="jtop">${n ? `<span class="qn">${n}.</span>` : ""}<span class="hname">${esc(ck.title || lbl ||
           humanize(q.group_id) || "Queued work")}</span></span>` +
         (chips ? `<span class="jchips">${chips}</span>` : "") +
         (line ? `<span class="hsubline">${esc(line)}</span>` : "") + `</span></div></div>`;
@@ -6541,13 +6571,20 @@ function qRestRow(q, n){
 /* ...and the lane's Show all / Show fewer, under its last queued row. `shown`: the lane's rows already drawn. */
 function qAllBlock(lane, shown){
   const rest = (QREST || []).filter(q => q.lane === lane);
-  if(!rest.length) return "";
+  const later = lane === "opt" ? epochLater() : [];          /* the rest of the epoch (2026-11-14) */
+  const nLater = later.reduce((a, x) => a + x.rows.length, 0);
+  if(!rest.length && !nLater) return "";
   const open = !!QALL[lane];
   return (open ? rest.map((q, i) => qRestRow(q, shown + i + 1)).join("") +
-      (lane === "opt" ? '<div class="notebody">The rounds the schedule can take now, in its order. The epoch’s ' +
-        "other groups join as the schedule reaches them.</div>" : "") : "") +
+      (nLater ? '<div class="notebody">Above: the rounds the schedule can take now, in its order. Below: the ' +
+        "rest of this epoch — every group not run yet, bucket by bucket, each in its bucket’s own order. Which " +
+        "bucket goes next is the schedule’s call when it gets there.</div>" +
+        later.map(x => `<div class="section-label">${esc(bktName(x.b.regime, x.b.bucket_id))} · ` +
+          `${x.rows.length} more</div>` +
+          x.rows.map(g => qRestRow({source: "epoch", regime: x.b.regime, bucket_id: x.b.bucket_id,
+                                    group_id: g.group_id}, 0)).join("")).join("") : "") : "") +
     `<button type="button" class="fin-more" data-qall="${esc(lane)}">${open ? "Show fewer"
-      : "Show all " + (shown + rest.length) + " queued"}</button>`;
+      : "Show all " + (shown + rest.length + nLater) + " queued"}</button>`;
 }
 function jobRow(j){
   const bk = jobBucket(j);
@@ -20537,17 +20574,85 @@ function pfSimPanel(s){
     `<input type="text" class="pf-in" data-pfs="text" value="${finAttr(PF.sim.text)}" autocomplete="off" ` +
     'autocapitalize="characters" spellcheck="false"></label>' +
     `<div class="fin-note" id="pf-sim-sum">${esc(pfSimSum(rows))}</div>` +
+    (PF.sim.done ? `<div class="pf-res ok" id="pf-sim-done">✓ ${esc(PF.sim.done)}</div>` : "") +
     `<div class="fin-note">Every unsorted payment, and the sorted ones${ms.length ? " from " + esc(finMonth(ms[0])) +
-      " on" : ""}. Tap one to change it.</div>` +
-    '<div class="fin-acts"><button type="button" class="fin-btn" data-pf="simclose">Done</button></div></div>' +
-    `<div id="pf-sim-list">${rows.map(t => pfTxnRow(s, t, "sim")).join("")}</div></div></div>`;
+      " on" : ""}. Tick the ones to change all at once, or tap one to change just it.</div>` +
+    `<div class="fin-acts" id="pf-sim-acts">${pfSimActs(rows)}</div></div>` +
+    (PF.form && PF.form.kind === "bulk" ? pfBulkForm(s, rows) : "") +
+    `<div id="pf-sim-list">${rows.map(t => pfSimRow(s, t)).join("")}</div></div></div>`;
 }
 /* ...the words typed over: the list follows without a re-render (one would take the focus away) */
 function pfSimRepaint(){
   const s = (PF.data || {}).spending || {}, rows = pfSimRows(s);
   const l = document.getElementById("pf-sim-list"), n = document.getElementById("pf-sim-sum");
-  if(l) l.innerHTML = rows.map(t => pfTxnRow(s, t, "sim")).join("");
+  if(l) l.innerHTML = rows.map(t => pfSimRow(s, t)).join("");
   if(n) n.textContent = pfSimSum(rows);
+  pfSimCounts(s, rows);
+}
+/* 2026-11-14 -- CHANGE ALL. Trevor: "If I find a charge that I want to change. I want to be able to click on every
+   payment. Even if they are unsorted. Change all to the new setting." Each similar payment gets a tick box; the
+   ticked ones change to one setting at once (op "tags": who's responsible, category, one-off, and the search words
+   as a rule if wanted), each keeping its own note. A split payment has no box: it changes in its own editor. */
+function pfSimPicked(rows){
+  const pk = (PF.sim || {}).pick || {};
+  return rows.filter(t => pk[t.id] && !t.part_of);
+}
+function pfSimRow(s, t){
+  const f = PF.form;
+  if(f && f.at === "sim" && ((f.kind === "tag" && f.id === t.id) || (f.kind === "split" && f.row === t.id)))
+    return pfTxnRow(s, t, "sim");                           /* its editor, full width */
+  const box = t.part_of ? '<span class="pf-tick"></span>'
+    : `<label class="pf-tick"><input type="checkbox" data-pfk="${finAttr(t.id)}"` +
+      `${((PF.sim || {}).pick || {})[t.id] ? " checked" : ""} ` +
+      `aria-label="${finAttr("Tick " + pfTitle(t) + ", " + finDate(t.date))}"></label>`;
+  return `<div class="pf-pick">${box}${pfTxnRow(s, t, "sim")}</div>`;
+}
+function pfSimActs(rows){
+  const n = pfSimPicked(rows).length, can = rows.filter(t => !t.part_of).length, all = can && n === can;
+  return (PF.form && PF.form.kind === "bulk" ? "" :
+      `<button type="button" class="fin-btn gold" data-pf="bulkopen"${n ? "" : " disabled"}>` +
+      `${n ? "Change " + n + " ticked…" : "Change the ticked…"}</button>`) +
+    (can ? `<button type="button" class="fin-btn" data-pf="${all ? "simnone" : "simall"}">` +
+      `${all ? "Untick all" : "Tick all"}</button>` : "") +
+    '<button type="button" class="fin-btn" data-pf="simclose">Done</button>';
+}
+function pfBulkForm(s, rows){
+  const f = PF.form, pick = pfSimPicked(rows), n = pick.length;
+  const uns = pick.filter(t => t.category === "unsorted").length;
+  const out = pick.reduce((a, x) => a + (x.amount < 0 ? -x.amount : 0), 0);
+  /* who's responsible offers only what fits every ticked one: any money that came IN -> no GOLDbot, no "into" */
+  const like = {amount: pick.some(x => x.amount > 0) ? 1 : -1, date: pick.reduce((a, x) => x.date > a ? x.date : a, "")};
+  const words = String(PF.sim.text || "").replace(/\s+/g, " ").trim(), hidden = words.includes("•");
+  if(hidden || words.length < 3) f.rule = false;
+  const party = f.who && f.who !== "me";
+  const pl = k => k + " payment" + (k === 1 ? "" : "s");
+  return '<div class="fin-form" id="pf-bulk">' +
+    `<div class="fin-rt">Change ${esc(pl(n))} to</div>` +
+    `<div class="fin-rs">${esc([uns ? uns + " unsorted" : "", out > 0.005 ? finMoney(out) + " in all" : ""]
+      .filter(Boolean).join(" · ") || (n ? "" : "Tick payments below."))}</div>` +
+    (n ? pfWhoBlock(like) : "") +
+    `<label>Category${party ? ' <span class="fin-hint">(optional)</span>' : ""}` +
+    `<select class="pf-sel" data-pff="category">${pfCatOptions(s, f.category)}</select></label>` +
+    (f.category === "__new" ? pfNewCat() : "") +
+    `<label class="pf-check pf-once"><input type="checkbox" data-pff="one_off"${f.one_off ? " checked" : ""}>` +
+    "<span><b>One-off</b> — mark them all as won't repeat: left out of the monthly averages. Unticked, each " +
+    "stays as it is.</span></label>" +
+    (words.length >= 3 ? `<label class="pf-check pf-once"><input type="checkbox" data-pff="rule"${f.rule ? " checked" : ""}` +
+      `${hidden || f.one_off ? " disabled" : ""}><span>Make “${esc(words)}” a rule: every other payment with these ` +
+      "words too, now and in future statements (one you sorted by hand stays as it is)</span></label>" : "") +
+    (hidden ? "<div class=\"fin-note\">These words hide an account number, so they can't be a rule.</div>" : "") +
+    '<div class="fin-note">Each keeps its own note. Tick or untick payments below to change which ones.</div>' +
+    (PF.formErr ? `<div class="fin-err">${esc(PF.formErr)}</div>` : "") +
+    '<div class="fin-acts">' +
+    `<button type="button" class="fin-btn gold" data-pf="bulksave"${PF.busy || !n || f.category === "__new" ||
+      (!f.category && !party) ? " disabled" : ""}>${PF.busy ? "Saving…" : "Change " + esc(pl(n))}</button>` +
+    '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div>';
+}
+/* a tick: the count and the change form follow without a re-render */
+function pfSimCounts(s, rows){
+  const a = document.getElementById("pf-sim-acts"), b = document.getElementById("pf-bulk");
+  if(a) a.innerHTML = pfSimActs(rows);
+  if(b) b.outerHTML = pfBulkForm(s, rows);
 }
 function pfSpending(d){
   const s = d.spending || {};
@@ -20904,7 +21009,7 @@ document.addEventListener("click", e => {
   else if(act === "simopen"){
     const t = pfFindTxn(d, id);
     if(!t) return;
-    PF.sim = {id: t.id, text: pfSimText(t)};
+    PF.sim = {id: t.id, text: pfSimText(t), pick: {}, done: ""};
     PF.form = null;
     if(finTab() !== "spending"){
       FIN.tab = "spending";
@@ -20918,6 +21023,36 @@ document.addEventListener("click", e => {
   else if(act === "simclose"){
     PF.sim = null;
     if(PF.form && PF.form.at === "sim") PF.form = null;
+  }
+  /* 2026-11-14 -- change all: tick, then one setting for every ticked payment */
+  else if(act === "simall" && PF.sim){
+    pfSimRows(d.spending || {}).forEach(t => { if(!t.part_of) PF.sim.pick[t.id] = true; });
+    PF.sim.done = "";
+  }
+  else if(act === "simnone" && PF.sim){ PF.sim.pick = {}; PF.sim.done = ""; }
+  else if(act === "bulkopen" && PF.sim){
+    PF.form = {kind: "bulk", category: "", who: "me", kid: "", dir: "", one_off: false, rule: false, at: "sim"};
+    PF.formErr = "";
+    PF.sim.done = "";
+  }
+  else if(act === "bulksave" && PF.form && PF.form.kind === "bulk" && PF.sim){
+    const f = PF.form, party = pfPartyOf(f);
+    const ids = pfSimPicked(pfSimRows(d.spending || {})).map(t => t.id);
+    if(!ids.length || f.category === "__new" || (!f.category && !party)) return;
+    const body = {op: "tags", ids, category: f.category || "",
+                  rule_text: f.rule && !f.one_off ? String(PF.sim.text || "").trim() : ""};
+    if(f.one_off) body.one_off = true;
+    if(party) body.party = party;
+    pfSend(body, out => {
+      PF.form = null;
+      if(PF.sim){
+        PF.sim.pick = {};
+        const k = out.count || ids.length;
+        PF.sim.done = "Changed " + k + " payment" + (k === 1 ? "" : "s") +
+          (body.rule_text ? ", and made “" + body.rule_text + "” a rule." : ".");
+      }
+    });
+    return;
   }
   else if(act === "tagopen"){
     const t = pfFindTxn(d, id);
@@ -20954,7 +21089,7 @@ document.addEventListener("click", e => {
       pfSend({op: "category", label: n.label, kind: n.kind || "spend"}, out => {
         const f = PF.form;
         if(!f) return;
-        if(f.kind === "tag") f.category = out.id;
+        if(f.kind === "tag" || f.kind === "bulk") f.category = out.id;
         else (f.parts || []).forEach(p => { if(p.category === "__new") p.category = out.id; });
         f.newcat = null;
       });
@@ -20984,7 +21119,7 @@ document.addEventListener("click", e => {
   }
   else if(act === "catcancel" && PF.form){
     const f = PF.form;
-    if(f.kind === "tag") f.category = "";
+    if(f.kind === "tag" || f.kind === "bulk") f.category = "";
     else (f.parts || []).forEach(p => { if(p.category === "__new") p.category = ""; });
     f.newcat = null;
   }
@@ -21036,13 +21171,30 @@ document.addEventListener("input", e => {
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
   const q = e.target.closest && e.target.closest("[data-pfs]");
-  if(q && PF.sim){ PF.sim.text = q.value; pfSimRepaint(); }
+  if(q && PF.sim){ PF.sim.text = q.value; pfSimDoneOff(); pfSimRepaint(); }
   pfPartInput(e);
   pfNewCatInput(e);
 });
+/* "Changed N payments." goes once the list is touched again */
+function pfSimDoneOff(){
+  if(!PF.sim || !PF.sim.done) return;
+  PF.sim.done = "";
+  const x = document.getElementById("pf-sim-done");
+  if(x) x.remove();
+}
 document.addEventListener("change", e => {
   pfPartInput(e);
   pfNewCatInput(e);
+  const k = e.target.closest && e.target.closest("[data-pfk]");
+  if(k && PF.sim){                       /* Find similar's tick box (2026-11-14) */
+    if(!PF.sim.pick) PF.sim.pick = {};
+    if(k.checked) PF.sim.pick[k.dataset.pfk] = true;
+    else delete PF.sim.pick[k.dataset.pfk];
+    pfSimDoneOff();
+    const s = (PF.data || {}).spending || {};
+    pfSimCounts(s, pfSimRows(s));
+    return;
+  }
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form){
     PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
@@ -21051,6 +21203,8 @@ document.addEventListener("change", e => {
     /* the tag form's Save waits for a category, and its match count follows the words */
     if(PF.form.kind === "tag" && ["category", "rule", "rule_text", "rule_amt", "rule_amount", "rule_cmp",
                                   "who", "kid", "dir", "one_off"].includes(f.dataset.pff))
+      finRender();
+    if(PF.form.kind === "bulk" && ["category", "rule", "who", "kid", "dir", "one_off"].includes(f.dataset.pff))
       finRender();
     /* a bill every few months asks which months it comes in */
     if(PF.form.kind === "bill" && f.dataset.pff === "every") finRender();
