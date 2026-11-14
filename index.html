@@ -1985,6 +1985,7 @@ header .lv-tabs.stuck{box-shadow:none;}
 .pf-mrow[aria-expanded="true"] .pf-chev{transform:rotate(90deg);color:var(--gold);}
 .pf-mrow:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
 .pf-mtx{margin:0 -13px;background:var(--card);border-top:1px solid var(--line);}
+#pf-sim{scroll-margin-top:calc(var(--hdr,64px) + 10px);}          /* Find similar's list, clear of the header */
 .fin-more{border:0;background:transparent;color:var(--gold);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:10px 13px;text-align:left;}
 /* 2026-10-23 -- Finance tabs: GOLDbot / Statements / Budget */
 .fin-tabs{display:flex;gap:4px;padding:3px;border-radius:11px;background:var(--card);border:1px solid var(--line);}
@@ -2258,7 +2259,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261113-223147";
+const APP_BUILD = "20261113-225811";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -20288,15 +20289,18 @@ function pfSpendMonth(s){
   if(!PF.month || !ms.includes(PF.month)) PF.month = s.default_month || ms[0] || "";
   return PF.month;
 }
-function pfTxnRow(s, t){
-  if(PF.form && PF.form.kind === "tag" && PF.form.id === t.id) return pfTagForm(s, t);
-  if(PF.form && PF.form.kind === "split" && PF.form.row === t.id) return pfSplitForm(s, t);
+/* `at`: the list a row is drawn in. A payment can be in two at once (Find similar's and its month's), and its
+   editor opens in the one it was tapped in (2026-11-13). */
+function pfTxnRow(s, t, at){
+  const here = !PF.form || (PF.form.at || "") === (at || "");
+  if(here && PF.form && PF.form.kind === "tag" && PF.form.id === t.id) return pfTagForm(s, t);
+  if(here && PF.form && PF.form.kind === "split" && PF.form.row === t.id) return pfSplitForm(s, t);
   const tag = t.category === "unsorted" ? "" : `<span class="fin-tag">${esc(pfLabel(s, t.category))}</span>`;
   const part = t.part_of ? " · part of " + finMoney(Math.abs(t.total)) : "";
   const once = t.one_off ? " · one-off" : "";
   const adds = t.adds ? " · adds " + finMoney(t.adds) + " a month" : "";        /* the Schedule's biggest lists */
-  return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}">` +
-    `<div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
+  return `<button type="button" class="fin-row" data-pf="tagopen" data-id="${finAttr(t.id)}"` +
+    `${at ? ` data-at="${finAttr(at)}"` : ""}><div><div class="fin-rt">${esc(pfTitle(t))}</div>` +
     `<div class="fin-rs">${esc(finDate(t.date) + " · " + t.account + pfVia(t) + pfFor(t) + part + once + adds + (t.note ? " · " + t.note : ""))}${tag}</div></div>` +
     `<div><div class="fin-ra">${esc(pfAmt(t.amount))}</div></div></button>`;
 }
@@ -20449,6 +20453,7 @@ function pfSplitForm(s, t){
     `<button type="button" class="fin-btn gold" data-pf="splitsave"${PF.busy ? " disabled" : ""}>` +
     `${PF.busy ? "Saving…" : "Save the split"}</button>` +
     (f.parts.length < 10 ? '<button type="button" class="fin-btn" data-pf="splitadd">Add a part</button>' : "") +
+    `<button type="button" class="fin-btn" data-pf="simopen" data-id="${finAttr(t.id)}">Find similar</button>` +
     '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button>' +
     (f.was ? '<button type="button" class="fin-btn bad" data-pf="splitundo">Undo the split</button>' : "") +
     "</div></div>";
@@ -20501,7 +20506,48 @@ function pfTagForm(s, t){
       (!f.category && (!f.who || f.who === "me")) ? " disabled" : ""}>` +
     `${PF.busy ? "Saving…" : "Save"}</button>` +
     `<button type="button" class="fin-btn" data-pf="splitopen" data-id="${finAttr(t.id)}">Split…</button>` +
+    `<button type="button" class="fin-btn" data-pf="simopen" data-id="${finAttr(t.id)}">Find similar</button>` +
     '<button type="button" class="fin-btn" data-pf="cancel">Cancel</button></div></div>';
+}
+/* 2026-11-13 -- FIND SIMILAR. Trevor: "I want a "find similar" option when I open a transaction. This will close the
+   transaction and list all similar named transactions." The payment's own words -- its rule words (the description
+   up to the first number), or PayPal's payee -- matched in every payment the Spending tab holds: all the unsorted
+   ones, and the sorted ones in its months. The words can be changed; each payment opens its editor right there. */
+function pfSimText(t){
+  const w = String(t.vendor || t.rule_text || "").split("•")[0].replace(/\s+/g, " ").trim();
+  return w || String(t.desc || "").split("•")[0].replace(/\s+/g, " ").trim();
+}
+function pfSimRows(s){
+  const q = String((PF.sim || {}).text || "").toUpperCase().replace(/\s+/g, " ").trim();
+  if(q.length < 3) return [];
+  return (s.txns || []).filter(x => (x.desc + " " + (x.vendor || "")).toUpperCase().replace(/\s+/g, " ").includes(q));
+}
+function pfSimSum(rows){
+  const out = rows.reduce((a, x) => a + (x.amount < 0 ? -x.amount : 0), 0);
+  return !String((PF.sim || {}).text || "").trim() || String(PF.sim.text).trim().length < 3 ? "Type at least 3 letters."
+    : !rows.length ? "No payment's description has these words."
+    : `${rows.length} payment${rows.length === 1 ? "" : "s"}${out > 0.005 ? " · " + finMoney(out) + " in all" : ""}`;
+}
+function pfSimPanel(s){
+  if(!PF.sim) return "";
+  const rows = pfSimRows(s);
+  const ms = (s.months || []).map(m => m.month).sort();
+  return '<div class="section-label" id="pf-sim">Similar payments</div><div class="card"><div class="fin-rows">' +
+    '<div class="fin-form"><label>Description has' +
+    `<input type="text" class="pf-in" data-pfs="text" value="${finAttr(PF.sim.text)}" autocomplete="off" ` +
+    'autocapitalize="characters" spellcheck="false"></label>' +
+    `<div class="fin-note" id="pf-sim-sum">${esc(pfSimSum(rows))}</div>` +
+    `<div class="fin-note">Every unsorted payment, and the sorted ones${ms.length ? " from " + esc(finMonth(ms[0])) +
+      " on" : ""}. Tap one to change it.</div>` +
+    '<div class="fin-acts"><button type="button" class="fin-btn" data-pf="simclose">Done</button></div></div>' +
+    `<div id="pf-sim-list">${rows.map(t => pfTxnRow(s, t, "sim")).join("")}</div></div></div>`;
+}
+/* ...the words typed over: the list follows without a re-render (one would take the focus away) */
+function pfSimRepaint(){
+  const s = (PF.data || {}).spending || {}, rows = pfSimRows(s);
+  const l = document.getElementById("pf-sim-list"), n = document.getElementById("pf-sim-sum");
+  if(l) l.innerHTML = rows.map(t => pfTxnRow(s, t, "sim")).join("");
+  if(n) n.textContent = pfSimSum(rows);
 }
 function pfSpending(d){
   const s = d.spending || {};
@@ -20509,6 +20555,7 @@ function pfSpending(d){
   const cats = s.categories || [];
   let h = "";
   (s.notes || []).forEach(n => { h += `<div class="fin-warn">${esc(n)}</div>`; });
+  h += pfSimPanel(s);                              /* Find similar's list, first (2026-11-13) */
   if(!months.length)
     return h + finCard('<div class="fin-note">No full month of spending yet — submit a month of ' +
       "card and chequing statements first.</div>");
@@ -20744,7 +20791,7 @@ document.addEventListener("click", e => {
   if(tb){
     FIN.tab = tb.dataset.fintab;
     try{ localStorage.setItem(PF_TAB_KEY, FIN.tab); }catch(err){}
-    PF.form = null; PF.formErr = ""; PF.confirm = ""; PF.msg = null;
+    PF.form = null; PF.formErr = ""; PF.confirm = ""; PF.msg = null; PF.sim = null;
     finShow();
     return;
   }
@@ -20853,11 +20900,30 @@ document.addEventListener("click", e => {
     pfSend({op: "goal", category: PF.form.category, monthly: ""}, () => { PF.form = null; });
     return;
   }
+  /* 2026-11-13 -- Find similar: the payment's editor closes; the similar ones list at the top of Spending */
+  else if(act === "simopen"){
+    const t = pfFindTxn(d, id);
+    if(!t) return;
+    PF.sim = {id: t.id, text: pfSimText(t)};
+    PF.form = null;
+    if(finTab() !== "spending"){
+      FIN.tab = "spending";
+      try{ localStorage.setItem(PF_TAB_KEY, FIN.tab); }catch(err){}
+    }
+    finRender();
+    const at = document.getElementById("pf-sim");
+    if(at) at.scrollIntoView({block: "start"});
+    return;
+  }
+  else if(act === "simclose"){
+    PF.sim = null;
+    if(PF.form && PF.form.at === "sim") PF.form = null;
+  }
   else if(act === "tagopen"){
     const t = pfFindTxn(d, id);
     if(!t) return;
     if(t.part_of){                      /* a part of a split: edit the whole split */
-      PF.form = {kind: "split", id: t.part_of, row: t.id, total: t.total, was: true, err: "",
+      PF.form = {kind: "split", id: t.part_of, row: t.id, total: t.total, was: true, err: "", at: el.dataset.at || "",
                  parts: (t.parts || []).map(p => ({amount: Number(p.amount).toFixed(2), category: p.category,
                                                    note: p.note || ""}))};
     }else{
@@ -20865,7 +20931,7 @@ document.addEventListener("click", e => {
                  rule: t.category === "unsorted", rule_text: t.rule_text.includes("•") ? "" : t.rule_text,
                  rule_cmp: "any", rule_amount: Math.abs(t.amount).toFixed(2), note: t.note || "",
                  who: pfWhoFrom(t.for), kid: (t.for || {}).kid || "", dir: (t.for || {}).dir || "",
-                 one_off: !!t.one_off};
+                 one_off: !!t.one_off, at: el.dataset.at || ""};
     }
   }
   else if(act === "tagsave" && PF.form){
@@ -20926,6 +20992,7 @@ document.addEventListener("click", e => {
     const t = pfFindTxn(d, id);
     if(!t) return;
     PF.form = {kind: "split", id: t.id, row: t.id, total: t.amount, was: false, err: "",
+               at: (PF.form && PF.form.at) || "",
                parts: [{amount: "", category: (PF.form && PF.form.category) || "", note: ""},
                        {amount: "", category: "", note: ""}]};
   }
@@ -20968,6 +21035,8 @@ function pfNewCatInput(e){
 document.addEventListener("input", e => {
   const f = e.target.closest && e.target.closest("[data-pff]");
   if(f && PF.form) PF.form[f.dataset.pff] = f.type === "checkbox" ? f.checked : f.value;
+  const q = e.target.closest && e.target.closest("[data-pfs]");
+  if(q && PF.sim){ PF.sim.text = q.value; pfSimRepaint(); }
   pfPartInput(e);
   pfNewCatInput(e);
 });
