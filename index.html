@@ -128,6 +128,12 @@ h1{
 .holdbar[hidden]{display:none;}
 .holdbar b{color:var(--warn);}
 .holdbar .chips{margin-top:6px;}
+.sharebar{margin-top:7px;font-size:.8rem;line-height:1.45;color:var(--text);background:rgba(90,160,220,.13);
+  border:1px solid rgba(90,160,220,.45);border-radius:6px;padding:7px 9px;}
+.sharebar[hidden]{display:none;}
+.sharebar b{color:#7FB8E6;}
+.sharebar .chips{margin-top:6px;}
+.sharebar .srow + .srow{margin-top:6px;padding-top:6px;border-top:1px solid rgba(90,160,220,.25);}
 .baked{
   margin-top:7px;
   font-size:.7rem;color:var(--warn);
@@ -2181,6 +2187,8 @@ nav button{min-width:0;}
     <button type="button" class="nosched" id="nosched" data-go="schedule" hidden></button>
     <!-- 2026-10-23 -- THE FLEET HOLD: on, the copies finish what they run and start nothing new. See paintHold. -->
     <div class="holdbar" id="holdbar" hidden></div>
+    <!-- 2026-11-15 -- share this pc: a box where the bot stepped back so a person can use it. See paintShare. -->
+    <div class="sharebar" id="sharebar" hidden></div>
     <!-- 2026-11-05 -- the page's shortcut bar (secBar), moved here by secMount: the header is always on screen. -->
     <div id="hdrbars"></div>
   </header>
@@ -2266,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261115-004050";
+const APP_BUILD = "20261115-165457";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -11042,6 +11050,48 @@ document.addEventListener("click", async function(ev){
   paintHold();
 });
 
+/* 2026-11-15 -- share this pc (share_pc.py): a box where the bot stepped back -- a quarter of its cores and of its
+   memory -- so a person can use it. On every page while it is on, with give-it-back (two taps), in case nobody
+   switches it off at the box. The tap only writes that box's switch; its broker reads it within a cycle. */
+const SHARE_UI = {armed: "", busy: false, sent: {}, err: {}};
+function shareRows(){
+  const s = LAST_SNAPSHOT && LAST_SNAPSHOT.share_pc;
+  return Array.isArray(s) ? s.filter(r => r && r.box) : [];
+}
+function paintShare(){
+  const el = document.getElementById("sharebar");
+  if(!el) return;
+  const rows = shareRows();
+  if(!rows.length){ el.hidden = true; SHARE_UI.armed = ""; SHARE_UI.sent = {}; SHARE_UI.err = {}; return; }
+  el.hidden = false;
+  el.innerHTML = rows.map(r => {
+    const box = String(r.box), cp = Number(r.cores_pct) || 25, rp = Number(r.ram_pct) || 25;
+    const btn = SHARE_UI.sent[box] ? '<span class="tby">' + esc(SHARE_UI.sent[box]) + '</span>'
+      : apiBase() ? '<button type="button" class="chip' + (SHARE_UI.armed === box ? " on" : "") + '" data-share="'
+        + esc(box) + '"' + (SHARE_UI.busy ? " disabled" : "") + '>'
+        + (SHARE_UI.armed === box ? "Tap again to give it back" : "Give it back") + '</button>'
+      : '<span class="tby">Giving it back needs the Laptop link (Settings)</span>';
+    return '<div class="srow"><b>\u{1F3E0} ' + esc(box) + ' is shared</b>'
+      + (r.since ? ' since ' + esc(fmtWhen(r.since)) : '') + (r.by ? ' (' + esc(r.by) + ')' : '')
+      + ' — the bot leaves ' + cp + ' % of the cores and ' + rp + ' % of the memory free, and runs below normal '
+      + 'priority.'
+      + (SHARE_UI.err[box] ? '<div class="lmsg err">' + esc(SHARE_UI.err[box]) + '</div>' : '')
+      + '<div class="chips">' + btn + '</div></div>';
+  }).join("");
+}
+document.addEventListener("click", async function(ev){
+  const b = ev.target.closest && ev.target.closest("[data-share]");
+  if(!b || SHARE_UI.busy) return;
+  const box = b.getAttribute("data-share");
+  if(SHARE_UI.armed !== box){ SHARE_UI.armed = box; paintShare(); return; }
+  SHARE_UI.busy = true; delete SHARE_UI.err[box]; paintShare();
+  const res = await apiCall("/share", {box: box, action: "off", by: "app"});
+  SHARE_UI.busy = false; SHARE_UI.armed = "";
+  if(res.ok) SHARE_UI.sent[box] = "Given back — its agents come back over the next few minutes.";
+  else SHARE_UI.err[box] = "Not sent: " + res.error;
+  paintShare();
+});
+
 function scheduleSummary(){
   const sch = schedule();
   const blocks = (sch.blocks || []).length;
@@ -18266,6 +18316,7 @@ function paint(stamp){
   document.getElementById("banner").hidden = true;
   paintNoSchedule();
   paintHold();
+  paintShare();
 }
 
 let LAST_SNAPSHOT = null;
