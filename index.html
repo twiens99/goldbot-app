@@ -2266,7 +2266,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261114-004517";
+const APP_BUILD = "20261115-004050";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -6848,19 +6848,11 @@ function mFmt(v, dp){
 function scoreSentinel(k, v){
   return k === "score" && v != null ? OPT_SENTINELS.find(x => Number(v) === x[0]) || null : null;
 }
-/* A bucket test's trade band line: target, edges, and where this run landed --
-   the EA's own edges: under below band low, over above band high. */
-function tradeBandText(v, b){
-  const n = Math.round(Number(v));
-  return `Target ${b.target} · −999 below ${b.lo} or above ${b.hi} · ` +
-    (n < b.lo ? `${b.lo - n} under the floor` : n > b.hi ? `${n - b.hi} over the ceiling`
-      : `in band (${n - b.lo} above the floor, ${b.hi - n} below the ceiling)`);
-}
-
+/* 2026-11-15 -- NO TRADE BAND ON TOTAL TRADES. Trevor: "I don't need the target (not sure why there's a target as we
+   don't have one). The floor or the ceiling." The band a curve carries is the old per-bucket one (e.g. 190 / 271 /
+   814); since 10-31 the floor is a flat 60 trades and nothing aims at a target. */
 function taskMetrics(d){
   const m = d.metrics; if(!m) return "";
-  /* This bucket test's own trade band, off its curve (equity_curves, 09-30). */
-  const tb = (curveFor({files: d.files}, {rel_dir: d.rel_dir}) || {}).band || null;
   const prev = d.metrics_prev || null;
   const have = M_DEFS.filter(x => m[x[1]] != null);
   if(!have.length) return "";
@@ -6936,8 +6928,6 @@ function taskMetrics(d){
            `<span class="vv">${v == null ? "—" : scoreSentinel(k, v)
               ? esc(scoreSentinel(k, v)[1]) : mFmt(v, dp)}</span>${
              word}${chip}</button>` +
-           (k === "trades" && tb && !ses && v != null
-             ? `<div class="mdf">${esc(tradeBandText(v, tb))}</div>` : "") +
            (isOpen ? `<div class="mdf">${esc(M_WHAT[k] || "")}</div>` : "");
   }).join("");
   return `<div class="tsec"><div class="tlab">Test results${
@@ -7072,19 +7062,27 @@ function seriesGraph(labels, series, box, axis){
         '" fill="#C8B78A" font-size="6" text-anchor="end">' + esc(r.label) + '</text>';
     }).join("");
   }
-  /* `axis.divider` (optional): {i, label} -- a dashed vertical line between
-     point i-1 and point i. The metrics graph uses it for the 09-08 switch. */
-  if(axis && axis.divider && n > 1 && axis.divider.i > 0 && axis.divider.i < n){
-    const di = axis.divider.i;
-    const xd = (sgX(di - 1, n, W, padL) + sgX(di, n, W, padL)) / 2;
-    const right = xd > W * 0.62;
+  /* `axis.dividers` (optional): [{i, label}] -- a dashed vertical line between point i-1 and point i, labelled at the
+     top. The metrics graph draws one at each version change (2026-11-15) and at the 09-08 switch. Labels take up to
+     two rows, NEWEST FIRST, so the latest change always has its name; one with no room keeps its line unlabelled.
+     (`axis.divider`, a single one, still reads.) */
+  const divs = axis ? (axis.dividers || (axis.divider ? [axis.divider] : [])) : [];
+  const lefts = [Infinity, Infinity];
+  let dtext = "";      // drawn last, over the lines
+  divs.filter(dv => n > 1 && dv.i > 0 && dv.i < n).sort((a, b) => b.i - a.i).forEach(dv => {
+    const xd = (sgX(dv.i - 1, n, W, padL) + sgX(dv.i, n, W, padL)) / 2;
+    const word = String(dv.label), w = word.length * 3.4 + 2;
+    const right = xd + 2 + w > W - SG_PAD.r, start = right ? xd - 2 - w : xd + 2;
+    const row = lefts.findIndex(l => start + w < l - 2);
     grid += '<line x1="' + xd.toFixed(1) + '" x2="' + xd.toFixed(1) + '" y1="' + SG_PAD.t +
       '" y2="' + (H - SG_PAD.b) + '" stroke="rgba(140,160,172,.6)" stroke-width="0.8" ' +
-      'stroke-dasharray="2 2"></line>' +
-      '<text x="' + (xd + (right ? -2 : 2)).toFixed(1) + '" y="' + (SG_PAD.t + 5) +
-      '" fill="#8CA0AC" font-size="6" text-anchor="' + (right ? "end" : "start") + '">' +
-      esc(axis.divider.label) + '</text>';
-  }
+      'stroke-dasharray="2 2"></line>';
+    if(row < 0) return;
+    lefts[row] = start;
+    dtext += '<text x="' + (xd + (right ? -2 : 2)).toFixed(1) + '" y="' + (SG_PAD.t + 5 + row * 7) +
+      '" fill="#8CA0AC" font-size="6" stroke="' + SG_BG + '" stroke-width="2" paint-order="stroke" ' +
+      'text-anchor="' + (right ? "end" : "start") + '">' + esc(word) + '</text>';
+  });
   const bands = [], lines = [], marks = [];
   series.forEach(se => {
     const sp = se.span;
@@ -7135,7 +7133,7 @@ function seriesGraph(labels, series, box, axis){
     : "";
   return '<svg data-gopen class="vhsvg" viewBox="0 0 ' + W + ' ' + H + '" ' +
     'preserveAspectRatio="none" role="img">' + grid + bands.join("") + lines.join("") +
-    marks.join("") + ends + '</svg>';
+    marks.join("") + dtext + ends + '</svg>';
 }
 
 /* ---------- the variables badge: one graph, several variables ---------- */
@@ -9554,18 +9552,15 @@ function backtestRuns(d){
      run. A run with no slices (before 2026-09-07) is simply not measured. */
   const slicing = !!(SLICE.session || SLICE.slope);
   const own = slicing ? curveSlice(cur) : null;
-  const runs = hist.map(c => ({label: eqWhen(c).slice(5), stamp: c.stamp,
+  const runs = hist.map(c => ({label: eqWhen(c).slice(5), stamp: c.stamp, ver: runVer(c.id),
                                metrics: slicing ? (curveSlice(c) || {}) : c.m}))
     /* The task's own numbers win; a key only the curve has (the same
        extractor, possibly newer) fills in beside them. Sliced: the curve's own
        cut first (the same edges as the history), else the card's. */
-    .concat([{label: "this test", stamp: cur.stamp,
+    .concat([{label: "this test", stamp: cur.stamp, ver: runVer(cur.id),
               metrics: slicing ? (own || ((anySlice(d) || {}).metrics) || {})
                                : Object.assign({}, cur.m || {}, d.metrics || {})}]);
   runs.scope = cur.scope;
-  /* this test's trade band, for Total Trades -- a WHOLE-bucket target, so not
-     drawn against a slice of it */
-  runs.band = slicing ? null : (cur.band || null);
   if(slicing) runs.narrow = sliceName(cur, d);
   return runs;
 }
@@ -9617,6 +9612,22 @@ function preSwitch(stamp){ return !!stamp && String(stamp) < SWEEPS_REALTICK_FRO
 function switchIndex(rounds){
   const i = rounds.findIndex(r => r.stamp && !preSwitch(r.stamp));
   return i > 0 && rounds.slice(0, i).every(r => preSwitch(r.stamp)) ? i : -1;
+}
+/* 2026-11-15 -- THE VERSION LINES. Trevor: "I just want the version vertical lines as to when the version bump
+   happened. Also, where ever it makes sense... Insert those vertical version bump indicators." A run's version is its
+   report tree, the first folder of its curve's id; a line goes in before each run whose version differs from the run
+   before it, named for the version it starts (pgVer's short form, as the Progress tab names them). */
+function runVer(id){
+  const top = String(id || "").split("/")[0];
+  return /^GoldBot_V\d/.test(top) ? top : "";
+}
+function verDividers(rounds){
+  const out = [];
+  for(let i = 1; i < rounds.length; i++){
+    const a = rounds[i - 1].ver, b = rounds[i].ver;
+    if(a && b && a !== b) out.push({i: i, label: pgVer(b) + " →"});
+  }
+  return out;
 }
 /* What a hollow dot is, in the caption: an earlier round of this group, or an
    earlier run of this kind when the history came from CURVES. */
@@ -9753,19 +9764,9 @@ function metricGraph(d, big){
             refs: [{v: 0, label: "first run"}]};
   }else if(series.length === 1){
     const se = series[0], def = defs[se.key] || [null, se.key, se.key, 2, 0];
-    /* TOTAL TRADES carries THIS bucket test's own band (2026-09-30, Trevor:
-       "needs the target trade count for that bucket, and the edges of the trade
-       band"). Every run in a regime has shared one band so far; if a later run's
-       differs, these lines are this test's and the table row says so. */
-    const tbd = rounds.band;
-    const refs = se.key === "trades" && tbd
-      /* Named for what they ARE to the score (Trevor, 2026-09-30: "the lowest and
-         highest number of trades before the score goes to -999"): the EA
-         disqualifies strictly outside these, and its ramp discounts INSIDE. */
-      ? [{v: tbd.lo, label: "floor " + tbd.lo + " · −999 below"},
-         {v: tbd.target, label: "target " + tbd.target},
-         {v: tbd.hi, label: "ceiling " + tbd.hi + " · −999 above"}]
-      : METRIC_REFS[se.key] || [];
+    /* 2026-11-15 -- Total Trades has no band lines any more (Trevor: "I don't need the target ... The floor or the
+       ceiling"); the version lines below say when the rules changed instead. */
+    const refs = METRIC_REFS[se.key] || [];
     const dp = Math.min(def[3], 2);
     const sp = sgSpan(se.vals.filter(v => v != null).concat(refs.map(r => r.v)));
     if(sp) axis = {span: sgPadSpan(sp), fmt: v => mFmt(v, dp), refs: refs};
@@ -9773,11 +9774,16 @@ function metricGraph(d, big){
   series.forEach(se => {
     se.span = axis ? axis.span : sgSpan(se.vals.filter(v => v != null));
   });
-  /* THE 09-08 LINE rides with the axis, or alone when several lines have none. */
+  /* THE VERSION LINES and the 09-08 line ride with the axis, or alone when several lines have none. */
   const sw = switchIndex(rounds);
-  const deco = (axis || sw > 0)
-    ? Object.assign({}, axis || {}, sw > 0 ? {divider: {i: sw, label: "09-08 · real-tick sweeps →"}} : {})
+  const vdivs = verDividers(rounds);
+  const divs = vdivs.concat(sw > 0 ? [{i: sw, label: "09-08 · real-tick sweeps →"}] : []);
+  const deco = (axis || divs.length)
+    ? Object.assign({}, axis || {}, divs.length ? {dividers: divs} : {})
     : null;
+  /* every run on one version: the caption says which, so no line reads as none missing */
+  const vers = rounds.map(r => r.ver).filter(Boolean);
+  const oneVer = vers.length === rounds.length && vers.every(v => v === vers[0]) ? pgVer(vers[0]) : "";
 
   const absent = noSeries.map(k => {
     const def = defs[k] || [null, k, k, 2, 0];
@@ -9855,12 +9861,7 @@ function metricGraph(d, big){
         'Heights are comparable between lines here.'
       : axis
         ? '<b>Real scale</b>: the axis is ' + esc((defs[series[0].key] || [,,series[0].key])[2]) +
-          ' itself' + (series[0].key === "trades" && rounds.band
-            ? '. The dashed lines are this bucket’s trade band: under the floor (' +
-              rounds.band.lo + ') or over the ceiling (' + rounds.band.hi + ') the EA scores a ' +
-              'pass −999; between them it scores normally, discounted a little near ' +
-              'either edge. Target ' + rounds.band.target + ' is the middle'
-            : (axis.refs || []).length
+          ' itself' + ((axis.refs || []).length
             ? ', with ' + esc(axis.refs.map(r => r.label).join(", ")) + ' always on it'
             : "") +
           '. % change shows the same line as per cent moved from its first run.'
@@ -9876,6 +9877,8 @@ function metricGraph(d, big){
     (series.some(se => se.omitted)
       ? ' Final score leaves out runs that returned −999 (disqualified) or ' +
         '−998 (early-aborted): those are the EA’s markers, not scores.' : "") +
+    (vdivs.length ? ' Each upright dashed line is a version change: the runs right of it ran on the version it ' +
+                    'names.' : oneVer ? ' Every run here ran on ' + esc(oneVer) + ', so no version line.' : "") +
     (sw > 0 ? ' Dashed line: 09-08, when the sweeps switched to real ticks — ' +
               'runs left of it tested settings partly picked before that. Every test ' +
               'here ran on real ticks.' : "") +
@@ -22110,9 +22113,28 @@ function ldgStrip(b){
             `${esc(pgDate(t[0]))} · ${esc(lvSigned(r, 2))}R · ${esc(lvMoney(t[2]))} · ${esc(pgVer(t[3]))}</title></rect>`;
   });
   const lab = (x, y, s, a) => `<text x="${x}" y="${y}" fill="#5F727E" font-size="7.5" text-anchor="${a}">${esc(s)}</text>`;
+  /* 2026-11-15 -- A VERSION LINE between two bars whose trades ran on different versions, named for the newer one
+     (Trevor: "where ever it makes sense... Insert those vertical version bump indicators"). Labels sit below the top
+     line's "bars to" note, newest first in up to two rows; one with no room keeps its line unlabelled. The lines go
+     under the bars, the labels over them with a dark edge so a bar never hides one. */
+  let vl = "", vt = "";
+  const lefts = [Infinity, Infinity];
+  tr.map((t, i) => i && t[3] && tr[i - 1][3] && t[3] !== tr[i - 1][3] ? i : -1).filter(i => i > 0).reverse()
+    .forEach(i => {
+      const xv = L + i * step, word = pgVer(tr[i][3]), w = word.length * 4.3 + 2;
+      const right = xv + 2 + w > W - R, start = right ? xv - 2 - w : xv + 2;
+      const row = lefts.findIndex(l => start + w < l - 2);
+      vl += `<line x1="${xv.toFixed(1)}" x2="${xv.toFixed(1)}" y1="${T}" y2="${H - B}" stroke="rgba(140,160,172,.6)" ` +
+            `stroke-width="0.8" stroke-dasharray="2 2"></line>`;
+      if(row < 0) return;
+      lefts[row] = start;
+      vt += `<text x="${(right ? xv - 2 : xv + 2).toFixed(1)}" y="${T + 7 + row * 8}" fill="#8CA0AC" font-size="7" ` +
+            `stroke="#0A1016" stroke-width="2.2" paint-order="stroke" text-anchor="${right ? "end" : "start"}">${
+              esc(word)}</text>`;
+    });
   return `<svg class="ldg-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Each live trade's R, oldest first">` +
     `<line x1="${L}" x2="${W - R}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#8CA0AC" stroke-width="0.6" ` +
-    `opacity=".6"></line>` + bars + lab(W - R, T - 2, "bars to ±" + m.toFixed(1) + "R", "end") +
+    `opacity=".6"></line>` + vl + bars + vt + lab(W - R, T - 2, "bars to ±" + m.toFixed(1) + "R", "end") +
     lab(L, H - 2, pgDate(tr[0][0]), "start") + (tr.length > 1 ? lab(W - R, H - 2, pgDate(tr[tr.length - 1][0]), "end") : "") +
     `</svg>`;
 }
@@ -22139,7 +22161,7 @@ function ldgRow(b, S){
     nums + `<span class="sub">Live</span><span>Net</span><b class="${lvTone(L.net)}">${lvMoney(L.net)}</b>` +
     `<span>R, all trades</span><b class="${lvTone(L.r_sum)}">${L.r_sum != null ? lvSigned(L.r_sum, 2) + "R" : "—"}</b>` +
     `</div>` + ldgStrip(b) + `<div class="vhcap">Each bar is one live trade, oldest left: its R, the price move over ` +
-    `its first stop. The backtest numbers are the means over this bucket's trades of what was in force at each ` +
+    `its first stop. A dashed line is a version change, named for the version the trades right of it ran on. The backtest numbers are the means over this bucket's trades of what was in force at each ` +
     `entry; a range shows when the gate PF changed between trades. Month net is the backtest's, at its fixed 0.01 ` +
     `lot.</div></div>`;
 }
