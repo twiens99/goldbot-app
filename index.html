@@ -2274,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261117-033149";
+const APP_BUILD = "20261117-092436";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2701,11 +2701,27 @@ function bktEl(id, trail, filterId, regime){
    so a split renames itself. One bucket in a regime, a split parent, or an id the tree does not hold: the number,
    as before. */
 let BKT_NAMES = {};
+/* 2026-11-17 -- THE COUNTER BUCKETS. A BULL leaf wholly below the regime line trades longs while the regime is BEAR,
+   a BEAR leaf wholly above it shorts while BULL ("Bull Counter" / "Bear Counter"). They are named apart and left out
+   of the High / Mid / Low tiers, so adding them renames nobody. An open end travels as null. */
+/* 2026-11-17 -- A LEAF'S KIND comes with the snapshot (bucket_kinds: "trend", "counter", ...): a kind other than
+   trend is named "<Regime> <its label>" apart from the tiers. A future kind (a ranging bucket, a scalping bucket) adds
+   its label here and nothing else; bktIsCounter is the fallback for a snapshot from before the kind field. */
+const BKT_KIND_LABEL = {counter: "Counter"};
+const bktKindOf = b => (b.kind && b.kind !== "trend") ? b.kind : (bktIsCounter(b) ? "counter" : "trend");
+const bktIsCounter = b => {
+  const r = String(b.regime || "").toUpperCase();
+  if(r === "BULL") return b.slope_max != null && Number(b.slope_max) <= 0;
+  if(r === "BEAR") return b.slope_min != null && Number(b.slope_min) >= 0;
+  return false;
+};
 function bktNamesFrom(list){
-  const by = {}, out = {};
+  const by = {}, out = {}, ctr = [];
   (list || []).forEach(b => {
     const r = String(b.regime || "").toUpperCase(), id = Number(b.bucket_id);
     if(b.leaf === false || (r !== "BULL" && r !== "BEAR") || b.bucket_id == null || !isFinite(id)) return;
+    const kind = bktKindOf(b);
+    if(kind !== "trend"){ ctr.push([r, id, BKT_KIND_LABEL[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1))]); return; }
     (by[r] = by[r] || []).push(id);
   });
   Object.keys(by).forEach(r => {
@@ -2718,6 +2734,7 @@ function bktNamesFrom(list){
       : ids.map((_, i) => i === 0 ? "Low" : i === n - 1 ? "High" : "Mid " + i);
     ids.forEach((id, i) => { out[r + "|" + id] = {tier: tiers[i], rank: n - 1 - i}; });   // rank 0 = High
   });
+  ctr.forEach(([r, id, label]) => { out[r + "|" + id] = {tier: label, rank: (by[r] || []).length}; });   // after Low
   BKT_NAMES = out;
 }
 const bktKey = (regime, id) => String(regime || "").toUpperCase() + "|" + id;
