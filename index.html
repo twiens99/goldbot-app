@@ -2274,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261115-165457";
+const APP_BUILD = "20261117-033149";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -16596,8 +16596,9 @@ const LV_SWHAT = {
   rvol: "This minute's ticks against the recent average.",
   sess: "The session now is one this bucket trades in.",
   m5macd: "The M5 MACD moving the trade's way.",
-  stale: "Hours since the trend last made a new extreme (a new high in BULL, a new low in BEAR). Past the bucket's " +
-         "limit it blocks new entries until the next new extreme.",
+  stale: "Market hours (the weekend and the daily break don't count) since this regime's bucket slope was last at " +
+         "its steepest. A steeper slope starts it again at 0, and so does the slope staying out of the regime for " +
+         "the bucket's reset hours (12 to start). Past the bucket's limit it blocks new entries.",
   str: "How far price has already run from its recent H1 extreme, in percent. Past the bucket's limit it blocks an " +
        "entry that would chase a move already made.",
   young: "No entry while the regime is still young and its slope still close to the line it crossed.",
