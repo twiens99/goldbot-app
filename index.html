@@ -2274,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261118-010928";
+const APP_BUILD = "20261118-014621";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -16453,6 +16453,7 @@ function lvEntryRow(mark, label, val, need, note, skip, gate){
 function lvPaintEntry(){
   const el = document.getElementById("lvent");
   if(!el) return;
+  try{ lvStaleLine(); }catch(err){ /* the card still paints */ }   // 11-18 -- a new reading moves the reset line
   const d = LV.data, ea = d && d.ea, e = ea && ea.entry;
   const head = (pill, cls) => `<div class="lv-tinhead"><span class="lv-k">How close to a trade</span>` +
     (e && e.candidate ? lvRegTag(e.candidate) : "") +
@@ -16669,6 +16670,59 @@ function lvStackNeed(x){
   if(x.max != null) return `needs ${lvEntryNum(x.min, 2)} to ${lvEntryNum(x.max, 2)}`;
   return "needs " + lvEntryNum(x.min, n === "rvol" || n === "sqz" || n === "sqzbb" ? 2 : 3);
 }
+/* 2026-11-18 -- THE STALE CLOCK'S RESET LEVEL. Trevor: "with the stale clock gate. I want to know what the number is that
+   we need to hit that will reset it. Display this with the description. And when I click the sliding on button. I want a
+   horizontal line at that point on the rolling slope line graph. Kinda like you have mid low and high". The EA's clock
+   (StaleClockFeedSide) restarts at 0 whenever the rolling slope steps STEEPER than the leg's mark -- the steepest step
+   since the clock last restarted: a new high for BULL, a new low for BEAR (and the mark is dropped after the slope stays
+   out of the regime for the bucket's reset hours). The EA does not send the mark; it is the slope at the step the clock
+   restarted on: the clock's hours back along the EA's own logged steps (/slopes), the steepest step since by definition.
+   {regime, mark, at, approx} -- mark null while the clock is at 0 -- or null (no clock in this regime, or no slope log). */
+function lvStaleMark(regime, hours){
+  const R = String(regime || "").toUpperCase();
+  if(R !== "BULL" && R !== "BEAR") return null;
+  const r = lvRolling(lvAxis()), step = r ? r.step_min * 60 : 600;
+  const pts = lvEaSteps(step).pts;
+  if(!pts.length) return null;
+  const h = Number(hours);
+  if(!(h > 0)) return {regime: R, mark: null};
+  const back = Math.round(h * 3600 / step), from = pts.length - 1 - back;
+  let best = null;
+  for(let i = Math.max(0, from); i < pts.length; i++){
+    const v = Number(pts[i][1]);
+    if(best == null || (R === "BULL" ? v > best[1] : v < best[1])) best = [pts[i][0], v];
+  }
+  return best ? {regime: R, mark: best[1], at: best[0], approx: from < 0} : null;
+}
+/* The stack card's own stale reading (its candidate regime, the EA's hours), as a mark. */
+function lvStaleNow(){
+  const e = LV.data && LV.data.ea && LV.data.ea.entry, st = e && e.stack;
+  const g = st && Array.isArray(st.gates) ? st.gates.find(x => x.name === "stale") : null;
+  return g ? lvStaleMark(e.candidate, g.value) : null;
+}
+/* The sentence under the stale gate's description. */
+function lvStaleText(regime, hours){
+  const m = lvStaleMark(regime, hours);
+  if(!m) return "";
+  if(m.mark == null) return " <b>The clock is at 0:</b> no mark yet in this regime -- its next step sets one.";
+  const bull = m.regime === "BULL", now = lvNowSrv();
+  const ago = now != null && m.at != null ? `, set ${lvAgo(Math.max(0, now - m.at))}` : "";
+  return ` <b>Resets at a rolling slope ${bull ? "above" : "below"} ${Number(m.mark).toFixed(4)}</b>: a new ` +
+         `${bull ? "high" : "low"} past its steepest step${ago}` +
+         (m.approx ? " (the slope log starts after it, so at least this far)" : "") + ".";
+}
+/* Its line on the rolling slope pane while the stale gate's chart switch is on (like the bucket edges). */
+function lvStaleLine(){
+  if(!LV.slope) return;
+  if(LV.staleLine){ try{ LV.slope.removePriceLine(LV.staleLine); }catch(e){} }
+  LV.staleLine = null; LV.staleAt = null;
+  if(!LV.gateOn.includes("s_stale")) return;
+  const m = lvStaleNow();
+  if(!m || m.mark == null) return;
+  LV.staleAt = m.mark;
+  LV.staleLine = LV.slope.createPriceLine({price: m.mark, color: LV_C.cap, lineWidth: 1,
+    lineStyle: LV.LC.LineStyle.Dotted, axisLabelVisible: true, title: "Stale reset"});
+}
 function lvStackCard(e, head, asOf, offSay){
   const s = e.stack, trig = Number(s.trig), t = LV_STRIG[trig] || "?";
   const gs = Array.isArray(s.gates) ? s.gates : [];
@@ -16728,7 +16782,8 @@ function lvStackCard(e, head, asOf, offSay){
   gs.forEach(x => {
     const off = lvStackOff(x), pass = lvStackPass(x);
     rows += lvEntryRow(off ? null : pass, esc(label(x.name)), lvStackVal(x.name, x.value), lvStackNeed(x),
-                       (LV_SWHAT[x.name] || "") + (off ? " Off in this bucket: it passes everything." : ""), off,
+                       (LV_SWHAT[x.name] || "") + (off ? " Off in this bucket: it passes everything." : "") +
+                       (x.name === "stale" ? lvStaleText(e.candidate, x.value) : ""), off,   // 11-18 -- its reset level
                        "s_" + x.name);
   });
   return head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot + `<div class="lv-esteps">${rows}</div>`;
@@ -17188,7 +17243,9 @@ function lvEnsureChart(){
           if(!a || !r) return r;
           const edges = lvBucketEdges(a).map(e => e.at).concat([a.bear_max, a.bull_min])
             .filter((x, i, s) => s.indexOf(x) === i).sort((x, y) => x - y);
-          const vmin = r.priceRange.minValue, vmax = r.priceRange.maxValue;
+          let vmin = r.priceRange.minValue, vmax = r.priceRange.maxValue;
+          /* 2026-11-18 -- the stale clock's reset line, while shown, stays on the pane */
+          if(LV.staleAt != null && isFinite(LV.staleAt)){ vmin = Math.min(vmin, LV.staleAt); vmax = Math.max(vmax, LV.staleAt); }
           const below = edges.filter(e => e <= vmin), above = edges.filter(e => e >= vmax);
           let lo = below.length ? below[below.length - 1] : null, hi = above.length ? above[0] : null;
           const span = Math.max(vmax - vmin, 0.002);
@@ -17220,6 +17277,7 @@ function lvDestroyChart(){
   LV.tser = {}; LV.gser = {}; LV.trendSer = {};
   LV.slopeChart = LV.macdChart = LV.slope = LV.slopeNow = LV.macdH = LV.macdS = null;
   LV.slopeLines = []; LV.studyAxis = "";
+  LV.staleLine = null; LV.staleAt = null;
   LV.lines = []; LV.sig = "";
 }
 function lvMakeSeries(){
@@ -17753,6 +17811,7 @@ function lvStudiesSet(){
     LV.ma.setData(st.ma ? M : []);
   }
   lvSlopeCutoffs(st.axis);
+  lvStaleLine();                  // 11-18 -- the stale clock's reset level, while its switch is on
   lvTrendSet();
   lvPaneLabels(null);
   const r = LV.chart && LV.chart.timeScale().getVisibleLogicalRange();
@@ -18281,6 +18340,7 @@ document.addEventListener("click", e => {
     LV.gateOn = on ? LV.gateOn.concat([k]) : LV.gateOn.filter(x => x !== k);
     try{ localStorage.setItem("gb.live.gates", JSON.stringify(LV.gateOn)); }catch(err){ /* this visit only */ }
     lvPaintEntry();
+    if(k === "s_stale") lvStaleLine();          // 11-18 -- and its reset line on the slope pane
     if(on) lvMaybeGates(true); else lvGatesDraw();
     return;
   }
