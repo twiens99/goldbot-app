@@ -2274,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261117-092436";
+const APP_BUILD = "20261118-010928";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5266,7 +5266,9 @@ function testRow(c, open, attr, more, base){
                     : "background:transparent;border:0;";
   return `<button type="button" class="optr ro" style="${TEST_GRID};width:100%;${look}` +
     `color:inherit;font:inherit;font-size:14px;text-align:right;cursor:pointer" ${attr}="${esc(c.id)}">` +
-    `<span style="text-align:left"><span style="white-space:nowrap">${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}</span>` +
+    // 2026-11-18 -- a long name (Bull / Bear Counter) wraps to two lines instead of running into the PF column
+    `<span style="text-align:left"><span style="${String(name).length > 10 ? "" : "white-space:nowrap"}">` +
+    `${isOpen ? "\u25be" : "\u25b8"} ${esc(name)}</span>` +
     `<br><span class="tnote">${subLine(x.when != null ? x.when : esc(eqWhen(c)))}</span></span>` +
     `<span>${num(m.pf != null ? m.pf : c.pf, v => v.toFixed(2))}${x.pf || ""}</span>` +
     `<span>${num(m.trades != null ? m.trades : c.trades, v => v.toLocaleString("en-US"))}</span>` +
@@ -5384,7 +5386,10 @@ function compareSection(){
   const rows = fullThenBuckets(kinds, bktFlow).map(({k}, i) => {
     const b = base[k], c = now[k];
     const gap = i ? `<div style="height:8px"></div>` : "";
-    if(c && (!b || b.id === c.id)) return gap + testRow(c, CUROPEN, "data-curopen", more);
+    // 2026-11-18 -- A BUCKET WITH NO ROUND YET GETS BOTH ROWS too (Trevor, the Bear Counter: "the current tab in the
+    // results needs its own baseline and current blocks inserted and updated"): its gold baseline, and the current row
+    // that moves at its first round. Only a bucket with no baseline at all shows one row.
+    if(c && !b) return gap + testRow(c, CUROPEN, "data-curopen", more);
     return gap + (b ? testRow(b, BASEOPEN, "data-baseopen", baseMore, true) : "") +
       (c ? testRow(c, CUROPEN, "data-curopen", more) : "");
   }).join("");
