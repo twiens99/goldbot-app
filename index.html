@@ -1636,6 +1636,12 @@ nav button:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
   padding:2px 6px;border-radius:5px;background:var(--card-2);color:var(--text);white-space:nowrap;
 }
 .lv-dir .ar{color:var(--gold);}
+/* 2026-11-18 -- the Gates card's bucket chip (trend / counter) */
+.lv-bkt{font-size:.72rem;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--card-2);color:var(--text);
+  white-space:nowrap;border:1px solid var(--line);font-family:inherit;line-height:1.3;}
+button.lv-bkt{cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+button.lv-bkt .sw{color:var(--gold);font-size:.7rem;}
+button.lv-bkt.ctr{border-color:var(--gold);}
 
 /* trading in */
 .lv-tin{padding:12px 13px 6px;gap:8px;}
@@ -2274,7 +2280,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261118-035254";
+const APP_BUILD = "20261118-090921";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14463,6 +14469,9 @@ let LV = {
   lineOff: (() => { try{ const v = JSON.parse(localStorage.getItem("gb.live.lineoff") || "[]");
                          return Array.isArray(v) ? v : []; }catch(e){ return []; } })(),
   armGates: null, armGatesAt: 0, armBusy: false,
+  /* 2026-11-18 -- the Gates card's bucket chip: "trend" (the regime's own bucket) or "counter" (the other side's
+     counter bucket at this slope). Not kept: the card opens on the trend bucket. */
+  gateView: "trend",
   tf: "M5", style: "candles", sel: [], hf: "all",   // sel: the trades toggled on (lvShown)
   built: false, editing: false, formErr: "", busy: false, timer: null, runsBusy: false,
   liveAt: 0,          // Date.now() of the last /live (the joins); /now moves `at`
@@ -16482,11 +16491,17 @@ function lvPaintEntry(){
   if(!el) return;
   try{ lvStaleLine(); }catch(err){ /* the card still paints */ }   // 11-18 -- a new reading moves the reset line
   const d = LV.data, ea = d && d.ea, e = ea && ea.entry;
-  const head = (pill, cls) => `<div class="lv-tinhead"><span class="lv-k">How close to a trade</span>` +
-    (e && e.candidate ? lvRegTag(e.candidate) : "") +
+  /* 2026-11-18 -- Trevor: "The Header says 'How to close a trade' Lets change that to Gates. Then I want the chips of
+     the current Regime, then Bucket. That Bucket chip needs to be selectable between the current Trend Bucket, and the
+     Counter Bucket. The Sell chip would then change to Buy." (lvGateBuckets; a tap on the chip swaps LV.gateView) */
+  const bk = d && e ? lvGateBuckets(d, e) : null;
+  const ctr = !!(bk && bk.counter && LV.gateView === "counter");
+  const dir = ctr ? bk.counter.dir : e && e.dir;
+  const head = (pill, cls) => `<div class="lv-tinhead"><span class="lv-k">Gates</span>` +
+    (e && e.candidate ? lvRegTag(e.candidate) : "") + lvBucketChip(bk, ctr) +
     /* No side chip in a trade: it would read as the open trade's side. */
-    (e && e.dir && e.dir !== "NONE" && e.off !== "in_trade" ? `<span class="lv-dir"><span class="ar">${e.dir === "LONG" ? "▲" : "▼"}</span> ` +
-                                      `${e.dir === "LONG" ? "BUY" : "SELL"}</span>` : "") +
+    (dir && dir !== "NONE" && e.off !== "in_trade" ? `<span class="lv-dir"><span class="ar">${dir === "LONG" ? "▲" : "▼"}</span> ` +
+                                      `${dir === "LONG" ? "BUY" : "SELL"}</span>` : "") +
     (pill ? `<span class="lv-pill ${cls}">${pill}</span>` : "") + `</div>`;
   if(!d){ el.innerHTML = head("", "") + '<div class="lv-line">Waiting for the VPS.</div>'; return; }
   if(!e){
@@ -16516,6 +16531,11 @@ function lvPaintEntry(){
   }
   /* 2026-11-03 (feed 1.8) -- V3.3: where this bucket's trigger is A, B or C the gate stack decides the entry, so the
      card shows its gates; trigger 0 (V3.2's entry) keeps the card below. */
+  /* 2026-11-18 -- the counter bucket's gates while its chip is on ("gate" is the trend bucket's own arm) */
+  if(ctr){
+    el.innerHTML = lvCounterCard(e, bk.counter, head, asOf, off === "gate" ? "" : (OFF[off] || ""));
+    return;
+  }
   if(e.stack && Number(e.stack.trig) >= 1){
     el.innerHTML = lvStackCard(e, head, asOf, OFF[off] || (off === "gate" ? `${esc(e.candidate)} isn't armed, so no ` +
                                `trade opens whatever the gates say. These are the gates it would trade on.` : ""));
@@ -16756,7 +16776,7 @@ function lvStaleLine(){
   LV.staleLine = LV.slope.createPriceLine({price: m.mark, color: LV_C.cap, lineWidth: 1,
     lineStyle: LV.LC.LineStyle.Dotted, axisLabelVisible: true, title: "Stale reset"});
 }
-function lvStackCard(e, head, asOf, offSay){
+function lvStackCard(e, head, asOf, offSay, ctr){   // 11-18: ctr = the counter bucket's reading (lvCounterCard)
   const s = e.stack, trig = Number(s.trig), t = LV_STRIG[trig] || "?";
   const gs = Array.isArray(s.gates) ? s.gates : [];
   const label = n => (LV_SGATES.find(x => x[0] === n) || [n, n])[1];
@@ -16821,9 +16841,60 @@ function lvStackCard(e, head, asOf, offSay){
     rows += lvEntryRow(off ? null : pass, esc(label(x.name)), lvStackVal(x.name, x.value), lvStackNeed(x),
                        (LV_SWHAT[x.name] || "") + (off ? " Off in this bucket: it passes everything." : "") +
                        (x.name === "stale" ? lvStaleText(e.candidate, x.value) : ""), off,   // 11-18 -- its reset level
-                       "s_" + x.name);
+                       ctr ? "" : "s_" + x.name);    // 11-18 -- a counter gate has no strip: /gates is the trend's
   });
   return head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot + `<div class="lv-esteps">${rows}</div>`;
+}
+
+/* 2026-11-18 -- THE GATES CARD'S TWO BUCKETS. The trend bucket is the one the EA trades in now (/live's trading_in); the
+   counter bucket is the OTHER regime's leaf at this slope -- a BULL leaf wholly below the line (longs while BEAR), a
+   BEAR leaf wholly above it (shorts while BULL) -- from /live's dial list, with its armed flag. {trend, counter|null},
+   or null outside BULL / BEAR. */
+function lvGateBuckets(d, e){
+  const R = String((e && e.candidate) || "").toUpperCase();
+  if(R !== "BULL" && R !== "BEAR") return null;
+  const title = r => r.charAt(0) + r.slice(1).toLowerCase();
+  const tin = d.trading_in, gs = Array.isArray(d.gates) ? d.gates : [];
+  const tid = tin && String(tin.regime || "").toUpperCase() === R && tin.bucket != null ? Number(tin.bucket) : null;
+  const trend = {regime: R, id: tid, dir: e.dir && e.dir !== "NONE" ? e.dir : (R === "BULL" ? "LONG" : "SHORT"),
+                 name: tid != null ? bktName(R, tid) : title(R)};
+  const v = tin && tin.slope != null ? Number(tin.slope)
+          : (d.ea && d.ea.bucket_d1_slope != null ? Number(d.ea.bucket_d1_slope) : NaN);
+  const C = R === "BULL" ? "BEAR" : "BULL";
+  const g = !isFinite(v) ? null : gs.find(x => String(x.regime || "").toUpperCase() === C && x.bucket != null
+    && (C === "BULL" ? x.slope_max != null && Number(x.slope_max) <= 0 : x.slope_min != null && Number(x.slope_min) >= 0)
+    && (x.slope_min == null || v >= Number(x.slope_min)) && (x.slope_max == null || v < Number(x.slope_max)));
+  let counter = null;
+  if(g){
+    const id = Number(g.bucket), n = bktName(C, id);
+    counter = {regime: C, id, dir: C === "BULL" ? "LONG" : "SHORT", armed: g.armed === true,
+               name: /\d$/.test(n) ? title(C) + " Counter" : n};
+  }
+  return {trend, counter};
+}
+/* The bucket chip: the shown bucket's name -- a button that swaps to the other one while a counter bucket covers this
+   slope. */
+function lvBucketChip(bk, ctr){
+  if(!bk) return "";
+  const b = ctr ? bk.counter : bk.trend;
+  if(!bk.counter) return b.id != null ? `<span class="lv-bkt">${esc(b.name)}</span>` : "";
+  const other = ctr ? bk.trend : bk.counter;
+  return `<button type="button" class="lv-bkt${ctr ? " ctr" : ""}" data-lvgview="1" ` +
+         `aria-label="${esc(b.name)}: show ${esc(other.name)}'s gates">${esc(b.name)}<span class="sw">⇄</span></button>`;
+}
+/* 2026-11-18 -- THE COUNTER BUCKET'S GATES. The EA's counter pass reads the other side's bucket every tick
+   (CounterPass); the heartbeat sends that reading as entry.counter (the EA's CounterReadout, feed 1.15). A counter
+   bucket trades on triggers B to G only, and only while it is armed on the VPS. */
+function lvCounterCard(e, c, head, asOf, offSay){
+  const cs = e.counter;
+  if(!cs || !Array.isArray(cs.gates) || !cs.gates.length)
+    return head("", "") + `<div class="lv-line">The EA on the VPS doesn't send ${esc(c.name)}'s gates yet. They show ` +
+      `here once the VPS runs the next EA update.${asOf}</div>`;
+  const say = offSay || (!c.armed ? `${esc(c.name)} is held on the VPS, so no trade opens whatever its gates say. ` +
+                                    "These are the gates it would trade on."
+                       : Number(cs.trig) < 2 ? `${esc(c.name)} is on trigger A, which a counter bucket doesn't trade on.`
+                       : "");
+  return lvStackCard({candidate: c.regime, dir: c.dir, stack: cs, arm: {}}, head, asOf, say, true);
 }
 
 function lvPaintHead(){
@@ -18400,6 +18471,13 @@ document.addEventListener("click", e => {
     lvPaintControls();
     lvTrendSet();
     lvMaybeTrendBars().then(got => { if(got) lvTrendSet(); });
+    return;
+  }
+  /* 2026-11-18 -- the Gates card's bucket chip: the trend bucket's gates or the counter bucket's */
+  const gvc = e.target.closest("[data-lvgview]");
+  if(gvc){
+    LV.gateView = LV.gateView === "counter" ? "trend" : "counter";
+    lvPaintEntry();
     return;
   }
   /* 2026-11-18 -- a line chip: the shown trade's stop, give-back cap or take profit on or off, then reframe */
