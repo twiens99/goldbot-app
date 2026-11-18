@@ -2274,7 +2274,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261118-014621";
+const APP_BUILD = "20261118-025857";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -5093,7 +5093,8 @@ function renderResultsList(){
    last round of this version swept says what that round did: "set by round 117 (was off)" (it changed it) or "round
    117 left it off" (it didn't); the round opens its job. Leaf buckets only (a split parent trades nothing), narrowed by
    the regime / bucket chips like the list. An older publisher sends no gates: the section stays away. */
-const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C", 4: "Trigger D"};
+const GATE_TRIG = {0: "V3.2 entry", 1: "Trigger A", 2: "Trigger B", 3: "Trigger C", 4: "Trigger D", 5: "Trigger E",
+                   6: "Trigger F", 7: "Trigger G"};
 /* 2026-11-05 -- WHAT EACH TRIGGER DOES, under the bucket's name. Trevor: "with the gates, I need some more info about
    the trigger... Not sure which trigger is C vs A." The Live card's own words (lvPaintEntry), so the two never
    disagree. */
@@ -5106,7 +5107,15 @@ const GATE_TRIG_SAY = {
   3: "C: arms the moment every gate agrees (once per stretch), then trades on the next 1-minute EMA cross the " +
      "trade's way.",
   4: "D: arms the moment every gate agrees, then trades on the next 1-minute EMA cross the trade's way whatever the " +
-     "gates read then; it disarms on a bucket or regime change, at its wait limit, or when 2 gates fail at once."};
+     "gates read then; it disarms on a bucket or regime change, at its wait limit, or when 2 gates fail at once.",
+  /* 2026-11-18 -- e, f and g ride d's arm: armed, dropped and timed out the same way; only the fire differs */
+  5: "E: arms like D, then trades when price breaks the high (a buy) or the low (a sell) of the last 12 closed " +
+     "5-minute bars; it disarms like D.",
+  6: "F: arms like D, then waits for price to touch the 15-minute EMA 9 and trades on the first 1-minute close back " +
+     "the trade's way; it disarms like D.",
+  7: "G: D with a run. It arms like D and trades on D's 1-minute EMA cross -- or sooner, when a 1-minute bar closes " +
+     "a set number of 15-minute ATRs (1 today) past the price it armed at, the trade's way, with the M1 gate still " +
+     "passing; it disarms like D."};
 /* 2026-11-06 (V3.4.0, audit #7b) -- THE SWITCHES BLOCK. Trevor: "I'd rather build a section in the app that tells
    me what has recently switched on or off and when" -> "Yup, add that". The publisher's switches (app_snapshot.
    collect_switches: the one switch log, the last 30 days, newest first -- checkpoint answers, a round's gate or feature
@@ -16627,7 +16636,13 @@ const LV_SWHAT = {
   young: "No entry while the regime is still young and its slope still close to the line it crossed.",
   bexit: "No entry soon after the slope left the steeper bucket next to this one, once it is well past that " +
          "bucket's edge."};
-const LV_STRIG = {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F"};   // 11-07: + E / F
+const LV_STRIG = {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F", 7: "G"};   // 11-07: + E / F; 11-18: + G
+/* 2026-11-18 -- what an armed d-family trigger (d, e, f, g) waits for, for the card's line */
+const LV_SFIRE = {4: "it trades on the next 1-minute EMA cross the trade's way",
+  5: "it trades when price breaks the high (a buy) or the low (a sell) of the last 12 closed 5-minute bars",
+  6: "it trades on the first 1-minute close back the trade's way after price touches the 15-minute EMA 9",
+  7: "it trades on the next 1-minute EMA cross the trade's way, or on a 1-minute close a run of 15-minute ATRs " +
+     "past where it armed"};
 /* 2026-11-04 -- the yes / no gates (+1 passes, -1 blocks; a minimum below zero is off), and the two that read on their
    own scale: the stale clock in hours and how far price ran in percent, each held under a ceiling. */
 const LV_SSWITCH = ["macd", "sess", "m5macd", "young", "bexit"];
@@ -16733,9 +16748,9 @@ function lvStackCard(e, head, asOf, offSay){
   const all = on.length > 0 && ok.length === on.length;
   let pill, cls, say;
   if(offSay){ pill = "Off"; cls = "off"; say = offSay; }
-  else if(trig === 4 && cArmed){
+  else if(LV_SFIRE[trig] && cArmed){
     pill = "Armed"; cls = "on";                         // 2026-11-06 (V3.4.0, #6b) -- D: the gates do not decide now
-    say = "Trigger D is armed: it trades on the next 1-minute EMA cross the trade's way whatever the gates read now; " +
+    say = `Trigger ${t} is armed: ${LV_SFIRE[trig]} whatever the gates read now; ` +      // 11-18: + E / F / G
           "it disarms on a bucket or regime change, at its wait limit, or when 2 gates fail at once.";
   }
   else if(!all){
@@ -16750,9 +16765,9 @@ function lvStackCard(e, head, asOf, offSay){
     pill = "Ready"; cls = "on";
     say = "Every gate agrees. Trigger B trades the moment they do, once per stretch of all-green: after a trade it " +
           "waits for a gate to fail and come back.";
-  } else if(trig === 4){
+  } else if(LV_SFIRE[trig]){
     pill = "Ready"; cls = "on";
-    say = "Every gate agrees: trigger D arms and trades on the next 1-minute EMA cross the trade's way.";
+    say = `Every gate agrees: trigger ${t} arms and ${LV_SFIRE[trig].replace(/^it /, "")}.`;   // 11-18: + E / F / G
   } else if(cArmed){
     pill = "Armed"; cls = "on";
     say = "Every gate agrees and trigger C is armed: it trades on the next 1-minute EMA cross the trade's way.";
@@ -16769,6 +16784,10 @@ function lvStackCard(e, head, asOf, offSay){
     `<i class="${all ? "ok" : ""}" style="width:${(pct * 80).toFixed(1)}%"></i><b></b></div>`;
   const turn = e.dir === "SHORT" ? "down" : "up";
   let rows = "";
+  /* 2026-11-18 -- Trevor: "Need a trigger explanation there". The trigger decides WHEN agreement becomes a trade. */
+  if(GATE_TRIG_SAY[trig])
+    rows += lvEntryRow(null, "Trigger", `<b>${t}</b>`, "",
+      "When every gate agrees, the trigger decides when that becomes a trade. Trigger " + GATE_TRIG_SAY[trig], false, "");
   if(trig === 1)
     rows += lvEntryRow(v32armed ? true : false, "Armed", v32armed ? "yes" : "no",
       a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} s` : "",
