@@ -2280,7 +2280,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261118-090921";
+const APP_BUILD = "20261118-182201";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2708,8 +2708,9 @@ function bktEl(id, trail, filterId, regime){
    as before. */
 let BKT_NAMES = {};
 /* 2026-11-17 -- THE COUNTER BUCKETS. A BULL leaf wholly below the regime line trades longs while the regime is BEAR,
-   a BEAR leaf wholly above it shorts while BULL ("Bull Counter" / "Bear Counter"). They are named apart and left out
-   of the High / Mid / Low tiers, so adding them renames nobody. An open end travels as null. */
+   a BEAR leaf wholly above it shorts while BULL. They are named apart and left out of the High / Mid / Low tiers, so
+   adding them renames nobody. An open end travels as null. 11-18: each is named by the regime it trades IN -- the
+   BULL leaf (longs while BEAR) is the "Bear Counter", the BEAR leaf (shorts while BULL) the "Bull Counter". */
 /* 2026-11-17 -- A LEAF'S KIND comes with the snapshot (bucket_kinds: "trend", "counter", ...): a kind other than
    trend is named "<Regime> <its label>" apart from the tiers. A future kind (a ranging bucket, a scalping bucket) adds
    its label here and nothing else; bktIsCounter is the fallback for a snapshot from before the kind field. */
@@ -2727,7 +2728,7 @@ function bktNamesFrom(list){
     const r = String(b.regime || "").toUpperCase(), id = Number(b.bucket_id);
     if(b.leaf === false || (r !== "BULL" && r !== "BEAR") || b.bucket_id == null || !isFinite(id)) return;
     const kind = bktKindOf(b);
-    if(kind !== "trend"){ ctr.push([r, id, BKT_KIND_LABEL[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1))]); return; }
+    if(kind !== "trend"){ ctr.push([r, id, BKT_KIND_LABEL[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1)), kind]); return; }
     (by[r] = by[r] || []).push(id);
   });
   Object.keys(by).forEach(r => {
@@ -2740,7 +2741,13 @@ function bktNamesFrom(list){
       : ids.map((_, i) => i === 0 ? "Low" : i === n - 1 ? "High" : "Mid " + i);
     ids.forEach((id, i) => { out[r + "|" + id] = {tier: tiers[i], rank: n - 1 - i}; });   // rank 0 = High
   });
-  ctr.forEach(([r, id, label]) => { out[r + "|" + id] = {tier: label, rank: (by[r] || []).length}; });   // after Low
+  // 2026-11-18 -- a counter bucket is named by the regime it TRADES IN (Trevor: "Bear counter should fire INSIDE
+  // Bear... to fire a long"): BULL 400, longs while BEAR, is the Bear Counter; BEAR 3000, shorts while BULL, the Bull
+  // Counter. Its tree (the regime of its settings) is unchanged -- only the name's regime word.
+  ctr.forEach(([r, id, label, kind]) => {
+    out[r + "|" + id] = {tier: label, rank: (by[r] || []).length,                                          // after Low
+                         shown: kind === "counter" ? (r === "BULL" ? "BEAR" : "BULL") : null};
+  });
   BKT_NAMES = out;
 }
 const bktKey = (regime, id) => String(regime || "").toUpperCase() + "|" + id;
@@ -2754,7 +2761,8 @@ const bktTier = (regime, id) => (BKT_NAMES[bktKey(regime, Number(id))] || {}).ti
   (bktRetired(regime, id) || [])[0] || "";
 /* "Bull High" -- "Bear Low (V3.3)" for a retired leaf -- or "BULL 1600" where the bucket has no name. */
 function bktName(regime, id){
-  const t = bktTier(regime, id), r = String(regime || ""), old = bktRetired(regime, id);
+  const nm = BKT_NAMES[bktKey(regime, Number(id))];
+  const t = bktTier(regime, id), r = String((nm && nm.shown) || regime || ""), old = bktRetired(regime, id);
   if(t) return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() + " " + t + (old ? ` (${old[1]})` : "");
   return (r ? r.toUpperCase() + " " : "") + (id == null ? "" : String(id));
 }
@@ -16868,7 +16876,7 @@ function lvGateBuckets(d, e){
   if(g){
     const id = Number(g.bucket), n = bktName(C, id);
     counter = {regime: C, id, dir: C === "BULL" ? "LONG" : "SHORT", armed: g.armed === true,
-               name: /\d$/.test(n) ? title(C) + " Counter" : n};
+               name: /\d$/.test(n) ? title(R) + " Counter" : n};   // 11-18: named by the regime it trades in
   }
   return {trend, counter};
 }
