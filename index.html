@@ -2280,7 +2280,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261118-182201";
+const APP_BUILD = "20261119-203453";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -21594,6 +21594,20 @@ const PG_WINS = [["all", "Whole record"], ["ver", "Each version"], ["last", "Las
 /* THE X AXIS. By date is the record as it happened -- including the weeks a version traded nothing; by trade spaces
    the trades evenly, so a busy fortnight is not squeezed into a sliver beside an empty month. */
 const PG_AXES = [["date", "By date"], ["trade", "By trade"]];
+/* 2026-11-19 -- BY DATE SKIPS THE WEEKENDS (Trevor: "can we remove the days that arn't trading? (Weekends) That way
+   its not got a flat gap at each weekend."). The date axis runs on trading time: every saturday and sunday of the
+   server calendar is cut out, so a friday's close meets the monday after it. pgTradeT maps a server time onto that
+   axis and pgRealT maps it back (the crosshair). The epoch fell on a thursday, so weeks count from monday
+   1970-01-05; a time inside a weekend lands on the seam. */
+const PG_DAY = 86400, PG_WK = 7 * PG_DAY, PG_MON0 = 4 * PG_DAY;
+function pgTradeT(t){
+  const s = Number(t) - PG_MON0, w = Math.floor(s / PG_WK);
+  return w * 5 * PG_DAY + Math.min(s - w * PG_WK, 5 * PG_DAY);
+}
+function pgRealT(u){
+  const w = Math.floor(u / (5 * PG_DAY));
+  return w * PG_WK + (u - w * 5 * PG_DAY) + PG_MON0;
+}
 const PG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
 let PG_REG = null;      // the chart as drawn, for the crosshair
@@ -21831,7 +21845,9 @@ function pgOn(){
 function pgChart(S, on){
   const single = on.length === 1, L = single ? 38 : 6, byTrade = PG.axis === "trade";
   const t0 = byTrade ? 0 : S.t0, t1 = byTrade ? Math.max(1, S.n) + 0.5 : S.t1, yB = PG_H - PG_B;
-  const x = t => L + (PG_W - L - PG_R) * ((t - t0) / (t1 - t0));
+  /* by date, x runs on trading time (pgTradeT): a weekend takes no room. */
+  const tx = byTrade ? (v => v) : pgTradeT, u0 = tx(t0), u1 = byTrade ? t1 : Math.max(tx(t1), u0 + 3600);
+  const x = t => L + (PG_W - L - PG_R) * ((tx(t) - u0) / (u1 - u0));
   const at = v => byTrade ? v.i : v.from;          // where a version's line sits on this axis
   let bg = "", grid = "", vl = "", ln = "";
   /* Each version's stretch, every other one faintly shaded; the one tapped in the table, gold. */
@@ -21928,7 +21944,7 @@ function pgChart(S, on){
   if(!on.length)
     ln = `<text x="${PG_W / 2}" y="${(PG_TOP + yB) / 2}" fill="#5F727E" font-size="10" text-anchor="middle">` +
          `Tap a metric below to draw it.</text>`;
-  PG_REG = {pts: S.pts, t0: t0, t1: t1, L: L, on: on.slice(), vers: S.vers, byTrade: byTrade};
+  PG_REG = {pts: S.pts, t0: t0, t1: t1, u0: u0, u1: u1, L: L, on: on.slice(), vers: S.vers, byTrade: byTrade};
   return `<div class="eqwrap" data-pgbox><svg class="pg-svg" viewBox="0 0 ${PG_W} ${PG_H}" role="img" ` +
          `aria-label="Live trading since V3.1, with a line at each version">` + bg + grid + ln + vl +
          `<line class="eqx" x1="0" x2="0" y1="${PG_TOP}" y2="${yB}" stroke="#8CA0AC" stroke-width="1" ` +
@@ -21941,7 +21957,7 @@ function pgHover(box, clientX){
   if(!R || !svg || !tip) return;
   const r = svg.getBoundingClientRect();
   const vx = Math.max(R.L, Math.min(PG_W - PG_R, (clientX - r.left) / r.width * PG_W));
-  const t = R.t0 + (vx - R.L) / (PG_W - R.L - PG_R) * (R.t1 - R.t0);
+  const u = R.u0 + (vx - R.L) / (PG_W - R.L - PG_R) * (R.u1 - R.u0), t = R.byTrade ? u : pgRealT(u);
   const line = svg.querySelector(".eqx");
   line.setAttribute("x1", vx.toFixed(1)); line.setAttribute("x2", vx.toFixed(1));
   line.setAttribute("visibility", "visible");
@@ -22626,7 +22642,7 @@ function pgHtml(){
            "lines: the day each version first ran on the VPS"}; ${vtag ? "tap a version below to show it" : "tap a " +
            "version below to shade its stretch"}.${on.length > 1 ? " Each line is " +
            "scaled to its own range, so compare a line with itself, not with the others — the rows hold the " +
-           "numbers." : ""}${winSay} Times are server time.</div>` +
+           "numbers." : ""}${winSay} Times are server time${PG.axis === "trade" ? "" : "; weekends are left out"}.</div>` +
          `<div class="mhd"><span>Metric</span><span>${PG.win === "all" ? "Now" : PG.win === "ver"
             ? "This version" : "Last " + PG_LAST}</span><span></span></div>` + rows) +
     '<div class="section-label">By version</div>' +
