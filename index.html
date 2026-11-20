@@ -2280,7 +2280,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261119-203453";
+const APP_BUILD = "20261119-204323";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -21594,19 +21594,52 @@ const PG_WINS = [["all", "Whole record"], ["ver", "Each version"], ["last", "Las
 /* THE X AXIS. By date is the record as it happened -- including the weeks a version traded nothing; by trade spaces
    the trades evenly, so a busy fortnight is not squeezed into a sliver beside an empty month. */
 const PG_AXES = [["date", "By date"], ["trade", "By trade"]];
-/* 2026-11-19 -- BY DATE SKIPS THE WEEKENDS (Trevor: "can we remove the days that arn't trading? (Weekends) That way
-   its not got a flat gap at each weekend."). The date axis runs on trading time: every saturday and sunday of the
-   server calendar is cut out, so a friday's close meets the monday after it. pgTradeT maps a server time onto that
-   axis and pgRealT maps it back (the crosshair). The epoch fell on a thursday, so weeks count from monday
-   1970-01-05; a time inside a weekend lands on the seam. */
-const PG_DAY = 86400, PG_WK = 7 * PG_DAY, PG_MON0 = 4 * PG_DAY;
+/* 2026-11-19 -- BY DATE SKIPS EVERY DAY GOLD DOES NOT TRADE (Trevor: "can we remove the days that arn't trading?
+   (Weekends)", then "cut the holidays, Christmas. And All days that don't trade."). The date axis runs on trading
+   time: weekends and the broker's full-day closures are cut out, so the day before a closure meets the day after it.
+   The closures are the ones six years of the broker's own tick history show (every weekday with no ticks, 2021-2026):
+   good friday; christmas day (a saturday's is the friday before, a sunday's the monday after); new year's day (a
+   sunday's is the monday after, a saturday's is not made up). Server calendar. pgTradeT maps a server time onto the
+   axis and pgRealT maps it back (the crosshair); a time inside a closed day lands on the seam. */
+const PG_DAY = 86400, PG_MON0 = 4;                 // day 4 after the epoch was a monday
+const PG_SHUT = (() => {                           // the closed weekdays, as day numbers, sorted
+  const dn = (y, m, d) => Date.UTC(y, m - 1, d) / 864e5, dow = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const out = [];
+  for(let y = 2015; y <= 2050; y++){
+    /* easter sunday (the anonymous gregorian rule), less two days */
+    const a = y % 19, c = Math.floor(y / 100), yy = y % 100;
+    const h = (19 * a + c - Math.floor(c / 4) - Math.floor((c - Math.floor((c + 8) / 25) + 1) / 3) + 15) % 30;
+    const l = (32 + 2 * (c % 4) + 2 * Math.floor(yy / 4) - h - yy % 4) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451), q = h + l - 7 * m + 114;
+    out.push(dn(y, Math.floor(q / 31), q % 31 + 1) - 2);
+    const xm = dow(y, 12, 25);
+    out.push(dn(y, 12, xm === 6 ? 24 : xm === 0 ? 26 : 25));
+    const ny = dow(y, 1, 1);
+    if(ny !== 6) out.push(dn(y, 1, ny === 0 ? 2 : 1));
+  }
+  return out.sort((x, z) => x - z);
+})();
+function pgShutBefore(n){                          // closed weekdays before day n
+  let lo = 0, hi = PG_SHUT.length;
+  while(lo < hi){ const mid = (lo + hi) >> 1; if(PG_SHUT[mid] < n) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+function pgWeekdaysBefore(n){                      // monday-to-friday days before day n
+  const s = n - PG_MON0, w = Math.floor(s / 7);
+  return w * 5 + Math.min(s - w * 7, 5);
+}
+function pgOpenDay(n){
+  return ((n - PG_MON0) % 7 + 7) % 7 < 5 && PG_SHUT[pgShutBefore(n)] !== n;
+}
 function pgTradeT(t){
-  const s = Number(t) - PG_MON0, w = Math.floor(s / PG_WK);
-  return w * 5 * PG_DAY + Math.min(s - w * PG_WK, 5 * PG_DAY);
+  const n = Math.floor(Number(t) / PG_DAY);
+  return (pgWeekdaysBefore(n) - pgShutBefore(n)) * PG_DAY + (pgOpenDay(n) ? Number(t) - n * PG_DAY : 0);
 }
 function pgRealT(u){
-  const w = Math.floor(u / (5 * PG_DAY));
-  return w * PG_WK + (u - w * 5 * PG_DAY) + PG_MON0;
+  const k = Math.floor(u / PG_DAY), w = Math.floor(k / 5);
+  let n = PG_MON0 + w * 7 + (k - w * 5);          // the k-th weekday; a closure only moves the answer later
+  while(!pgOpenDay(n) || pgWeekdaysBefore(n) - pgShutBefore(n) < k) n++;
+  return n * PG_DAY + (u - k * PG_DAY);
 }
 const PG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const PG_W = 340, PG_H = 214, PG_TOP = 31, PG_B = 17, PG_R = 8;
@@ -21845,7 +21878,7 @@ function pgOn(){
 function pgChart(S, on){
   const single = on.length === 1, L = single ? 38 : 6, byTrade = PG.axis === "trade";
   const t0 = byTrade ? 0 : S.t0, t1 = byTrade ? Math.max(1, S.n) + 0.5 : S.t1, yB = PG_H - PG_B;
-  /* by date, x runs on trading time (pgTradeT): a weekend takes no room. */
+  /* by date, x runs on trading time (pgTradeT): a day gold does not trade takes no room. */
   const tx = byTrade ? (v => v) : pgTradeT, u0 = tx(t0), u1 = byTrade ? t1 : Math.max(tx(t1), u0 + 3600);
   const x = t => L + (PG_W - L - PG_R) * ((tx(t) - u0) / (u1 - u0));
   const at = v => byTrade ? v.i : v.from;          // where a version's line sits on this axis
@@ -22642,7 +22675,7 @@ function pgHtml(){
            "lines: the day each version first ran on the VPS"}; ${vtag ? "tap a version below to show it" : "tap a " +
            "version below to shade its stretch"}.${on.length > 1 ? " Each line is " +
            "scaled to its own range, so compare a line with itself, not with the others — the rows hold the " +
-           "numbers." : ""}${winSay} Times are server time${PG.axis === "trade" ? "" : "; weekends are left out"}.</div>` +
+           "numbers." : ""}${winSay} Times are server time${PG.axis === "trade" ? "" : "; weekends and market holidays are left out"}.</div>` +
          `<div class="mhd"><span>Metric</span><span>${PG.win === "all" ? "Now" : PG.win === "ver"
             ? "This version" : "Last " + PG_LAST}</span><span></span></div>` + rows) +
     '<div class="section-label">By version</div>' +
