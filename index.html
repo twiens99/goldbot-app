@@ -2272,7 +2272,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261122-182155";
+const APP_BUILD = "20261122-194302";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -16736,7 +16736,7 @@ function lvStackCard(e, head, asOf, offSay, ctr){   // 11-18: ctr = the counter 
   }
   const pct = on.length ? ok.length / on.length : 0;
   const tot = `<div class="lv-etot"><span class="lv-v">${ok.length} of ${on.length}</span>` +
-    `<span class="lv-need">gates agree · trigger <b>${t}</b></span>` +
+    `<span class="lv-need">gates agree · trigger <b>${t}</b>${lvBounceSwitched(s.bounce, trig) ? " → fires at the arm" : ""}</span>` +
     `<span class="lv-pct${all ? " ok" : ""}">${Math.round(pct * 100)}%</span></div>` +
     `<div class="lv-meter" role="img" aria-label="${ok.length} of ${on.length} gates agree">` +
     `<i class="${all ? "ok" : ""}" style="width:${(pct * 80).toFixed(1)}%"></i><b></b></div>`;
@@ -16746,6 +16746,7 @@ function lvStackCard(e, head, asOf, offSay, ctr){   // 11-18: ctr = the counter 
   if(GATE_TRIG_SAY[trig])
     rows += lvEntryRow(null, "Trigger", `<b>${t}</b>`, "",
       "When every gate agrees, the trigger decides when that becomes a trade. Trigger " + GATE_TRIG_SAY[trig], false, "");
+  rows += lvBounceRow(s.bounce, trig, t);   // 2026-11-22 -- the bounce gauge
   if(trig === 1)
     rows += lvEntryRow(v32armed ? true : false, "Armed", v32armed ? "yes" : "no",
       a.rev_need ? `${lvEntryNum(a.rev, 0)} of ${lvEntryNum(a.rev_need, 0)} s` : "",
@@ -16763,7 +16764,46 @@ function lvStackCard(e, head, asOf, offSay, ctr){   // 11-18: ctr = the counter 
                        (x.name === "stale" ? lvStaleText(e.candidate, x.value) : ""), off,   // 11-18 -- its reset level
                        ctr ? "" : "s_" + x.name);    // 11-18 -- a counter gate has no strip: /gates is the trend's
   });
+  if(!offSay && lvBounceSwitched(s.bounce, trig)){
+    const slx = Number(s.bounce.sl) > 0 && Number(s.bounce.sl) !== 1 ? `, with its stop × ${lvEntryNum(s.bounce.sl, 2)}.` : ".";
+    say = cArmed
+      ? `Trigger ${t} is armed and the market reads one-way, so it has switched: it fires at the arm now instead of ` +
+        `waiting${slx}`
+      : say + ` The market reads one-way, so trigger ${t} has switched: once armed, it fires at the arm instead of ` +
+        `waiting${slx}`;
+  }
   return head(pill, cls) + `<div class="lv-line">${say}${asOf}</div>` + tot + `<div class="lv-esteps">${rows}</div>`;
+}
+
+/* 2026-11-22 -- THE BOUNCE GAUGE ON THE GATES CARD. Trevor: "In the live gates block. I want to know that we are in that
+   no bounce spiral setting. And If the Trigger has changed." The EA's own reading (BounceReadout, feed 1.16): the
+   bounces in the gauge's window against its minimum. Fewer = a one-way market, and an armed C / D / G fires at the arm
+   instead of waiting. No row from a feed or EA without the readout. */
+const LV_BOUNCE_TRIGS = [3, 4, 7];
+function lvBounceSwitched(b, trig){
+  return !!b && Number(b.hours) > 0 && b.one_way === true && LV_BOUNCE_TRIGS.includes(Number(trig));
+}
+function lvBounceRow(b, trig, t){
+  if(!b) return "";
+  const h = Number(b.hours);
+  if(!(h > 0))
+    return lvEntryRow(null, "Bounce gauge", "off", "",
+      `The bounce gauge is off in this bucket: trigger ${t} waits as it always does.`, true, "");
+  const n = Number(b.count), mn = Number(b.min), hs = lvEntryNum(h, h % 1 ? 1 : 0);
+  if(!LV_BOUNCE_TRIGS.includes(Number(trig)))
+    return lvEntryRow(null, "Bounce gauge", b.one_way ? "one-way" : "bouncing", `${n} of ${mn} in ${hs} h`,
+      `The gauge only switches triggers C, D and G, so trigger ${t} is not affected.`, true, "");
+  if(!(n >= 0))
+    return lvEntryRow(null, "Bounce gauge", "no reading", "",
+      "The EA could not read the 1-minute lines this minute: the trigger waits as usual.", false, "");
+  return b.one_way
+    ? lvEntryRow(true, "Bounce gauge", "one-way", `${n} of ${mn} in ${hs} h`,
+        `One-way market: only <b>${n}</b> bounce${n === 1 ? "" : "s"} against the trade in the last ${hs} h (it needs ` +
+        `${mn} to read as bouncing). Trigger ${t} has switched: armed, it fires at the arm instead of waiting` +
+        (Number(b.sl) > 0 && Number(b.sl) !== 1 ? `, with its stop × ${lvEntryNum(b.sl, 2)}.` : "."), false, "")
+    : lvEntryRow(false, "Bounce gauge", "bouncing", `${n} of ${mn} in ${hs} h`,
+        `Bouncing: <b>${n}</b> bounces against the trade in the last ${hs} h (${mn} or more). Trigger ${t} waits as it ` +
+        "always does.", false, "");
 }
 
 /* 2026-11-18 -- THE GATES CARD'S TWO BUCKETS. The trend bucket is the one the EA trades in now (/live's trading_in); the
