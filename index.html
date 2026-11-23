@@ -2272,7 +2272,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261122-194302";
+const APP_BUILD = "20261123-130859";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -10359,7 +10359,16 @@ function roundValsRepaint(){
   const el = document.getElementById("page-results");
   if(el && RESULTS_JOB != null) el.innerHTML = renderResults();
 }
-const valText = v => (typeof v === "number" ? num(v) : (v == null ? "–" : String(v)));
+/* 2026-11-23 -- AN OFF VALUE READS "off". Trevor, on Bear Mid G21's card ("1000000000 → 1000000000"): "the
+   sweep variables seem to be way off" -> "Yes, fix it". A gate line at +-1e9 is the EA's no-limit value -- the gate
+   is off -- so any value at or past 1e8 reads "off": the cut swVal and gate_grid.SENTINEL use. A numeric string
+   (a value that came over as text) is read the same way. */
+const valText = v => {
+  if(v == null) return "–";
+  const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  if(isFinite(n) && Math.abs(n) >= 1e8) return "off";
+  return typeof v === "number" ? num(v) : String(v);
+};
 
 function sweepVars(all, swept, vals, plan){
   const pm = planMap(plan);
