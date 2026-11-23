@@ -834,6 +834,11 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 }
 .tmem.in{background:rgba(224,180,87,.18);color:var(--gold);}
 .tmem.held{background:transparent;color:var(--faint);border:1px solid var(--line);}
+/* 2026-11-23 -- RETIRED (the retirement rule holds it) and the right-side Unhold / Un-retire chip */
+.tmem.retired{background:transparent;color:#B79A6B;border:1px solid rgba(183,154,107,.55);}
+.tman{margin-left:auto;font:inherit;font-size:.68rem;letter-spacing:.04em;padding:2px 9px;border-radius:999px;
+  background:transparent;color:var(--gold);border:1px solid rgba(224,180,87,.55);cursor:pointer;}
+.tman.sent{color:var(--faint);border-color:var(--line);cursor:default;}
 /* A RIDER IS IN THE ROUND BUT NOT OF THE GROUP -- filled like SWEPT because it
    is being moved, but blue rather than gold so a glance down the column never
    mistakes one for a group variable. */
@@ -870,6 +875,23 @@ button.chip[disabled]{opacity:.4;cursor:default;}
   font-size:.6rem;color:var(--faint);letter-spacing:.04em;
   font-family:"Roboto Mono",ui-monospace,monospace;
 }
+/* 2026-11-23 -- the Next round card's sweep and timing lines in the app's own face (Trevor: "change the font of them
+   ... follow the rest of the apps theme"): Archivo, as the body, with even-width digits. */
+.nrline{
+  font-size:.8rem;color:var(--dim);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.45;
+}
+/* 2026-11-23 -- the metric chart's heading rests just under the sticky header when a test chip jumps to it */
+.mghead{scroll-margin-top:calc(var(--hdr,64px) + 10px);}
+/* 2026-11-23 -- Schedule Efficiency's slim rounds table, its info block, and the job card's Efficiency cell link */
+.sctbl td.scnum{white-space:nowrap;}
+.scnow{color:var(--gold);font-weight:700;}
+.sctbl tr.on td{background:rgba(224,180,87,.07);}
+.sctbl tr.scinforow td{white-space:normal;padding:4px 6px 10px;}
+.scinfo{display:flex;flex-direction:column;gap:3px;font-size:.78rem;}
+.scik{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
+.scik .k{color:var(--faint);font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;min-width:64px;}
+.mjump{cursor:pointer;}
+.mjump .v{text-decoration:underline dotted;text-underline-offset:3px;}
 .tshaped{
   font-size:.66rem;color:var(--dim);
   font-family:"Roboto Mono",ui-monospace,monospace;
@@ -2272,10 +2294,16 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261123-130859";
+const APP_BUILD = "20261123-162122";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
+/* 2026-11-23 -- where each bucket finished a block of groups (milestones.py): {"REGIME|id": [{stamp, label}]} */
+let MILESTONES = {};
+/* 2026-11-23 -- what each leaf holds now ({"REGIME|id": {name: "held" | "retired"}}), the unhold requests of the last
+   days, and this phone's own taps not yet in a snapshot (key -> time) */
+let HOLDS = {}, UNHOLD = [], HOLDS_WHY = {};
+const UHSENT = {};
 /* The published queue, or null when the snapshot predates it -- null, not
    [], so the page can fall back to the seeds-only queue it always had. */
 let QUEUE = null;
@@ -2972,9 +3000,10 @@ function passesText(r){
 function metaRow(pairs){
   const cells = pairs.filter(x => x[1] != null && x[1] !== "");
   if(!cells.length) return "";
+  /* 2026-11-23 -- a 4th element: the round number the cell opens on Schedule Efficiency (the Efficiency cell) */
   return '<div class="meta">' + cells
-    .map(([k, v, cls]) => `<div><span class="k">${esc(k)}</span>` +
-      `<span class="v ${cls || ""}">${esc(v)}</span></div>`).join("") + '</div>';
+    .map(([k, v, cls, jump]) => `<div${jump != null ? ` class="mjump" data-effjump="${esc(String(jump))}" title="This round on Schedule Efficiency"` : ""}><span class="k">${esc(k)}</span>` +
+      `<span class="v ${cls || ""}">${esc(v)}${jump != null ? " \u203a" : ""}</span></div>`).join("") + '</div>';
 }
 
 function progressBar(f, rc){
@@ -4555,7 +4584,7 @@ function jobCard(r, rep, condensed, hint, cadence){
        caveat as a task's: it is the gap between reports, so it misses whatever
        ran before the first one. */
     ["Took", jobSpan(rep.tasks)],
-    ["Efficiency", effText(r)],
+    ["Efficiency", effText(r), null, condensed ? null : r.round_no],   // 11-23: tap -> Schedule Efficiency's round
   ].filter(c => !condensed || JOB_META_CONDENSED.indexOf(c[0]) >= 0);
 
   const pfBlock = (lab, before, after) =>
@@ -4707,12 +4736,15 @@ function renderResultsJob(r){
      below (Back All Jobs)."* */
   /* 2026-09-26 -- CHANGE THE PASS on the group's latest applied round
      (published as `changeable`); fleet_api checks the same again. */
-  const change = r.changeable
+  /* 2026-11-23 -- ON THE SWEEP CHIP ONLY (Trevor: the Change the Pass block "only needs to be there for the optimize
+     chip" -- not on the two test chips); a job with no task list keeps it. */
+  const onOptimize = !tasks.length || /OPTIM/i.test(String((tasks[open] || {}).kind || ""));
+  const change = r.changeable && onOptimize
     ? `<div class="card"><div class="card-in">` +
         sendForm({regime: _groupRegime(r.group_id) || r.regime, bucket_id: r.bucket_id,
                   group_id: r.group_id, mode: "override", round: r.round,
                   applied_pass: r.applied_pass,
-                  applied_pass_style: r.applied_pass_style}) + `</div></div>`
+                  applied_pass_style: r.applied_pass_style, table: true}) + `</div></div>`
     : "";
   return back + chips + jobCard(r, rep, false, null) + change +
     /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
@@ -6986,7 +7018,7 @@ function taskMetrics(d){
    IT IS A STARTING VALUE, NOT A FLOOR. Clear empties it like any other pick --
    the default is what the page opens with, not something it insists on. */
 const M_OPEN = "equity";
-const MSTATE = { g: "", open: "", plot: [M_OPEN], mode: "value" };
+const MSTATE = { g: "", open: "", plot: [M_OPEN], mode: "value", ver: "all" };   // 11-23: + ver (this / all)
 
 /* ---------- the shared series graph ---------- */
 /* ONE DRAWING FUNCTION, TWO BADGES. The variables badge and the metrics badge
@@ -7098,8 +7130,21 @@ function seriesGraph(labels, series, box, axis){
   const divs = axis ? (axis.dividers || (axis.divider ? [axis.divider] : [])) : [];
   const lefts = [Infinity, Infinity];
   let dtext = "";      // drawn last, over the lines
+  const lows = [Infinity];      // 2026-11-23 -- the group completions' labels: one row, at the bottom
   divs.filter(dv => n > 1 && dv.i > 0 && dv.i < n).sort((a, b) => b.i - a.i).forEach(dv => {
     const xd = (sgX(dv.i - 1, n, W, padL) + sgX(dv.i, n, W, padL)) / 2;
+    if(dv.dot){
+      grid += '<line x1="' + xd.toFixed(1) + '" x2="' + xd.toFixed(1) + '" y1="' + SG_PAD.t +
+        '" y2="' + (H - SG_PAD.b) + '" stroke="rgba(140,160,172,.5)" stroke-width="0.7" ' +
+        'stroke-dasharray="0.4 2.2" stroke-linecap="round"></line>';
+      const lw = String(dv.label).length * 2.9 + 2, ls = xd - lw / 2;
+      if(ls + lw < lows[0] - 1 && ls > padL - 4){
+        lows[0] = ls;
+        dtext += '<text x="' + xd.toFixed(1) + '" y="' + (H - SG_PAD.b - 2) + '" fill="#71838E" font-size="5.2" ' +
+          'stroke="' + SG_BG + '" stroke-width="2" paint-order="stroke" text-anchor="middle">' + esc(String(dv.label)) + '</text>';
+      }
+      return;
+    }
     const word = String(dv.label), w = word.length * 3.4 + 2;
     const right = xd + 2 + w > W - SG_PAD.r, start = right ? xd - 2 - w : xd + 2;
     const row = lefts.findIndex(l => start + w < l - 2);
@@ -7133,6 +7178,7 @@ function seriesGraph(labels, series, box, axis){
         '"></polyline>');
     }
     pts.forEach(p => {
+      if(p.nomark) return;                      // 2026-11-23 -- the metric graph draws no circles
       const cx = sgX(p.i, n, W, padL), cy = y(sp, p.value);
       /* THE SQUARE IS THE COMPILED DEFAULT -- a different SHAPE, not a different
          colour, because colour on this graph is already spoken for twice over:
@@ -8418,7 +8464,7 @@ function optimizeBadge(t, nth, picked){
     (two ? `<div class="sub" style="margin:0 0 2px">A second pass sweeps only what
        the first left PINNED, so this is a handful of variables, not a grid.</div>` : "") +
     statesAtNote(d) +
-    sweepVars(taskRows(d), d.swept, two ? null : roundVals(picked && picked.key)) +
+    sweepVars(taskRows(d), d.swept, two ? null : roundVals(picked && picked.key), null, picked && picked.key) +
     /* THE PICKER IS BEHIND A CHIP. Closed, the badge says what was searched and
        which pass carries the round -- all you want most of the time. */
     `<div class="mgrp"><button type="button" class="gch${
@@ -9450,7 +9496,8 @@ function nextRoundBadge(t){
   const cells = swept.length > 1 && swept.length <= 9
     ? swept.map(v => esc(v.points)).join(" × ") + " = " : "";
   const model = nr.model === "ohlc" ? "OHLC" : nr.model === "real" ? "Real ticks" : "";
-  const etas = Array.isArray(nr.eta) ? nr.eta : [];
+  /* 2026-11-23 -- the T7910's estimate only: it runs the optimizations (an older snapshot also named Laptop / Desktop) */
+  const etas = (Array.isArray(nr.eta) ? nr.eta : []).filter(e => /^T7910/i.test(String((e || {}).machine || "")));
   /* MT5 ENUMERATES A SMALL GRID AND SEARCHES A BIG ONE -- eta_model's own line,
      so "runs about N" is its learned number, never worked out here. */
   const runs = etas.length && etas[0].passes
@@ -9458,11 +9505,11 @@ function nextRoundBadge(t){
         ? " · every cell runs"
         : ` · the search runs about ${esc(Number(etas[0].passes).toLocaleString())}`)
     : "";
-  const head = `<div class="tshaped" style="margin:0 0 4px">${
+  const head = `<div class="nrline" style="margin:0 0 4px">${
       model ? esc(model) + " · " : ""}${esc(nr.swept || swept.length)} of ${
       esc(nr.total || vars.length)} variables · ${cells}${
       esc(grid.toLocaleString())} cells${runs}</div>` +
-    (etas.length ? `<div class="tshaped" style="margin:0 0 8px">${etas.map(e =>
+    (etas.length ? `<div class="nrline" style="margin:0 0 8px">${etas.map(e =>
       `~${esc(nrHours(e.seconds))} on the ${esc(e.machine)}${
         e.low && e.high && Math.round(e.low) !== Math.round(e.high)
           ? ` (${esc(nrHours(e.low))}–${esc(nrHours(e.high))})` : ""}`)
@@ -9479,18 +9526,14 @@ function nextRoundBadge(t){
       esc(Number(nr.whole_grid || 0).toLocaleString())} combinations, over the 50,625 cap, so this round sweeps
       <b>block ${esc(blk.index + 1)} of ${esc(blk.of)}</b> and holds the rest at their values.${
       blk.last ? " It is the last block: this round counts as the group's run." : " Only the last block counts as the group's run."}</div>
-      <div class="tshaped" style="margin:0 0 8px">${blk.plan.map((b, i) =>
+      <div class="nrline" style="margin:0 0 8px">${blk.plan.map((b, i) =>
         `${i === blk.index ? "<b>" : ""}${esc(i + 1)}. ${b.map(n => esc(spaceOut(stripRegime(n)))).join(", ")}${
           (blk.grids || [])[i] ? ` · ${esc(Number(blk.grids[i]).toLocaleString())}` : ""}${
           i === blk.index ? " · this round</b>" : ""}`).join("<br>")}</div>` : "";
-  const probe = nr.probe ? `<div class="opsnote" style="margin:0 0 8px"><b>Runs whole, as a size probe.</b> It is over
-      the 50,625 cap, but the planner is measuring rounds of ${esc(Number(nr.probe.lo || 0).toLocaleString())}–${
-      esc(Number(nr.probe.hi || 0).toLocaleString())} combinations (${esc(nr.probe.finished || 0)} finished, ${
-      esc(nr.probe.running || 0)} running).</div>` : "";
 
   return wrap(`What this group's next optimization in this bucket sweeps, built
       by the same code that will build it, from the bucket as it stands now.`,
-    plan + probe + head + rows +
+    plan + head + rows +
     `<div class="vhcap">The group's count is <b>${esc(nr.group_count)}</b> values
       for ${esc(nr.active)} active variables, from the pass budget; a variable
       that keeps winning inside its range narrows below it. A second pass follows
@@ -9556,6 +9599,7 @@ function backtestRuns(d){
               metrics: slicing ? (own || ((anySlice(d) || {}).metrics) || {})
                                : Object.assign({}, cur.m || {}, d.metrics || {})}]);
   runs.scope = cur.scope;
+  if(cur.regime && cur.bucket != null) runs.key = String(cur.regime).toUpperCase() + "|" + cur.bucket;   // 11-23
   if(slicing) runs.narrow = sliceName(cur, d);
   return runs;
 }
@@ -9633,7 +9677,18 @@ function metricEarlier(rounds){
 }
 
 function metricGraph(d, big){
-  const rounds = metricRounds(d);
+  /* 2026-11-23 -- THE VERSION OPTION. Trevor: "are these datapoints all from V3.4? If so, that's fine, But when we do
+     go to another version bump, I'd like the option to separate." Runs on more than one version get a button:
+     All versions (the version lines say where it changed) or This version (the runs on this test's version only). */
+  const allRounds = metricRounds(d);
+  const verList = allRounds ? Array.from(new Set(allRounds.map(r => r.ver).filter(Boolean))) : [];
+  const multiVer = verList.length > 1;
+  let rounds = allRounds;
+  if(allRounds && multiVer && MSTATE.ver === "this"){
+    const mine = allRounds[allRounds.length - 1].ver;
+    rounds = Object.assign(allRounds.filter(r => !mine || r.ver === mine),
+                           {scope: allRounds.scope, narrow: allRounds.narrow, key: allRounds.key});
+  }
   /* 🔴 A PICKED METRIC WITH NO SERIES USED TO VANISH. It was filtered out here
      and nothing else mentioned it, so tapping Sharpe or Recovery Factor filled
      its dot, changed the count, and drew no line -- a control that reports
@@ -9725,7 +9780,10 @@ function metricGraph(d, big){
     const points = [];
     vals.forEach((v, i) => {
       if(v == null) return;
-      points.push({i: i, value: v, hollow: i !== rounds.length - 1});
+      /* 2026-11-23 -- NO CIRCLES (Trevor: "Lets take out the circles at each intersection. some of the bucket graphs
+         are getting crowded"): the line alone, except a point with no line beside it, which would vanish. */
+      const lone = (i === 0 || vals[i - 1] == null) && (i === vals.length - 1 || vals[i + 1] == null);
+      points.push({i: i, value: v, hollow: i !== rounds.length - 1, nomark: !lone});
     });
     return {key: k, colour: metricColour(k), vals: vals, raw: raw, points: points,
             omitted: omitted};
@@ -9772,7 +9830,14 @@ function metricGraph(d, big){
   /* THE VERSION LINES and the 09-08 line ride with the axis, or alone when several lines have none. */
   const sw = switchIndex(rounds);
   const vdivs = verDividers(rounds);
-  const divs = vdivs.concat(sw > 0 ? [{i: sw, label: "09-08 · real-tick sweeps →"}] : []);
+  /* 2026-11-23 -- THE GROUP COMPLETIONS. Trevor: "When a bucket finished Gate Pass 1, Finishes the next group, and then
+     again at gate pass 2 completion, Exit Tighteners ... Small Grey Vertical dotted lines would work." On a bucket's
+     test history only: each line goes before the first run after the block's last round was recorded. */
+  const mdivs = (rounds.scope === "bucket" && rounds.key ? (MILESTONES[rounds.key] || []) : []).map(m => {
+    const i = rounds.findIndex(r => r.stamp && String(r.stamp) > String(m.stamp || ""));
+    return i > 0 ? {i: i, label: m.label, dot: true} : null;
+  }).filter(Boolean);
+  const divs = vdivs.concat(sw > 0 ? [{i: sw, label: "09-08 · real-tick sweeps →"}] : []).concat(mdivs);
   const deco = (axis || divs.length)
     ? Object.assign({}, axis || {}, divs.length ? {dividers: divs} : {})
     : null;
@@ -9840,7 +9905,9 @@ function metricGraph(d, big){
     (noSeries.length ? " \u00b7 " + noSeries.length + " unplottable" : "") +
     " \u00b7 " + rounds.length + (rounds.scope ? " runs" : " rounds") +
     (rounds.narrow ? " \u00b7 " + esc(narrowShort()) : "");
-  return head(title, modeBtn + clear) +
+  const verBtn = multiVer ? '<button type="button" class="mgbtn' + (MSTATE.ver === "this" ? " on" : "") +
+    '" data-mgver>' + (MSTATE.ver === "this" ? "This version" : "All versions") + '</button>' : "";
+  return head(title, modeBtn + verBtn + clear) +
     (drawn.length ? seriesGraph(labels, series, big, deco) : "") +
     '<div class="mglg">' + legend + absent + '</div>' +
     /* THE BIG VIEW IS FOR THE SHAPE. The legend stays -- it names the lines and
@@ -9863,7 +9930,12 @@ function metricGraph(d, big){
         : '<b>Each line is scaled to its own range</b> \u2014 a PF and a dollar ' +
           'figure cannot share an axis \u2014 so read the numbers in the legend. ' +
           'Switch to % change to put them on one scale.') +
-    ' Solid dot = this test, hollow = ' + metricEarlier(rounds) + '.' +
+    ' Left to right: ' + metricEarlier(rounds).replace(/^an? /, "each ") + ', then this test at the right end.' +
+    (mdivs.length ? ' Grey dotted lines: where this bucket finished a block of groups (GP1 = gate pass 1, then ' +
+                    'Exits, GP2, Tighteners, GP3, Buffer).' : "") +
+    (multiVer ? (MSTATE.ver === "this" ? ' Showing this test’s version only; tap This version for every version.'
+                                         : ' Runs from ' + verList.length + ' versions; tap All versions to show this '
+                                           + 'test’s version only.') : "") +
     (rounds.narrow ? ' <b>Narrowed to ' + esc(rounds.narrow) + '</b>' +
       (SLICE.slope ? ': every run cut at this bucket’s current band edges, so each ' +
                      'point is the same slope range' : ' in every run') +
@@ -10370,7 +10442,27 @@ const valText = v => {
   return typeof v === "number" ? num(v) : String(v);
 };
 
-function sweepVars(all, swept, vals, plan){
+/* 2026-11-23 -- THE UNHOLD / UN-RETIRE CHIP. Trevor: "If a variable Status is Held, I want a manual chip on the right
+   side, that gives me the option to unhold or Un retire. I also want the chip to change to Retired if the variable is
+   retired." `key` = the job's {regime, bucket_id}: what the bucket holds NOW (HOLDS), not what the task recorded. */
+function uhState(hk, name){
+  const k = hk + "|" + name;
+  const live = (HOLDS[hk] || {})[name] || "";
+  const req = UNHOLD.find(r => String(r.regime).toUpperCase() + "|" + r.bucket_id + "|" + r.name === k);
+  const sent = !!UHSENT[k] || !!(req && req.status === "requested");
+  return {live: live, sent: live ? sent : false};
+}
+function uhChip(hk, name, why){
+  if(!hk) return "";
+  const st = uhState(hk, name);
+  if(!st.live) return "";
+  if(st.sent) return '<span class="tman sent" title="Sent: the fleet releases it at its next tick.">Requested</span>';
+  return '<button type="button" class="tman" data-unhold="' + esc(hk + "|" + name) + '" data-uhkind="' + esc(st.live) +
+    '" data-uhwhy="' + esc(why || "") + '"' + (why ? ' title="Held: ' + esc(why) + '"' : "") +
+    '>' + (st.live === "retired" ? "Un-retire" : "Unhold") + '</button>';
+}
+function sweepVars(all, swept, vals, plan, key){
+  const hk = key && key.regime && key.bucket_id != null ? String(key.regime).toUpperCase() + "|" + key.bucket_id : null;
   const pm = planMap(plan);
   const vmap = {};
   ((vals && vals.vars) || []).forEach(x => { if(x && x.name) vmap[x.name] = x; });
@@ -10413,9 +10505,11 @@ function sweepVars(all, swept, vals, plan){
        variables being swept. Put a tick or something in the chip letting me
        know which ones are actually being swept."* HELD rows stay on the card,
        quieter, at the state the task before left them. */
+    const live = hk ? uhState(hk, name).live : "";
     const mem = rider ? ["rider", "RIDER"]
               : stray ? ["stray", "NOT IN GROUP"]
-              : g ? ["in", "✓ SWEPT"] : ["held", "HELD"];
+              : g ? ["in", "✓ SWEPT"]
+              : live === "retired" ? ["retired", "RETIRED"] : ["held", "HELD"];   // 11-23: + RETIRED
     const mv = vmap[name];
     return `<div class="tvar swept${g || rider ? "" : " isheld"}">
         <span class="tvn">${esc(spaceOut(stripRegime(name)))}</span>` +
@@ -10442,7 +10536,8 @@ function sweepVars(all, swept, vals, plan){
         ? `<span class="tshape ${shapeVerdict(g.shape)[0]}">${
              esc(shapeVerdict(g.shape)[1])}</span>` +
           (shapeDetail(g) ? `<span class="tshaped">${shapeDetail(g)}</span>` : "")
-        : "") + `
+        : "") +
+      uhChip(hk, name, (by[name] || {}).hold || (hk ? (HOLDS_WHY[hk] || {})[name] : "")) + `
       </div>` +
       /* The curve behind the verdict, one tap away, in the shared graph at the
          top of the card. Only offered when there are bins to draw. */
@@ -10610,6 +10705,13 @@ function taskCard(r, relDir, open, skipGraph, lift){
   return `<div class="task"${open ? "" : " hidden"}>${parts.join("")}</div>`;
 }
 
+/* 2026-11-23 -- WHICH ROUND PANELS ARE OPEN, kept across repaints. Trevor: "That Bubble, dissapears without touching
+   anything. What's turning it off?" -- the tap toggled the panel's `hidden` in place, and the next refresh repainted
+   the page with every panel shut. Keyed by the job and the round; the second tap still closes it. */
+const TL_OPEN = new Set();
+function tlKey(tl, r){
+  return [tl.regime, tl.bucket_id, tl.group_id, r.rel_dir || tl.rel_dir || "", r.kind].map(x => String(x == null ? "" : x)).join("|");
+}
 function renderTimeline(tl){
   if(!tl || !tl.rounds || !tl.rounds.length) return "";
   const rows = tl.rounds.map(r => {
@@ -10631,9 +10733,10 @@ function renderTimeline(tl){
     /* Tappable only when there is a card behind it -- a row that opens an
        empty panel teaches you not to tap the ones that are not empty. */
     /* A stitched round one lives in its own folder (2026-10-03). */
-    const card = taskCard(r, r.rel_dir || tl.rel_dir);
+    const tk = tlKey(tl, r), isOpen = TL_OPEN.has(tk);
+    const card = taskCard(r, r.rel_dir || tl.rel_dir, isOpen);
     return `<div class="tlr ${esc(r.status)}${r.inferred ? " inferred" : ""}${
-        card ? " tappable" : ""}"${card ? ' data-task' : ""}>
+        card ? " tappable" : ""}${card && isOpen ? " open" : ""}"${card ? ` data-task data-tlkey="${esc(tk)}"` : ""}>
         <div class="tlm">${ROUND_MARK[r.status] || ""}</div>
         <div class="tlb">
           <div class="tlh"><span class="tlk">${esc(phaseText(r.kind))}</span>` +
@@ -11723,7 +11826,10 @@ function sendForm(o){
         <label for="sin-${esc(key)}">Pass</label>
         <input class="pickin" id="sin-${esc(key)}" type="number" inputmode="numeric"
           min="1" placeholder="—" data-sendin="${esc(key)}"
-          value="${typed == null ? "" : esc(typed)}">
+          value="${typed == null ? "" : esc(typed)}">${
+        /* 2026-11-23 -- THE TABLE, BESIDE THE BOX. Trevor: "I need the link to the table beside the pass number box. I
+           keep having to search for it below." Opens the job's sweep task with its table open, scrolled to it. */
+        o.table ? `<button type="button" class="gch" style="margin-left:8px" data-optjump>Table ›</button>` : ""}
       </div>
       <button type="button" class="applyb${SEND.arm === key ? " armed" : ""}"
         data-send="${esc(key)}" data-mode="${over ? "override" : "confirm"}"
@@ -12035,42 +12141,89 @@ function scheffEpochCard(){
     + 'Agent-hours = agents working on a round, minute by minute.</div>';
   return out + '</div></div>';
 }
+/* 2026-11-23 -- THE ROUNDS, SLIMMED. Trevor: "It's way to long, Lets show the current ones, then go to a system where we
+   can show all or show fewer ... the Round number doesn't need so much information. Just the Round number and the (Bull)
+   Chip, We can then click on it, and it would open up a small info block below ... click on that job and it will
+   shortcut to that particular Job, in the results tab." Running rounds first, then the newest finished (SC_RECENT);
+   Show all / Show fewer. A round's number is its Results job's (the ledger row it produced: the first row of its
+   bucket + group recorded after it ended, unless a later run of that group ended first -- a restart). */
+let SCHEFF_ALL = false;
+const SC_RECENT = 12;
+const scEndTs = r => Number(r.end || 0) || (Number(r.start || 0) + Number(r.hours || 0) * 3600);
+const scGroupKey = (regime, bid, g) => String(regime || "").toUpperCase() + "|" + Number(bid) + "|" + String(g || "");
+function scLedgerFor(r){
+  if(!r || r.status === "running") return null;
+  const gk = scGroupKey(r.regime, r.bucket_id, r.group_id), end = scEndTs(r);
+  const rows = (LEDGER || []).filter(x => x && x.recorded_at && scGroupKey(x.regime, x.bucket_id, x.group_id) === gk)
+    .map(x => [Date.parse(x.recorded_at) / 1000, x]).filter(p => isFinite(p[0]) && p[0] >= end - 60)
+    .sort((a, b) => a[0] - b[0]);
+  if(!rows.length) return null;
+  const t0 = rows[0][0];
+  const later = ((SCHEFF && SCHEFF.rounds) || []).some(o => o !== r && o.status !== "running"
+    && scGroupKey(o.regime, o.bucket_id, o.group_id) === gk && scEndTs(o) > end && scEndTs(o) <= t0 + 60);
+  return later ? null : rows[0][1];
+}
+function scRoundForLedger(row){
+  if(!row) return null;
+  return ((SCHEFF && SCHEFF.rounds) || []).find(r => scLedgerFor(r) === row) || null;
+}
+/* a Results job's short name: r<number>, or "seed" for an uncounted seed's round (its id is the seed's key) */
+const scJobName = led => /^\d+$/.test(String(led.round_no)) ? "r" + led.round_no : "seed";
+function scRoundInfo(r, led){
+  const c = r.curve || {};
+  const pr = r.status === "running" ? (((SCHEFF.predictions || {}).open || []).find(o =>
+    o.machine === r.machine && Math.round(o.start || 0) === Math.round(r.start || 0))) : null;
+  const kv = [
+    ["Job", `${scBucket(r.regime, r.bucket_id)} ${esc(humanize(r.group_id || ""))}`],
+    ["Status", `${r.status === "running" ? '<span class="chip gold">running</span>' : esc(r.status)} \u00b7 ${
+      copyTag(effCopyOf(r.machine))}${r.over_cap ? ' <span class="chip warn">over the cap</span>' : ""}`],
+    ["Size", `${r.settings ? esc(String(r.settings)) + " settings \u00b7 " : ""}${r.grid ? scNum(r.grid) + " combinations" : "\u2014"}`],
+    ["Time", scHours(r.hours) + (pr ? ` \u00b7 ${pr.hours != null ? "predicted ~" + scHours(pr.hours) : "no prediction"}${
+      pr.late ? " (late)" : ""}` : "")],
+    ["Pace", r.pace ? esc(String(r.pace)) + " passes / h" : "\u2014"],
+  ];
+  if(r.bucket_pf_before != null && r.bucket_pf_after != null)
+    kv.push(["Bucket PF", `${Number(r.bucket_pf_before).toFixed(2)} \u2192 ${Number(r.bucket_pf_after).toFixed(2)}`]);
+  let out = '<div class="scinfo">' + kv.map(([k, v]) => `<div class="scik"><span class="k">${esc(k)}</span><span>${v}</span></div>`).join("");
+  if(c.passes) out += '<div class="tlab" style="margin-top:8px">Best so far</div>' + scCurveChart(r);
+  out += led
+    ? `<button type="button" class="gch" style="margin-top:8px" data-scres="${esc(String(led.round_no))}">Open ${
+        esc(scJobName(led))} in Results \u203a</button>`
+    : `<div class="trk-note">${r.status === "running" ? "Its Results job appears when its backtests are in."
+        : "No Results job: a run a later one of the same group replaced, or an uncounted round."}</div>`;
+  return out + '</div>';
+}
 function scheffRoundsCard(){
-  const rs = SCHEFF.rounds || [];
-  if(!rs.length) return '<div class="card"><div class="card-in"><div class="trk-note">No round this epoch yet.</div></div></div>';
-  let out = '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl">'
+  const allRs = SCHEFF.rounds || [];
+  if(!allRs.length) return '<div class="card"><div class="card-in"><div class="trk-note">No round this epoch yet.</div></div></div>';
+  const order = allRs.slice().sort((a, b) => ((a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1))
+                                            || (Number(b.start || 0) - Number(a.start || 0)));
+  let rs = SCHEFF_ALL ? order
+    : order.filter(r => r.status === "running").concat(order.filter(r => r.status !== "running").slice(0, SC_RECENT));
+  const openR = order.find(r => SCHEFF_OPEN === scRoundKey(r));
+  if(openR && rs.indexOf(openR) < 0) rs = rs.concat([openR]);
+  let out = '<div class="card"><div class="card-in"><div class="trk-scroll"><table class="trk-tbl sctbl">'
     + '<tr><th>Round</th><th>Time</th><th>Passes</th><th>Best vs original</th><th>Wasted</th></tr>';
   rs.forEach(r => {
     const c = r.curve || {};
-    const key = scRoundKey(r);
+    const key = scRoundKey(r), on = SCHEFF_OPEN === key, led = scLedgerFor(r);
     const best = c.best != null ? Number(c.best).toFixed(2) : "\u2014";
     const vs = r.gain_pct != null
       ? ` <span class="${r.gain_pct >= 0 ? "" : "bad"}">${r.gain_pct >= 0 ? "+" : ""}${r.gain_pct}%</span>`
       : (c.best != null ? ' <span class="dim">no original</span>' : "");
-    const pf = r.bucket_pf_before != null && r.bucket_pf_after != null
-      ? `<br><span class="dim">bucket PF ${Number(r.bucket_pf_before).toFixed(2)} \u2192 ${Number(r.bucket_pf_after).toFixed(2)}</span>` : "";
-    out += `<tr data-scround="${esc(key)}"${c.passes ? ' style="cursor:pointer"' : ""}>`
-      + `<td style="white-space:normal">${scBucket(r.regime, r.bucket_id)} ${esc(humanize(r.group_id || ""))}`
-      + `<br><span class="dim">${r.status === "running" ? '<span class="chip gold">running</span> ' : esc(r.status) + " \u00b7 "}`
-      + `${copyTag(effCopyOf(r.machine))} ${r.settings ? esc(String(r.settings)) + " settings \u00b7 " : ""}`
-      + `${r.grid ? scNum(r.grid) + " combinations" : ""}</span>${r.over_cap ? ' <span class="chip warn">over the cap</span>' : ""}</td>`
-      + `<td>${scHours(r.hours)}${(() => {
-          /* 2026-10-22 -- a running round's own prediction (track_predictions), beside the time it has taken. */
-          const pr = r.status === "running" ? (((SCHEFF.predictions || {}).open || []).find(o =>
-            o.machine === r.machine && Math.round(o.start || 0) === Math.round(r.start || 0))) : null;
-          return pr ? `<br><span class="dim">${pr.hours != null ? "predicted ~" + scHours(pr.hours)
-                                                              : "no prediction"}${pr.late ? " (late)" : ""}</span>` : "";
-        })()}</td>`
-      + `<td>${scNum(r.passes)}${r.pace ? `<br><span class="dim">${esc(String(r.pace))}/h</span>` : ""}</td>`
-      + `<td>${best}${vs}${pf}</td><td>${c.passes ? scPct(c.wasted_share) : "\u2014"}</td></tr>`;
+    const num = r.status === "running" ? '<span class="scnow" title="Running now">now</span>'
+      : led ? esc(scJobName(led)) : '<span class="dim">\u2014</span>';
+    out += `<tr data-scround="${esc(key)}" class="${on ? "on" : ""}" style="cursor:pointer">`
+      + `<td class="scnum">${num} <span class="chip ${REGIME_CLASS[r.regime] || ""}">${esc(r.regime || "")}</span></td>`
+      + `<td>${scHours(r.hours)}</td><td>${scNum(r.passes)}</td><td>${best}${vs}</td>`
+      + `<td>${c.passes ? scPct(c.wasted_share) : "\u2014"}</td></tr>`;
+    if(on) out += `<tr class="scinforow"><td colspan="5">${scRoundInfo(r, led)}</td></tr>`;
   });
   out += '</table></div>';
-  /* The open round's chart under the table, the card's full width (inside the scrolling table it ran off a phone). */
-  const open = rs.find(r => SCHEFF_OPEN === scRoundKey(r) && (r.curve || {}).passes);
-  if(open)
-    out += `<div class="tlab" style="margin-top:10px">${scBucket(open.regime, open.bucket_id)} ${esc(humanize(open.group_id || ""))}`
-      + ' \u00b7 best so far</div>' + scCurveChart(open);
-  out += '<div class="trk-note">Tap a round with kept passes for its best so far, pass by pass. Best and '
+  if(order.length > rs.length || SCHEFF_ALL)
+    out += `<button type="button" class="fin-more" data-scall>${SCHEFF_ALL ? "Show fewer"
+      : "Show all " + order.length + " rounds"}</button>`;
+  out += '<div class="trk-note">Tap a round for its details and its best so far, pass by pass. Best and '
     + 'the original are the round\'s own Result (profit \u00f7 drawdown).</div>';
   return out + '</div></div>';
 }
@@ -12147,6 +12300,35 @@ function scHideTips(){
   else if(!svg && t === "pointerdown") scHideTips();
 }));
 document.addEventListener("click", e => {
+  if(e.target.closest && e.target.closest("[data-scall]")){      // 2026-11-23 -- show all / show fewer
+    SCHEFF_ALL = !SCHEFF_ALL;
+    const y0 = window.scrollY;
+    repaintSchedule();
+    window.scrollTo(0, y0);
+    return;
+  }
+  const sres = e.target.closest && e.target.closest("[data-scres]");   // 2026-11-23 -- the round's Results job
+  if(sres){
+    RESULTS_JOB = sres.getAttribute("data-scres"); RESULTS_FROM = null; RESULTS_TASK_OPEN = 0;
+    go("results");
+    const pr = document.getElementById("page-results");
+    if(pr) pr.innerHTML = renderResults();
+    window.scrollTo(0, 0);
+    return;
+  }
+  const ej = e.target.closest && e.target.closest("[data-effjump]");  // 2026-11-23 -- and back: the job's round here
+  if(ej){
+    const led = (LEDGER || []).find(x => String(x.round_no) === ej.getAttribute("data-effjump"));
+    const r = scRoundForLedger(led);
+    if(r) SCHEFF_OPEN = scRoundKey(r);
+    go("schedule");
+    repaintSchedule();
+    requestAnimationFrame(() => {
+      const tr = r ? document.querySelector(`#page-schedule [data-scround="${CSS.escape(scRoundKey(r))}"]`) : null;
+      if(tr) tr.scrollIntoView({block: "center"}); else window.scrollTo(0, 0);
+    });
+    return;
+  }
   const row = e.target.closest && e.target.closest("[data-scround]");
   if(!row) return;
   e.preventDefault();
@@ -12197,22 +12379,6 @@ function scheffCostCard(){
       + `. The old estimate for any round this big was ~${scNum(SCHEFF.old_rule_passes)} passes.</div>`;
   out += '<div class="trk-note">Finished real-tick rounds on the optimizer box. Typical = the middle round, with the '
     + 'middle half\'s range of passes.</div>';
-  /* 2026-10-22 -- SIZE PROBES (group_blocks.probe_state). Trevor: "I want the planner to try Bigger rounds to get the
-     kind of data that we need. Just maybe not Exit G1 big." A round in the lowest unmeasured band above the cap runs
-     whole; the next band opens once this one is measured within its hours. */
-  const pr = SCHEFF.probes || [];
-  if(pr.length)
-    out += '<div class="tlab" style="margin-top:10px">Bigger rounds, tried on purpose</div>'
-      + '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Combinations</th><th>Probes</th><th>Typical</th><th>Now</th></tr>'
-      + pr.map(b => `<tr><td>${scNum(b.lo)} – ${scNum(b.hi)}</td><td>${b.finished} of ${b.per_band || "—"}`
-          + `${b.running ? ` <span class="dim">(+${b.running} running)</span>` : ""}</td>`
-          + `<td>${b.median_hours != null ? scHours(b.median_hours) : "—"}</td>`
-          + `<td>${b.measured ? "measured" : b.open ? "runs whole now" : "waits for the smaller band"}</td></tr>`).join("")
-      + '</table></div>'
-      + `<div class="trk-note">A round in an open band runs whole instead of in blocks, so the planner learns what that `
-      + `size costs and gains. The next band opens once this one has its probes at a typical ${
-          scHours((pr[0] || {}).unlock_hours)} or less. Nothing over ${scNum((pr[pr.length - 1] || {}).hi)} `
-      + `combinations ever runs whole — a group that big always runs in blocks.</div>`;
   return out + '</div></div>';
 }
 /* 2026-10-22 -- HOW THE PLANNER'S PREDICTIONS DID (schedule_efficiency.track_predictions). Trevor: "make the planner
@@ -18782,6 +18948,10 @@ function applySnapshot(d, source){
   /* 2026-09-23 -- every backtest's balance line, oldest first. Absent on a
      snapshot from an older publisher, which leaves the badge saying so. */
   CURVES = Array.isArray(d.curves) ? d.curves : [];
+  MILESTONES = (d.milestones && typeof d.milestones === "object") ? d.milestones : {};
+  HOLDS = (d.holds && typeof d.holds === "object") ? d.holds : {};
+  UNHOLD = Array.isArray(d.unhold) ? d.unhold : [];
+  HOLDS_WHY = (d.holds_why && typeof d.holds_why === "object") ? d.holds_why : {};
   QUEUE = Array.isArray(d.queue) ? d.queue : null;
   QCOUNTS = (d.queue_counts && typeof d.queue_counts === "object") ? d.queue_counts : null;
   QREST = Array.isArray(d.queue_rest) ? d.queue_rest : [];
@@ -22887,6 +23057,18 @@ document.addEventListener("click", e => {
   if(e.target.closest("[data-optopen]")){
     OPTSTATE.open = !OPTSTATE.open; repaintCards(); return;
   }
+  if(e.target.closest("[data-optjump]")){          // 2026-11-23 -- Change the pass: straight to the table
+    const chip = Array.from(document.querySelectorAll("[data-rtask]")).find(x => /OPTIM/i.test(x.textContent));
+    if(chip) RESULTS_TASK_OPEN = Number(chip.dataset.rtask) || 0;
+    OPTSTATE.open = true;
+    const pg = document.getElementById("page-results");
+    if(pg) pg.innerHTML = renderResults();
+    requestAnimationFrame(() => {
+      const t = document.querySelector("[data-optopen]");
+      if(t) t.scrollIntoView({block: "start"});
+    });
+    return;
+  }
   /* 2026-10-19 -- the live table's own chips (livePassesCard): same rules as the Results table's. */
   if(e.target.closest("[data-lvopen]")){ LIVEOPT.open = !LIVEOPT.open; repaintCards(); return; }
   const lvs = e.target.closest("[data-lvslice]");
@@ -23001,6 +23183,36 @@ document.addEventListener("click", e => {
   }
   if(e.target.closest("[data-mgmode]")){
     MSTATE.mode = MSTATE.mode === "index" ? "value" : "index";
+    repaintCards();
+    return;
+  }
+  const uh = e.target.closest("[data-unhold]");     // 2026-11-23 -- unhold / un-retire
+  if(uh){
+    const k = uh.getAttribute("data-unhold"), parts = k.split("|");
+    const retired = uh.getAttribute("data-uhkind") === "retired";
+    const said = (retired ? "Un-retire " : "Unhold ") + spaceOut(stripRegime(parts[2])) + " in " +
+      (typeof bktName === "function" ? bktName(parts[0], parts[1]) : parts[0] + " " + parts[1]) +
+      "? Its value stays where it is; its group sweeps it at its next round" +
+      (retired ? ", and the retirement rule judges it afresh." : ".") +
+      (uh.getAttribute("data-uhwhy") ? "\n\nHeld because: " + uh.getAttribute("data-uhwhy") : "");
+    if(!window.confirm(said)) return;
+    const base = apiBase();
+    if(!base){ window.alert("There's no Laptop link on this phone — not sent."); return; }
+    uh.disabled = true;
+    fetch(base + "/unhold", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({regime: parts[0], bucket_id: Number(parts[1]), name: parts[2], by: "app"})})
+      .then(r => r.json().catch(() => ({})).then(j => ({ok: r.status === 202, status: r.status, j: j})))
+      .then(x => {
+        if(x.ok){ UHSENT[k] = Date.now(); repaintCards(); return; }
+        uh.disabled = false;
+        window.alert(x.status === 404 ? "The Laptop hasn't loaded this update yet — not sent."
+                                      : (x.j.error || ("Not sent: HTTP " + x.status)));
+      })
+      .catch(() => { uh.disabled = false; window.alert("No answer from the Laptop — not sent. Check Tailscale."); });
+    return;
+  }
+  if(e.target.closest("[data-mgver]")){            // 2026-11-23 -- this version / all versions
+    MSTATE.ver = MSTATE.ver === "this" ? "all" : "this";
     repaintCards();
     return;
   }
@@ -23201,8 +23413,16 @@ document.addEventListener("click", e => {
   const t = e.target.closest("[data-rtask]");
   if(!t) return;
   RESULTS_TASK_OPEN = Number(t.dataset.rtask) || 0;
+  /* 2026-11-23 -- a test chip lands on the metric chart (Trevor: "immediatly jump to the metric chart"); the sweep
+     chip opens at the top as before. */
+  const toChart = /BUCKET|FULL/i.test(t.textContent || "");
   document.getElementById("page-results").innerHTML = renderResults();
-  window.scrollTo(0, 0);
+  /* looked up when it scrolls, not before: the round's values arrive and repaint the card, replacing the element */
+  const toMg = () => { const m = document.querySelector("#page-results .mghead"); if(m) m.scrollIntoView({block: "start"}); return !!m; };
+  if(toChart){
+    requestAnimationFrame(() => { if(!toMg()) window.scrollTo(0, 0); });
+    setTimeout(toMg, 450);
+  } else window.scrollTo(0, 0);
 });
 
 /* Taking it off the list is its own listener, so the two navigation handlers
@@ -23317,6 +23537,8 @@ document.addEventListener("click", e => {
   if(!card) return;
   card.hidden = !card.hidden;
   row.classList.toggle("open", !card.hidden);
+  const tk = row.getAttribute("data-tlkey");           // 2026-11-23 -- remembered, so a refresh keeps it open
+  if(tk){ if(card.hidden) TL_OPEN.delete(tk); else TL_OPEN.add(tk); }
 });
 
 document.addEventListener("click", e => {
