@@ -1079,8 +1079,6 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 /* 2026-10-19 -- a live table's row: nothing to pick mid-round. */
 .optr.ro{cursor:default;}
 .optr.ro:active{transform:none;}
-/* OUT OF BAND, on the pass itself, so it survives whichever columns are shown. */
-.optp.oob{color:var(--warn);}
 /* 2026-10-29 -- the Original row (the Original chip): ranked with the passes, tinted so it never reads as one. */
 .optr.orig{background:var(--tonal);}
 .optr.orig .optp{color:var(--dim);}
@@ -1138,17 +1136,11 @@ button.chip[disabled]{opacity:.4;cursor:default;}
 .sbar i{display:block;height:100%;border-radius:2px;}
 
 
-/* The trade-band verdict. IN BAND is the quiet one; both misses are loud,
-   because a round outside the band is a round whose result the EA discounted. */
+/* the picked line's row (2026-11-22: the trade-band verdict that shared it is gone). */
 .tband{
   display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
   font-size:.76rem;font-variant-numeric:tabular-nums;
 }
-.tbv{font-weight:700;}
-.tbv.inband{color:var(--good);}
-.tbv.under{color:var(--bad);}
-.tbv.over{color:var(--warn);}
-.tbv.unknown{color:var(--faint);font-weight:600;}
 .tbm{color:var(--dim);font-family:"Roboto Mono",ui-monospace,monospace;font-size:.68rem;}
 
 /* A graph is the one output you want to SEE rather than tap, so it is drawn
@@ -2280,7 +2272,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261119-204323";
+const APP_BUILD = "20261122-182155";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -3521,14 +3513,8 @@ function passPick(f){
   const typed = sel != null && !rows.some(r => Number(r.pass) === Number(sel));
   return `<div class="pick">
       <div class="pickhd">⏸ Round finished — pick a pass</div>
-      <div class="picksub">Nothing is applied until you do. ${esc(a.passes)} passes ran;
-        target is ${esc(a.band_low)}–${esc(a.band_high)} trades.</div>` +
-    (a.on_cadence === false
-      ? `<div class="pickwarn">⚠️ NOTHING landed on-cadence
-           (${esc(a.band_low)}–${esc(a.band_high)} trades). These are NEAREST TO
-           TARGET instead, so "best PF among on-cadence" is not what ranked
-           them.</div>`
-      : `<div class="picksub">Best PF among the on-cadence passes:</div>`) +
+      <div class="picksub">Nothing is applied until you do. ${esc(a.passes)} passes ran.</div>` +
+    `<div class="picksub">The passes it ranked:</div>` +
     rows.map((r, i) => passRow(r, i, key)).join("") + `
       <div class="pickother">
         <label for="pin-${esc(key)}">Or any pass</label>
@@ -4612,18 +4598,9 @@ function jobCard(r, rep, condensed, hint, cadence){
            note (jobNotes): the short line here on the list, the full one on the job's own card. */
         jobNotes(r, condensed) +
         (hint ? `<div class="jc-note">${esc(hint)}</div>` : "") +
-        /* THE TRADE BAND LIVES IN THE CARD NOW. Trevor, 2026-09-17: *"Insert the
-           Trade Band inside the uncondensed Job card."* It used to render bare
-           between the card and the badge below it -- a heading and two lines
-           floating on the page background, which read as something half-drawn.
-
-           STILL ONLY FOR A SWEEP, per the earlier call that it belongs with the
-           search rather than with a result: the caller passes a cadence only
-           when the open chip is one, so a backtest's card shows none. */
-        (cadence && !condensed
-          ? `<div class="tsec" style="margin-top:2px">
-               <div class="tlab">Trade band</div>` + taskBand(cadence) + `</div>`
-          : "") + `
+        /* 2026-11-22 -- no trade band here any more: a sweep's floor is a trade count, not a band (trevor: "any
+           references to that old trade band can get removed"). */
+        `
       </div>
     </article>`;
 }
@@ -4728,10 +4705,6 @@ function renderResultsJob(r){
   const pass = String(rep.rel_dir || "").split("/").filter(Boolean).pop() || null;
   /* The task chips sit between the back button and the job -- Trevor: *"Right
      below (Back All Jobs)."* */
-  /* A SWEEP'S BAND, and only a sweep's -- see the note in jobCard. */
-  const openTask = tasks[open];
-  const band = (openTask && !isBacktest(openTask) && openTask.detail)
-    ? openTask.detail.cadence : null;
   /* 2026-09-26 -- CHANGE THE PASS on the group's latest applied round
      (published as `changeable`); fleet_api checks the same again. */
   const change = r.changeable
@@ -4741,7 +4714,7 @@ function renderResultsJob(r){
                   applied_pass: r.applied_pass,
                   applied_pass_style: r.applied_pass_style}) + `</div></div>`
     : "";
-  return back + chips + jobCard(r, rep, false, null, band) + change +
+  return back + chips + jobCard(r, rep, false, null) + change +
     /* THE VARIABLES, BELOW THE PF AND ABOVE THE BUTTONS. Trevor, 2026-09-16:
        *"I want the Variables and their status info in here right below the PF
        numbers, above the Reports."*
@@ -4875,7 +4848,14 @@ function roundVerdicts(v){
 /* 2026-10-17 -- THE ROUND'S OWN WARNINGS (round_notes, via the snapshot): "only 3 passes survived the cadence band
    (expected 20+)" -- shown on the job, not only in the Telegram alert. */
 function roundWarnings(ws){
-  return (ws || []).map(w => `<div class="inexact">\u26a0\ufe0f ${esc(w)}</div>`).join("");
+  return (ws || []).map(w => `<div class="inexact">\u26a0\ufe0f ${esc(warnWords(w))}</div>`).join("");
+}
+/* 2026-11-22 -- a warning stored before the old band left the words, in today's words. */
+function warnWords(w){
+  return String(w == null ? "" : w)
+    .replace("passes survived the cadence band", "passes cleared the trade floor")
+    .replace("Either the band is too tight for this group or its parameter range is wrong",
+             "Either the floor cuts most of this group's grid or its parameter range is wrong");
 }
 
 /* 2026-10-17 -- WHAT THIS ROUND'S CHECKPOINTS FOUND, IN A FEW WORDS. Trevor: *"the checkpoint runs should have thier
@@ -6854,14 +6834,13 @@ const M_DEFS = [
   ["MFE/MAE", "tmae", "Time to worst %", 1, 0], ["MFE/MAE", "tmaew", "…winners %", 1, 0],
   ["MFE/MAE", "espread", "Entry spread (p)", 2, -1],
   ["MFE/MAE", "xspread", "Exit spread (p)", 2, -1],
-  ["Fitness", "score", "Final score", 3, 1], ["Fitness", "volr", "Vol ratio", 4, 0],
-  ["Fitness", "cadterm", "Cadence term", 4, 1], ["Fitness", "bcredit", "Band credit", 4, 1]
+  ["Fitness", "score", "Final score", 3, 1]
 ];
 const M_WHAT = {
   equity:"Where the account finished — the starting balance plus net profit. This is the last point of the balance curve, and across rounds it is the line that says whether the campaign is going anywhere.",
   pf:"Gross profit over gross loss. 1.0 breaks even; the live gate wants 1.50.",
   net:"Total profit in account currency, after swap.",
-  trades:"Closed positions. The trade band above judges whether it is the right number.",
+  trades:"Closed positions.",
   payoff:"Net profit over trade count — the average trade, win or lose.",
   sharpe:"Return per unit of volatility. MT5 computes it per trade, not annualised.",
   rec:"Net profit over the maximum drawdown — what you made per unit of the worst dip.",
@@ -6885,9 +6864,6 @@ const M_WHAT = {
   tmae:"Where in the hold the worst point happened.",
   tmaew:"Winners only. Near zero means winners go against you at entry: the spread.",
   score:"What OnTester() returned — what the optimizer ranked this pass on.",
-  volr:"Annualised trades over this regime's target. 1.0 is exactly on target.",
-  cadterm:"Cadence scored 1.0 at target to 0.0 at the band edge, times the class weight (0.50 DECISION, ZERO for SIGNAL), ADDED to the score.",
-  bcredit:"The edge-PENALTY switch. 1.0 deducts nothing. Below 1.0 is the ramp zone, costing up to 2.0. Outside the band is −999, a disqualification."
 };
 function mFmt(v, dp){
   if(v == null) return "—";
@@ -7964,7 +7940,7 @@ function soonBadge(title, what){
    A metric outside both lists is a plain sum or ratio over the slice's trades.
    Either way it only shows a number if the record CARRIES one -- missing stays
    missing rather than becoming a zero, per the rule task_metrics is built on. */
-const SES_WHOLE_RUN = ["score", "volr", "cadterm", "bcredit"];
+const SES_WHOLE_RUN = ["score"];   // 2026-11-22: the three band metrics are gone
 /* Sliceable, but only by rebuilding the slice's own curve -- so the card says so
    in a different word. */
 const SES_OWN_CURVE = ["equity", "dd", "rec", "sharpe", "uwater", "inpos",
@@ -8049,15 +8025,6 @@ function sessionBadge(t){
     </div></div>`;
 }
 
-/* THE TRADE BAND LIVES HERE AND NOWHERE ELSE. Trevor, 2026-09-17: *"Put the
-   Trade Band information only on the Optimize information panels."*
-
-   It reads as a result and is really an INSTRUCTION: the band is what the
-   pre-flight refuses a group on, what a seed's reason quotes, and what decides
-   whether a sweep has to go looking for cells that can reach it. That is a
-   statement about the search, so it belongs on the badge about the search. A
-   backtest's own trade count is already in its metrics, where it is one number
-   among thirty-two rather than a verdict. */
 /* WHICH SWEEP THIS IS, counted rather than named -- same reason as isBacktest.
    `nth` is how many sweeps this job has reached including this one, which the
    caller knows from the chip order and the renderer must not spell out. */
@@ -8076,20 +8043,14 @@ function sessionBadge(t){
    🔴 EACH COLUMN CARRIES ITS OWN DIRECTION, and drawdown is why. Ranking every
    column descending would put the WORST drawdown at the top of "Top 20" -- a
    list confidently offering the passes that dug the deepest hole. The third
-   entry is which end is GOOD; the fourth is how many decimals the figure wants.
-
-   THE BAND MARKER RIDES THE PASS NUMBER, not a trades column. Whether a pass
-   landed inside the trade band is the one fact you must not lose when you stop
-   looking at Trades -- so it colours the pass itself and survives any column
-   choice. */
+   entry is which end is GOOD; the fourth is how many decimals the figure wants. */
 /* 2026-10-01 -- PF, the REAL profit factor (Trevor: "Can I get the actual
    profit factor as an option?"). Result is GoldBot's own fitness score, not PF. */
 const OPT_COLS = [["result", "Result", 1, 3], ["pf", "PF", 1, 2],
                   ["profit", "Profit", 1, 0],
                   ["trades", "Trades", 1, 0], ["dd", "Drawdown", -1, 0],
                   ["payoff", "ExPayoff", 1, 2]];
-const OPT_SLICES = [["top", "Top 20"], ["bottom", "Bottom 20"],
-                    ["target", "Closest to target"]];
+const OPT_SLICES = [["top", "Top 20"], ["bottom", "Bottom 20"]];   // 2026-11-22: "closest to target" (the band) gone
 /* `orig` (2026-10-29): the Original chip -- the bucket's own pre-sweep numbers ranked in with the passes. */
 const OPTSTATE = { slice: "top", cols: ["result"], open: false, orig: false };
 /* The pass chosen on THIS card, until something sends it. Keyed by round so two
@@ -8163,8 +8124,8 @@ function optCounts(d, split){
   }).filter(Boolean);
   return {total: Number(c.total) || split.all.length, held, parts, cut: c};
 }
-/* Closest to target ranks on the band, which a cut sheet carries only when the publisher knew it. */
-const optSlices = cnt => OPT_SLICES.filter(([k]) => k !== "target" || !cnt.cut || cnt.cut.band);
+/* 2026-11-22 -- every slice shows: the band-ranked one is gone. */
+const optSlices = cnt => OPT_SLICES;
 const optState = (st, cnt) => optSlices(cnt).some(([k]) => k === st.slice) ? st : Object.assign({}, st, {slice: "top"});
 
 /* `full` (2026-10-29): the whole sheet in this slice's order, uncut -- where the Original row ranks when its place is
@@ -8172,17 +8133,6 @@ const optState = (st, cnt) => optSlices(cnt).some(([k]) => k === st.slice) ? st 
 function optPasses(valid, d, st, full){
   st = st || OPTSTATE;      // 2026-10-19 -- the live table has its own (LIVEOPT)
   const rows = valid.slice();
-  const cad = d.cadence || {};
-  const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
-  const mid = (isFinite(lo) && isFinite(hi)) ? (lo + hi) / 2 : null;
-
-  if(st.slice === "target" && mid != null){
-    /* Nearest the middle of the band, and the columns are deliberately not
-       consulted -- this slice IS a ranking, and it is the one the cadence gate
-       actually cares about. */
-    rows.sort((a, b) => Math.abs(Number(a.trades) - mid) - Math.abs(Number(b.trades) - mid));
-    return full ? rows : rows.slice(0, 20);
-  }
   /* MASTER FIRST, THEN THE REST AS TIEBREAKS -- left to right, exactly as they
      are drawn. */
   const cols = st.cols.map(optColDef);
@@ -8211,7 +8161,7 @@ function optCutNote(cnt){
   if(!cnt.cut) return "";
   return `<div class="vhcap" style="margin:2px 0 6px">The sheet holds <b>${cnt.total.toLocaleString()}</b> passes. The
     phone carries the ${(Number(cnt.cut.shown) || 0).toLocaleString()} that any view of it can show \u2014 each column's
-    top and bottom 20${cnt.cut.band ? " and the 20 nearest the band" : ""} \u2014 so every slice here is the slice of
+    top and bottom 20 \u2014 so every slice here is the slice of
     the whole sheet.</div>`;
 }
 
@@ -8220,7 +8170,7 @@ function optCutNote(cnt){
    tab's job. Same top 20 table as the results tab has. Just the ones that show up mid round would give me an idea
    where we are in the middle of the round."* The copy's own per-pass feed, cut to the rows any view can show
    (live_passes). READ-ONLY: nothing is picked mid-round. "#" is the order each pass FINISHED in -- the feed carries no
-   MT5 pass number -- and there is no Closest to target: the trade band is measured when the round ends. */
+   MT5 pass number. */
 const LIVEOPT = {slice: "top", cols: ["result", "pf"], open: false};
 /* 2026-10-18 -- THE BUCKET TEST BEFORE THIS ROUND, to hold the best pass against. Trevor: "on this tab where it tells
    me the best pass result. I want the previous bucket test of value to compare." The newest bucket-scope run of this
@@ -8308,8 +8258,7 @@ function livePassesCard(f){
     (!LIVEOPT.open ? "" : slices + heldNote + colChips + head + body +
       `<div class="vhcap">The passes finished so far in this sweep, ranked across all of them. <b>#</b> is the order
         each finished in, not MT5's pass number. The genetic search is still choosing what to try next, so the top can
-        still change. Tap a column to add it; the leftmost sorts. <b>Closest to target</b> needs the trade band, which
-        the round measures when it ends.</div>`));
+        still change. Tap a column to add it; the leftmost sorts.</div>`));
 }
 
 /* 2026-10-29 -- THE ORIGINAL, AS A ROW OF THE PASS TABLE (the Original chip). Trevor: *"I need a way to check what the
@@ -8399,8 +8348,6 @@ function optimizeBadge(t, nth, picked){
     `<div class="optheld"><b>${cnt.held.toLocaleString()} of ${
        cnt.total.toLocaleString()} withheld</b> \u2014 ${esc(heldParts.join(", "))}.
        ${(cnt.total - cnt.held).toLocaleString()} ranked.</div>`) + optCutNote(cnt);
-  const lo = Number(cad.floor_trades), hi = Number(cad.ceiling_trades);
-  const inBand = n => isFinite(lo) && isFinite(hi) && n >= lo && n <= hi;
   const cols = OPTSTATE.cols;
   /* a fixed width for the pass, then an equal share each -- minmax(0,..) so a long number
      shrinks its own column instead of pushing the row wider than the phone. 2026-10-19 -- fixed, not auto: each row
@@ -8456,7 +8403,7 @@ function optimizeBadge(t, nth, picked){
     const is = chosen != null && String(p.pass) === chosen;
     return `<button type="button" class="optr${is ? " on" : ""}" style="${grid}" ` +
       `data-optpick="${esc(key)}" data-optpass="${esc(p.pass)}">
-        <span class="optp${inBand(n) ? "" : " oob"}">${esc(p.pass)}</span>` +
+        <span class="optp">${esc(p.pass)}</span>` +
       cols.map(k => `<span>${esc(optFmt(p, k))}</span>`).join("") + `</button>`;
   }).join("");
 
@@ -8511,17 +8458,12 @@ function optimizeBadge(t, nth, picked){
              ${assigned ? "The round still has pass " + esc(assigned) + " assigned." : ""}</div>`
         : "") +
       `<div class="vhcap">Tap a column to add it; the leftmost one sorts and the
-        rest break its ties, so tapping <b>Profit</b> first ranks by profit. A
-        pass number in amber landed outside the trade band${
-        isFinite(lo) ? " (" + esc(lo.toLocaleString()) + "\u2013" +
-          esc(hi.toLocaleString()) + " trades)" : ""}. <b>Closest to target</b>
-        ignores the columns entirely \u2014 nearness to the band is its own ranking.
+        rest break its ties, so tapping <b>Profit</b> first ranks by profit.
         A <b>withheld</b> pass reported a refusal through the result column instead
-        of a score: <b>disqualified</b> ran its whole window and missed the band,
-        <b>early-aborted</b> was stopped part-way for overtrading so its trades and
-        profit describe a window that never finished. Neither is comparable with a
-        scored pass, and Closest to target would have ranked one on a trade count
-        that was never final.
+        of a score: <b>disqualified</b> ran its whole window and fell under the trade
+        floor, <b>early-aborted</b> was stopped part-way so its trades and profit
+        describe a window that never finished. Neither is comparable with a scored
+        pass.
         \u26a0\ufe0f Choosing changes nothing yet: applying a pass re-runs both backtests
         from the pre-round snapshot, and the app has no channel to ask for that.</div>`) +
     `</div></div>`;
@@ -10550,9 +10492,6 @@ function taskSwept(list, states){
   }).join("");
 }
 
-const BAND_WORD = { IN_BAND: "In band", UNDER: "Under", OVER: "Over",
-                    UNKNOWN: "Not measured here" };
-
 /* WHERE THE VARIABLE LIST CAME FROM, said out loud. The three answers are not
    equally strong and the card should not pretend they are: `set` is what MT5 is
    sweeping this second, `applied` is what the last confirmed round put under
@@ -10569,31 +10508,6 @@ const SWEPT_LABEL = {
   task: "Swept this task",
   report: "Swept this task",
 };
-
-function taskBand(c){
-  if(!c) return "";
-  const v = String(c.verdict || "UNKNOWN");
-  const cls = v.toLowerCase().replace("_", "");
-  let line = "";
-  if(v === "UNKNOWN"){
-    /* NOT A MISS. A sweep runs with logging off and writes no count at all, and
-       the round ledger is per-machine so a peer's round has no row here either.
-       Saying "0 trades" or "under" would invent a cadence problem. */
-    line = `<span class="tbm">no trade count on this machine</span>`;
-  } else {
-    line = `<span class="tbm">${esc(c.trades)} trades · band ` +
-           `${esc(c.floor_trades)}–${esc(c.ceiling_trades)}</span>` +
-           (c.off_by ? `<span class="tbm">${esc(c.off_by)} ${
-              v === "UNDER" ? "short" : "over"}</span>` : "") +
-           /* THE RATIO IS WHAT THE EA ACTUALLY COMPARED. The trade counts above
-              are the readable form of it, and a reader checking this verdict
-              against a FITNESS log needs the number that log carries. */
-           (c.vol_ratio != null ? `<span class="tbm">ratio ${esc(c.vol_ratio)} ` +
-              `(${esc(c.band_lo)}–${esc(c.band_hi)})</span>` : "");
-  }
-  return `<div class="tband"><span class="tbv ${cls}">${
-      esc(BAND_WORD[v] || v)}</span>${line}</div>`;
-}
 
 /* WHAT THE TASK PRODUCED. `pass_number`, `profit_factor` and `model` were all
    on the record and none of them were drawn -- which meant the card could tell
@@ -10659,8 +10573,6 @@ function taskCard(r, relDir, open, skipGraph, lift){
   const parts = [
     taskSeed(d.seed),
     taskResult(d.cadence),
-    d.cadence ? `<div class="tsec"><div class="tlab">Trade band</div>` +
-                taskBand(d.cadence) + `</div>` : "",
     (d.swept || []).length ? `<div class="tsec"><div class="tlab">Swept</div>` +
                              taskSwept(d.swept, d.variables) + `</div>` : "",
     (d.variables || []).length && !lift
