@@ -2294,7 +2294,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261123-162122";
+const APP_BUILD = "20261123-175812";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -8780,7 +8780,7 @@ const CK_NONE = 'None yet. A checkpoint re-tests one of a bucket\'s switches (po
   + 'the confluence timeframes&hellip;) on both years when a group that leans on it is applied.';
 function ckBucketSection(key){
   const b = (CHECKPOINTS.buckets || []).find(function(x){ return x.key === key; });
-  const list = b ? (b.checkpoints || []) : [];
+  const list = b ? (b.checkpoints || []).filter(c => !ckGone(c)) : [];          // 11-23: not the retired ones
   return '<div class="section-label" style="margin-top:12px">Checkpoints (' + list.length + ')</div>'
     + '<div class="card"><div class="card-in">'
     + (list.length ? list.map(ckCard).join("") + '<div class="tnote">' + esc(CHECKPOINTS.rule || "") + '</div>'
@@ -8788,11 +8788,12 @@ function ckBucketSection(key){
     + '</div></div>';
 }
 function ckOverview(){
-  const bs = (CHECKPOINTS.buckets || []).filter(function(b){ return (b.checkpoints || []).length; });
+  const live = b => (b.checkpoints || []).filter(c => !ckGone(c));              // 11-23: not the retired ones
+  const bs = (CHECKPOINTS.buckets || []).filter(function(b){ return live(b).length; });
   let h = '<div class="section-label" style="margin-top:12px">Checkpoints</div><div class="card"><div class="card-in">';
   if(!bs.length) return h + '<div class="tnote">' + CK_NONE + '</div></div></div>';
   bs.forEach(function(b){
-    const cs = b.checkpoints;
+    const cs = live(b);
     const wait = cs.filter(ckWaiting).length, run = cs.filter(function(c){ return c.status === "running"; }).length;
     const known = (STATUS.buckets || []).some(function(x){ return x.key === b.key; });
     const line = cs.map(function(c){
@@ -8859,10 +8860,14 @@ function ckRepaint(){ repaintStatus(); repaintCheckpoints(); }
    where it stands, the best alternative against the three checks of the Y2-led rule, the groups whose applied round
    starts it, re-checks used of its allotment this epoch, and cancel (two taps; the tick drops its queued runs and
    retires it on that bucket for the epoch). The full table is one tap down. RESULTS ONLY, as on Status. */
-function ckAll(){
+/* 2026-11-23 -- A RETIRED CHECKPOINT (checkpoints.RETIRED_V34: the optimizer or the trigger round answers its question
+   now) carries retired_why; the page shows it only in its Retired section (Trevor: "I think the retired ones are
+   still there"). ckAll is the rest. */
+const ckGone = c => !!(c && c.retired_why);
+function ckAll(retired){
   const out = [];
   (CHECKPOINTS.buckets || []).forEach(function(b){
-    (b.checkpoints || []).forEach(function(c){ out.push({b: b, c: c}); });
+    (b.checkpoints || []).forEach(function(c){ if(ckGone(c) === !!retired) out.push({b: b, c: c}); });
   });
   return out;
 }
@@ -8975,14 +8980,16 @@ function ckPageCard(b, c){
     + '<div class="ck-h">' + ckVerdictChip(c)
     + '<span class="chip ' + (REGIME_CLASS[b.regime] || "") + '">' + esc(b.regime) + '</span>'
     + bktEl(b.bucket_id, false, null, b.regime) + ckKindChip(c)
-    + (oldVer ? '<span class="chip ckhold">' + esc(oldVer) + '</span>' : "") + '</div>'
+    + (oldVer ? '<span class="chip ckhold">' + esc(oldVer) + '</span>' : "")
+    + (ckGone(c) ? '<span class="chip ckhold">RETIRED</span>' : "") + '</div>'
     + '<div class="ck-sub">' + esc(c.switch) + ' ' + esc(c.title) + ' · started ' + esc(fmtWhen(c.at)) + '</div>'
+    + (ckGone(c) ? '<div class="tnote">Retired: ' + esc(c.retired_why) + '</div>' : "")
     + ckClose(c)
     + '<div class="tnote">' + esc(ckText(c.explanation)) + '</div>'
     + '<div class="ck-sub">Tied to: ' + esc(ckTriggers(c) || "—") + '</div>'
     + '<div class="ck-sub">Allotment: ' + allot + ' · runs ' + esc(c.runs_in || 0) + ' of ' + esc(c.runs_of || 0)
     + ' in</div>'
-    + ckAnswer(c) + ckCancel(c) + ckRuns(c)
+    + (ckGone(c) ? "" : ckAnswer(c) + ckCancel(c)) + ckRuns(c)
     + '<details class="ck-more"><summary>Every setting, both years</summary>' + ckTable(c)
     + '</details></div></div></div>';
 }
@@ -9019,6 +9026,18 @@ function renderCheckpoints(){
   if(older.length)
     blocks.push(["older", "Older", '<div class="tnote" style="padding:0 2px">Checkpoints from before ' + esc(cur) +
       ', newest first; each card says the version it ran on.</div>' + older.map(x => ckPageCard(x.b, x.c)).join("")]);
+  /* 2026-11-23 -- RETIRED: each one and what answers its question now; its past runs folded, newest first */
+  const gone = ckAll(true).sort((x, y) => String(y.c.at || "").localeCompare(String(x.c.at || "")));
+  const rlist = CHECKPOINTS.retired || [];
+  if(rlist.length || gone.length)
+    blocks.push(["retired", "Retired", '<div class="card"><div class="card-in"><div class="tnote">These no longer ' +
+        'run on ' + esc(cur) + '. Each one’s question is answered another way now:</div>' +
+      rlist.map(r => '<div class="lrow"><span class="tby">' + esc(r.switch) + '</span>' +
+        (r.kind ? '<span class="chip ckkind">' + esc(r.kind) + '</span>' : "") +
+        '</div><div class="tnote" style="margin:2px 0 0">' + esc(r.question || "") + '</div>' +
+        '<div class="ck-sub" style="margin:0 0 8px">Now: ' + esc(r.why || "") + '</div>').join("") + '</div></div>' +
+      (gone.length ? '<details class="ck-more"><summary>Their past runs (' + gone.length + ')</summary>' +
+        gone.map(x => ckPageCard(x.b, x.c)).join("") + '</details>' : "")]);
   h += (blocks.length ? secBar("ck", blocks.map(([k, l]) => [k, l]), "ck3") : "")
     + '<div class="section-label">Checkpoints</div>';
   if(!all.length)
@@ -12300,6 +12319,18 @@ function scHideTips(){
   else if(!svg && t === "pointerdown") scHideTips();
 }));
 document.addEventListener("click", e => {
+  /* 2026-11-23 -- the efficiency graph's controls: metric, x axis, a bucket on / off, all back on */
+  const eg = e.target.closest && e.target.closest("[data-effm],[data-effx],[data-effb],[data-effall]");
+  if(eg){
+    if(eg.hasAttribute("data-effm")) EFFG.m = eg.getAttribute("data-effm");
+    else if(eg.hasAttribute("data-effx")) EFFG.x = eg.getAttribute("data-effx");
+    else if(eg.hasAttribute("data-effb")){ const k = eg.getAttribute("data-effb"); EFFG.off[k] = !EFFG.off[k]; }
+    else EFFG.off = {};
+    const y0 = window.scrollY;
+    repaintSchedule();
+    window.scrollTo(0, y0);
+    return;
+  }
   if(e.target.closest && e.target.closest("[data-scall]")){      // 2026-11-23 -- show all / show fewer
     SCHEFF_ALL = !SCHEFF_ALL;
     const y0 = window.scrollY;
@@ -12407,42 +12438,184 @@ function scheffPredictCard(){
     + 'round: the typical miss shrinking from the 5 before to the last 5 is the planner getting better.</div>';
   return out + '</div></div>';
 }
-/* 2026-10-22 -- SPLIT READINESS (schedule_efficiency -> split_planner). Trevor: *"So the efficiency planner needs to also
-   figure our where to split it and when."* Today's buckets against the line every bucket must clear, and where the
-   planner would put the lines now. Nothing here splits: the re-cut runs at an epoch's end once its gain flattens, the
-   first on Trevor's tap. */
-const scSlope = v => v == null ? "" : (v > 0 ? "+" : "") + Number(v).toFixed(4);
-const scRange = b => b.lo == null ? `below ${scSlope(b.hi)}` : b.hi == null ? `from ${scSlope(b.lo)}`
-                                  : `${scSlope(b.lo)} to ${scSlope(b.hi)}`;
-const scPf = v => v == null ? "—" : Number(v).toFixed(2);
-function scSplitTable(bs){
-  return '<div class="trk-scroll"><table class="trk-tbl"><tr><th>Slope</th><th>Trades</th><th>PF</th><th>Year 1</th>'
-    + '<th>Year 2</th><th>Clears</th></tr>'
-    + bs.map(b => `<tr><td>${esc(scRange(b))}</td><td>${scNum(b.n)}</td><td>${scPf(b.pf)}</td><td>${scPf(b.pf_y1)}</td>`
-      + `<td>${scPf(b.pf_y2)}</td><td class="${b.clears ? "" : "bad"}">${b.clears ? "✓ yes" : "✗ no"}</td></tr>`).join("")
-    + '</table></div>';
+/* 2026-11-23 -- THE EFFICIENCY GRAPH. Trevor: "The schedule Efficiency Tab Also needs a place at the Top which will
+   show a graph. With any an all the metrics available for the efficiency. Same style as the Buckettest metric graphs. But
+   this one I want to know how well each bucket is doing, Core hours spent, daily efficiency, passes per pass count, All
+   those metrics available." -> "give me the option for rounds on the bottom or days". One metric at a time, one line per
+   bucket; the legend switches a bucket off and on. Rounds = each bucket's Nth finished round this epoch; Days = each local
+   day of the epoch. Read from what the page has already: SCHEFF.rounds and the fleet's day rows (EFF.series). */
+const EFFG = {m: "core", x: "rounds", off: {}};
+const EFFG_COL = VH_SERIES.concat(["#D47FB0", "#8FC7C2", "#B8C27A"]);
+const effgH = v => v.toFixed(v < 10 ? 1 : 0) + " h";
+/* [key, chip, value format, how a day adds up, Days only, what it is] */
+const EFFG_M = [
+  ["core", "Core hours", effgH, "sum", false, "agent core hours each round used (cores \u00d7 the hours they worked on it)"],
+  ["share", "Core share", v => v.toFixed(0) + "%", "share", true, "each bucket\u2019s share of the core hours spent that day"],
+  ["fleet", "Fleet efficiency", v => v.toFixed(1) + "%", "fleet", true,
+   "the share of the fleet\u2019s cores working each day (one line for the whole fleet)"],
+  ["hours", "Round hours", effgH, "sum", false, "the hours each round took, start to finish"],
+  ["passes", "Passes", v => v.toFixed(0), "sum", false, "the passes each round ran"],
+  ["pph", "Passes / core h", v => v.toFixed(2), "ratio", false, "passes for each core hour: how fast a bucket\u2019s rounds run"],
+  ["cover", "Grid covered", v => v.toFixed(v < 10 ? 1 : 0) + "%", "ratio", false,
+   "the passes as a share of the round\u2019s settings grid"],
+  ["waste", "Wasted passes", v => v.toFixed(0) + "%", "ratio", false,
+   "the share of a round\u2019s passes run after its best was already found"],
+  ["bestat", "Best found at", v => v.toFixed(0) + "%", "mean", false,
+   "how far into the round its best pass came (100% = at the very end)"],
+  ["gain", "Gain vs original", v => (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v).toFixed(0) + "%", "mean", false,
+   "the round\u2019s best against the original settings\u2019 result"],
+  ["pf", "Bucket PF after", v => v.toFixed(2), "last", false, "the bucket\u2019s PF after the round was applied"],
+];
+const effgDef = k => EFFG_M.find(m => m[0] === k) || EFFG_M[0];
+const effgNum = v => typeof v === "number" && isFinite(v) ? v : null;
+function effgVal(r, k){
+  const c = r.curve || {};
+  if(k === "core") return effgNum(r.core_hours);
+  if(k === "hours") return effgNum(r.hours);
+  if(k === "passes") return effgNum(r.passes);
+  if(k === "pph") return r.core_hours > 0 && r.passes != null ? r.passes / r.core_hours : null;
+  if(k === "cover") return r.grid > 0 && r.passes != null ? 100 * r.passes / r.grid : null;
+  if(k === "waste") return c.passes > 0 && c.wasted != null ? 100 * c.wasted / c.passes : null;
+  if(k === "bestat") return c.passes > 0 && c.best_n != null ? 100 * c.best_n / c.passes : null;
+  if(k === "gain") return effgNum(r.gain_pct);
+  if(k === "pf") return effgNum(r.bucket_pf_after);
+  return null;
 }
-function scheffSplitCard(){
-  const sp = SCHEFF.split || {};
-  if(sp.error || !sp.regimes)
-    return '<div class="card"><div class="card-in"><div class="trk-note">' + esc(sp.error || "Not scored yet.")
-      + '</div></div></div>';
-  const r = sp.rule || {};
-  let out = '<div class="card"><div class="card-in">';
-  Object.keys(sp.regimes).forEach(reg => {
-    const R = sp.regimes[reg], P = R.plan, n = (R.today || []).length;
-    out += `<div class="tlab" style="margin-top:6px"><span class="chip ${REGIME_CLASS[reg] || ""}">${esc(reg)}</span> `
-      + `today · ${n} bucket${n === 1 ? "" : "s"}</div>` + scSplitTable(R.today || []);
-    out += P
-      ? `<div class="tlab" style="margin-top:8px">The planner's lines · ${P.buckets.length} bucket${
-          P.buckets.length === 1 ? "" : "s"}${R.differs ? "" : " — the same as today"}</div>` + scSplitTable(P.buckets)
-      : '<div class="trk-note">No set of lines clears the line yet.</div>';
+/* the two parts of a ratio, summed over a day's rounds */
+function effgParts(r, k){
+  const c = r.curve || {};
+  if(k === "pph") return r.core_hours > 0 && r.passes != null ? [r.passes, r.core_hours] : null;
+  if(k === "cover") return r.grid > 0 && r.passes != null ? [r.passes, r.grid / 100] : null;
+  if(k === "waste") return c.passes > 0 && c.wasted != null ? [c.wasted, c.passes / 100] : null;
+  return null;
+}
+const effgDay = ts => { const d = new Date(ts * 1000);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+function effgBuckets(rounds){
+  const seen = {};
+  rounds.forEach(r => { seen[r.regime + "|" + r.bucket_id] = {regime: r.regime, id: r.bucket_id}; });
+  return Object.keys(seen).map(k => Object.assign({key: k}, seen[k]))
+    .sort((a, b) => bktFlow(a.regime, a.id, b.regime, b.id))
+    .map((b, i) => Object.assign(b, {name: bktName(b.regime, b.id), colour: EFFG_COL[i % EFFG_COL.length]}));
+}
+/* {labels, lines: [{key, name, colour, vals}]} for the metric and the x axis */
+function effgData(rounds, buckets, k, x){
+  const def = effgDef(k);
+  if(x === "rounds"){
+    const per = {};
+    rounds.filter(r => r.end && r.status !== "running").sort((a, b) => a.end - b.end)
+      .forEach(r => (per[r.regime + "|" + r.bucket_id] = per[r.regime + "|" + r.bucket_id] || []).push(r));
+    const n = Math.max(0, ...buckets.map(b => (per[b.key] || []).length));
+    return {labels: Array.from({length: n}, (_, i) => "round " + (i + 1)),
+            lines: buckets.map(b => Object.assign({}, b, {vals: Array.from({length: n}, (_, i) => {
+              const r = (per[b.key] || [])[i];
+              return r ? effgVal(r, k) : null;
+            })}))};
+  }
+  const now = Date.now() / 1000, ep = Number((SCHEFF.epoch || {}).started_at) || Math.min(...rounds.map(r => r.start));
+  const days = [];
+  for(let d = new Date(ep * 1000), i = 0; i < 400; i++){
+    const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i).getTime() / 1000;
+    if(t0 > now) break;
+    days.push({key: effgDay(t0), t0: t0, t1: new Date(d.getFullYear(), d.getMonth(), d.getDate() + i + 1).getTime() / 1000});
+  }
+  const at = {};
+  days.forEach((d, i) => { at[d.key] = i; });
+  const labels = days.map(d => fmtWhen(d.t0).split(" ")[0]);
+  if(def[3] === "fleet"){
+    const rows = (((EFF || {}).series || {}).Combined) || [];     // EFF.days is the day count; the rows are series
+    const vals = days.map(d => { const r = rows.find(x => x.day === d.key); return r ? effgNum(r.pct) : null; });
+    return {labels: labels, lines: [{key: "fleet", name: "Fleet", colour: "#E0B457", vals: vals}]};
+  }
+  const grid = () => days.map(() => null);
+  const per = {};
+  buckets.forEach(b => { per[b.key] = {v: grid(), a: grid(), b: grid(), n: grid(), last: grid()}; });
+  rounds.forEach(r => {
+    const P = per[r.regime + "|" + r.bucket_id];
+    if(!P || !r.start) return;
+    if(def[3] === "sum" || def[3] === "share"){
+      /* spread over the days the round ran (a running one up to now) */
+      const s0 = r.start, e0 = r.end || now, v = effgVal(r, def[3] === "share" ? "core" : k);
+      if(v == null || e0 <= s0) return;
+      days.forEach((d, i) => {
+        const o = Math.min(e0, d.t1) - Math.max(s0, d.t0);
+        if(o > 0) P.v[i] = (P.v[i] || 0) + v * o / (e0 - s0);
+      });
+      return;
+    }
+    if(!r.end || r.status === "running") return;
+    const i = at[effgDay(r.end)];
+    if(i == null) return;
+    if(def[3] === "ratio"){
+      const p = effgParts(r, k);
+      if(p){ P.a[i] = (P.a[i] || 0) + p[0]; P.b[i] = (P.b[i] || 0) + p[1]; }
+    }else{
+      const v = effgVal(r, k);
+      if(v == null) return;
+      if(def[3] === "mean"){ P.a[i] = (P.a[i] || 0) + v; P.n[i] = (P.n[i] || 0) + 1; }
+      else if(!P.last[i] || r.end >= P.last[i][0]) P.last[i] = [r.end, v];
+    }
   });
-  out += `<div class="trk-note">Every bucket must have PF ${scPf(r.pf)} over the 2 years with at least ${scNum(r.trades)} `
-    + `trades, and PF ${scPf(r.year_pf)} or better in each year; a line must still hold one step either side. Scored on `
-    + `the newest full test (${scNum(sp.trades)} trades, to ${esc(sp.window_end || "")}). Nothing splits here: the `
-    + 're-cut runs at an epoch\'s end once its gain flattens, and the first one waits for your tap.</div>';
-  return out + '</div></div>';
+  const tot = days.map((_, i) => buckets.reduce((s, b) => s + (per[b.key].v[i] || 0), 0));
+  return {labels: labels, lines: buckets.map(b => {
+    const P = per[b.key];
+    const vals = days.map((_, i) =>
+      def[3] === "sum" ? P.v[i]
+      : def[3] === "share" ? (P.v[i] && tot[i] > 0 ? 100 * P.v[i] / tot[i] : null)
+      : def[3] === "ratio" ? (P.b[i] > 0 ? P.a[i] / P.b[i] : null)
+      : def[3] === "mean" ? (P.n[i] ? P.a[i] / P.n[i] : null)
+      : (P.last[i] ? P.last[i][1] : null));
+    return Object.assign({}, b, {vals: vals});
+  })};
+}
+function scheffGraphCard(){
+  const rounds = (SCHEFF.rounds || []).filter(r => r && r.regime && r.bucket_id != null);
+  const shell = inner => '<div class="card"><div class="card-in">' + inner + '</div></div>';
+  if(!rounds.length) return shell('<div class="vhempty">No round this epoch yet: the graph fills in as rounds finish.</div>');
+  if(EFFG.x === "rounds" && effgDef(EFFG.m)[4]) EFFG.m = "core";            // a Days-only metric has no rounds view
+  const def = effgDef(EFFG.m), fmt = def[2], buckets = effgBuckets(rounds);
+  const D = effgData(rounds, buckets, def[0], EFFG.x);
+  const on = D.lines.filter(l => !EFFG.off[l.key]);
+  const series = on.map(l => ({key: l.key, colour: l.colour, vals: l.vals, raw: l.vals,
+    points: l.vals.map((v, i) => v == null ? null : {i: i, value: v,
+      nomark: !((i === 0 || l.vals[i - 1] == null) && (i === l.vals.length - 1 || l.vals[i + 1] == null))})
+      .filter(Boolean)}));
+  const refs = def[0] === "pf" ? [{v: 1, label: "PF 1"}] : [];
+  const sp = sgSpan([].concat(...series.map(se => se.vals.filter(v => v != null))).concat(refs.map(r => r.v)));
+  const axis = sp ? {span: sgPadSpan(sp), fmt: fmt, refs: refs} : null;
+  series.forEach(se => { se.span = axis ? axis.span : null; });
+  const xb = (x, label) => '<button type="button" class="mgbtn' + (EFFG.x === x ? " on" : "") + '" data-effx="' + x + '">'
+    + label + '</button>';
+  const anyOff = D.lines.some(l => EFFG.off[l.key]);
+  const head = '<div class="mghead"><span class="mgttl">Efficiency by bucket \u00b7 ' + esc(def[1]) + '</span>'
+    + xb("rounds", "Rounds") + xb("days", "Days")
+    + (anyOff ? '<button type="button" class="mgbtn" data-effall>All</button>' : "") + '</div>';
+  const chips = '<div class="chips" style="margin:6px 0 2px">' + EFFG_M.filter(m => EFFG.x === "days" || !m[4])
+    .map(m => '<button type="button" class="chip' + (m[0] === def[0] ? " on" : "") + '" data-effm="' + m[0] + '">'
+      + esc(m[1]) + '</button>').join("") + '</div>';
+  const summary = l => {
+    const got = l.vals.filter(v => v != null);
+    if(!got.length) return "none yet";
+    if(def[3] === "sum") return "total " + fmt(got.reduce((a, b) => a + b, 0));
+    if(def[3] === "last" || def[0] === "fleet") return fmt(got[0]) + " \u2192 " + fmt(got[got.length - 1]);
+    return "avg " + fmt(got.reduce((a, b) => a + b, 0) / got.length) + " \u00b7 latest " + fmt(got[got.length - 1]);
+  };
+  const legend = D.lines.map(l => (l.key === "fleet" ? '<div class="mglgr none" style="font-style:normal">'
+      : '<button type="button" class="mglgr" data-effb="' + esc(l.key) + '"' + (EFFG.off[l.key] ? ' style="opacity:.4"' : "") + '>')
+    + '<span class="mgdash" style="background:' + l.colour + '"></span><span class="nm">' + esc(l.name) + '</span><span>'
+    + (EFFG.off[l.key] ? "off \u2014 tap to show" : esc(summary(l))) + '</span>' + (l.key === "fleet" ? "</div>" : "</button>"))
+    .join("");
+  const graph = series.length && D.labels.length ? seriesGraph(D.labels, series, null, axis).replace("<svg data-gopen ", "<svg ")
+    : '<div class="vhempty">' + (series.length ? "Nothing to draw yet." : "Every bucket is off: tap one below, or All.") + '</div>';
+  const cap = '<div class="vhcap">' + esc(def[1]) + ': ' + esc(def[5]) + '. '
+    + (EFFG.x === "rounds"
+      ? "Left to right: each bucket\u2019s finished rounds this epoch, its first at the left; a bucket with fewer rounds "
+        + "ends sooner."
+      : "Left to right: each day of the epoch, local time. "
+        + (def[3] === "sum" || def[3] === "share" ? "A round\u2019s hours and passes are spread over the days it ran, "
+            + "running rounds up to now." : def[3] === "fleet" ? "" : "Each round counts on the day it finished."))
+    + (def[0] !== "fleet" ? " Tap a bucket below to take its line off or bring it back." : "") + '</div>';
+  return shell(head + chips + graph + '<div class="mglg">' + legend + '</div>' + cap);
 }
 function renderSchedule(){
   /* The builder takes the whole page when it is open -- it is a form, and a
@@ -12464,12 +12637,11 @@ function renderSchedule(){
   if(!SCHEFF)
     return head + '<div class="card"><div class="card-in"><div class="trk-note">This snapshot has no efficiency data yet '
       + '\u2014 it arrives with the publisher that builds it.</div></div></div>' + recurring + hand + '</div>';
-  return head + scheffEpochCard()
+  return head + scheffGraphCard() + scheffEpochCard()   // 2026-11-23 -- the efficiency graph on top
     + '<div class="section-label" style="margin-top:14px">Rounds this epoch</div>' + scheffRoundsCard()
     + '<div class="section-label" style="margin-top:14px">Next up</div>' + scheffNextCard()
     + '<div class="section-label" style="margin-top:14px">What a round costs</div>' + scheffCostCard()
     + '<div class="section-label" style="margin-top:14px">How its predictions did</div>' + scheffPredictCard()
-    + '<div class="section-label" style="margin-top:14px">Split readiness</div>' + scheffSplitCard()
     + recurring + hand + '</div>';
 }
 
@@ -16971,14 +17143,16 @@ function lvBounceRow(b, trig, t){
   if(!(n >= 0))
     return lvEntryRow(null, "Bounce gauge", "no reading", "",
       "The EA could not read the 1-minute lines this minute: the trigger waits as usual.", false, "");
+  /* 2026-11-23 -- NOT A GATE: it never blocks an entry, it only decides whether the armed trigger waits for the next
+     1-minute cross -- so a neutral dot, never the gates' pass / fail marks (Trevor: "This isn't part of the trigger?") */
   return b.one_way
-    ? lvEntryRow(true, "Bounce gauge", "one-way", `${n} of ${mn} in ${hs} h`,
+    ? lvEntryRow(null, "Bounce gauge", "one-way \u00b7 fires now", `${n} of ${mn} in ${hs} h`,
         `One-way market: only <b>${n}</b> bounce${n === 1 ? "" : "s"} against the trade in the last ${hs} h (it needs ` +
-        `${mn} to read as bouncing). Trigger ${t} has switched: armed, it fires at the arm instead of waiting` +
+        `${mn} to read as bouncing). Not a gate -- trigger ${t} has switched: armed, it fires at the arm instead of waiting` +
         (Number(b.sl) > 0 && Number(b.sl) !== 1 ? `, with its stop × ${lvEntryNum(b.sl, 2)}.` : "."), false, "")
-    : lvEntryRow(false, "Bounce gauge", "bouncing", `${n} of ${mn} in ${hs} h`,
-        `Bouncing: <b>${n}</b> bounces against the trade in the last ${hs} h (${mn} or more). Trigger ${t} waits as it ` +
-        "always does.", false, "");
+    : lvEntryRow(null, "Bounce gauge", "bouncing \u00b7 waits", `${n} of ${mn} in ${hs} h`,
+        `Bouncing: <b>${n}</b> bounces against the trade in the last ${hs} h (${mn} or more). Trigger ${t} waits for ` +
+        "its 1-minute cross as it always does. Not a gate: the gauge never blocks an entry.", false, "");
 }
 
 /* 2026-11-18 -- THE GATES CARD'S TWO BUCKETS. The trend bucket is the one the EA trades in now (/live's trading_in); the
