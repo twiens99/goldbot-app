@@ -2294,7 +2294,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261123-175812";
+const APP_BUILD = "20261123-233137";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -14838,6 +14838,11 @@ function lvGmt(){
   return "server time (GMT" + (o >= 0 ? "+" : "−") + Math.abs(o) + ")";
 }
 const lvRegTag = r => r ? `<span class="chip ${RC[r] || ""}">${esc(r)}</span>` : "";
+/* 2026-11-23 -- THE TREE A LIVE TRADE'S BUCKET IS IN (the feed's `tree`, 1.17): a counter trade's is its side, so a long
+   opened in BEAR names the BULL tree's counter leaf -- the Bear Counter -- and never the Bear bucket at its slope
+   (Trevor: "It still showed bear mid, but it was a long. So it needs to show bear counter"). The regime chip stays
+   the market regime it opened in; a feed from before the field has no tree, so its regime. */
+const lvTree = t => String((t && (t.tree || t.regime)) || "");
 /* V3.4.0 (11-06) -- THE TRIGGER THAT OPENED THE TRADE (the EA's TRADE_OPEN trigger / turn_lit), and for trigger A
    which of its readers had turned -- "score" is the old score's turn, kept as one reader. A V3.3 trade has none. */
 const LV_TURN = {SCORE: "score", RSI_M5: "M5 RSI", RSI_M15: "M15 RSI", POS_24H: "24 h position", VWAP: "VWAP",
@@ -17363,7 +17368,7 @@ function lvOpenCard(p){
     : "";
   return `<div class="card lv-otrade">
     <div class="lv-orow">${lvDirTag(p.dir)}<span class="lv-dir">${Number(p.volume).toFixed(2)} lot</span>` +
-      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, p.regime) : ""}${lvTrigTag(p)}` +
+      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, lvTree(p)) : ""}${lvTrigTag(p)}` +
       `<span class="lv-oage" id="lvo-${t}-age"></span></div>
     <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
       `<span class="lv-sub" id="lvo-${t}-move"></span></div>
@@ -17524,22 +17529,24 @@ function lvPaintHistory(){
   if(rows.length){
     const by = {};
     rows.forEach(t => {
-      const k = (t.regime || "") + "|" + (t.bucket != null ? t.bucket : "");
-      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0, regime: t.regime || "", bucket: t.bucket});
+      // 2026-11-23 -- by the bucket's TREE (a counter trade's is its side), under the regime it traded in
+      const k = lvTree(t) + "|" + (t.bucket != null ? t.bucket : "");
+      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0, regime: t.regime || "", tree: lvTree(t), bucket: t.bucket});
       const p = Number(t.profit) || 0;
       g.n++; if(p > 0) g.gw += p; else g.gl -= p;
     });
     const order = ["BULL", "BEAR", "SWING", "RANGING"];
+    const ctr = g => g.tree && g.regime && g.tree !== g.regime ? 1 : 0;   // a counter bucket after its regime's own
     const keys = Object.keys(by).sort((a, b) => {
       const A = by[a], B = by[b], ia = order.indexOf(A.regime), ib = order.indexOf(B.regime);
       const hi = A.regime === "BEAR" ? 1 : -1;          // High first: BULL's highest id, BEAR's lowest
-      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || A.regime.localeCompare(B.regime)
+      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || A.regime.localeCompare(B.regime) || ctr(A) - ctr(B)
              || hi * ((Number(A.bucket) || 0) - (Number(B.bucket) || 0));
     });
     if(keys.length > 1 || by[keys[0]].regime){
       sum.innerHTML += '<div class="lv-regsplit">' + keys.map(k => {
         const g = by[k], n = g.gw - g.gl;
-        return `<span>${g.regime ? lvRegTag(g.regime) + (g.bucket != null ? bktEl(g.bucket, false, null, g.regime) : "")
+        return `<span>${g.regime ? lvRegTag(g.regime) + (g.bucket != null ? bktEl(g.bucket, false, null, g.tree) : "")
                                  : '<span class="chip">unlabelled</span>'} <b>${g.n}</b> · PF ` +
                `<b>${g.gl > 0 ? (g.gw / g.gl).toFixed(2) : "—"}</b> · <b class="${lvTone(n)}">${lvMoney(n)}</b></span>`;
       }).join("") + '</div>';
@@ -17549,7 +17556,7 @@ function lvPaintHistory(){
   list.innerHTML = shown.map(t => {
     const id = "t" + t.position;
     return `<button type="button" class="lv-hrow" data-lvfocus="${esc(id)}" aria-current="${lvIsSel(id)}">
-      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket, false, null, t.regime) : ""}` +
+      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket, false, null, lvTree(t)) : ""}` +
         `<span class="lv-when">${lvWhen(t.entry_time)} · ${lvSpan(Number(t.exit_time) - Number(t.entry_time))}</span></span>
       <span class="lv-hpnl ${lvTone(Number(t.profit))}">${lvMoney(t.profit)}</span>
       <span class="lv-hl2">${lvPx(t.entry_price)} → ${lvPx(t.exit_price)}</span>
@@ -22012,7 +22019,9 @@ function pgMatch(t, f){
   const r = String(t.regime || "").toUpperCase();
   if(f === "all") return true;
   if(f === "?") return !r;
-  return f.indexOf("|") < 0 ? r === f : f === r + "|" + t.bucket;
+  // 2026-11-23 -- a bucket filter keys on the bucket's TREE (a counter trade's is its side); a regime filter on the
+  // regime the trade opened in
+  return f.indexOf("|") < 0 ? r === f : f === lvTree(t).toUpperCase() + "|" + t.bucket;
 }
 function pgStats(w){
   let gw = 0, gl = 0, won = 0, rs = 0, rn = 0, cum = 0, peak = 0;
@@ -22082,7 +22091,7 @@ function pgFilters(all){
                               all.filter(t => pgMatch(t, r)).length]));
   const bk = [];
   all.forEach(t => {
-    const r = String(t.regime || "").toUpperCase();
+    const r = lvTree(t).toUpperCase();                  // 2026-11-23: the bucket's tree, the Bear Counter's BULL
     if(!r || t.bucket == null) return;
     const k = r + "|" + t.bucket;
     if(!bk.some(b => b[0] === k)) bk.push([k, r, t.bucket]);
