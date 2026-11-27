@@ -40,6 +40,9 @@
   --bull:#5FBE95;
   --bear:#E0685A;
   --range:#6FA8D4;
+  /* 2026-11-26 -- THE NEWS TREE's own hue (news_tree.py): not a regime and not a slope, so a pink no regime or severity
+     uses. */
+  --news:#E07BB5;
   /* 2026-09-16 -- the one hue this palette did not have, added for LOCKED.
      Everything else here is earned by a regime or a severity; LOCKED is neither,
      it is DONE, and it needed a colour that is not competing with either. */
@@ -165,6 +168,7 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .stripe.bull{background:var(--bull);}
 .stripe.bear{background:var(--bear);}
 .stripe.range{background:var(--range);}
+.stripe.news{background:var(--news);}
 .stripe.warn{background:var(--warn);}
 /* AN AGENT IS DRAWN UNDER THE MACHINE IT SERVES. The rail is the whole
    point: an agent runs no round, so its card carries none of the progress
@@ -204,6 +208,7 @@ main{flex:1;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px;}
 .chip.bull{background:rgba(95,190,149,.14);color:var(--bull);}
 .chip.bear{background:rgba(224,104,90,.14);color:var(--bear);}
 .chip.range{background:rgba(111,168,212,.14);color:var(--range);}
+.chip.news{background:rgba(224,123,181,.14);color:var(--news);}
 /* 🔴 A CHIP THAT IS A CONTROL SAYS WHETHER IT IS ON. Trevor, 2026-09-28: *"Let's
    make a lit up chip more prominent I can't tell which ones are lit or not."*
    The schedule editor's chips added `on` and nothing styled it -- every chip
@@ -271,6 +276,7 @@ button.chip.on::before{content:"\2713\00a0";}
 .bar i.bull{background:var(--bull);}
 .bar i.bear{background:var(--bear);}
 .bar i.range{background:var(--range);}
+.bar i.news{background:var(--news);}
 
 /* variable list */
 .vars{display:flex;flex-direction:column;gap:3px;}
@@ -469,6 +475,7 @@ article.jrow{cursor:default;}
 .jrow .hstripe.bull{background:var(--bull);}
 .jrow .hstripe.bear{background:var(--bear);}
 .jrow .hstripe.range{background:var(--range);}
+.jrow .hstripe.news{background:var(--news);}
 .jrow .hstripe.warn{background:var(--warn);}
 .jrow .hstripe.agent{background:var(--gold);opacity:.55;}
 .jtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -2294,7 +2301,7 @@ function offRegimesLine(){
    is no service worker, so a stale copy is normal and expected. What was
    missing is any way to SAY so. publish.py rewrites this line as it commits;
    "dev" means the file was never published, which is what the preview shows. */
-const APP_BUILD = "20261123-233137";
+const APP_BUILD = "20261126-195807";
 
 let FLEET = [], LEDGER = [], SEEDS = [], FAILURES = [], BUCKETS = [], TIMELINES = [];
 let CURVES = [];
@@ -2349,7 +2356,7 @@ let STATE_TEXT = {};
    (`reports_base`, lower case) is untouched -- the wire format did not move. */
 let FILE_BASE = null;
 
-const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range" };
+const REGIME_CLASS = { BULL: "bull", BEAR: "bear", RANGING: "range", NEWS: "news" };   // 11-26: + the NEWS tree
 const ACRONYMS = new Set(["ATR","EMA","MA","BB","SL","TP","RSI","ADX","MACD","OHLC","PF"]);
 const TIMEFRAMES = new Set(["M1","M5","M15","M30","H1","H4","D1","W1","MN1"]);
 
@@ -2609,7 +2616,7 @@ function deltaEl(before, after){
 /* The publisher emits the RECORD shape, faithful to the beacons. Adapting it
    for display is the renderer's job -- that split is the whole reason the app
    can be rebuilt without touching the pipeline. */
-const RC = { BULL: "bull", BEAR: "bear", RANGING: "range" };
+const RC = { BULL: "bull", BEAR: "bear", RANGING: "range", NEWS: "news" };   // 2026-11-26: + the NEWS tree
 
 /* ---------- the bucket id, coloured by where it sits on slope ---------- */
 /* A BUCKET ID IS A POSITION, NOT A NAME. Every regime's root is 1600 covering
@@ -2712,6 +2719,12 @@ function bktEl(id, trail, filterId, regime){
   /* 2026-10-15 -- beside its regime's chip, a named bucket shows its NAME ("BULL" + "High"); the colour stays the
      id's, so the gradient still says where it sits in the tree. */
   const label = (regime && bktTier(regime, n)) || id;
+  /* 2026-11-26 -- a NEWS leaf's cell is a news class, not a place on the slope: its name in the tree's own hue, no
+     slope gradient */
+  if(bktIsNews(regime))
+    return `<span class="bkt"${fil} style="background:rgba(224,123,181,.15)">` +
+           `<i style="color:var(--news);background-image:linear-gradient(120deg,#F2B8D9,#E07BB5)">${esc(label)}</i>` +
+           `</span>` + tail;
   const t = Math.max(-1, Math.min(1, (n - BKT_ROOT) / BKT_REACH));
   const tone = bktTone(t);
   const lift = bktMix(tone, [255, 255, 255], .34);
@@ -2742,10 +2755,33 @@ const bktIsCounter = b => {
   if(r === "BEAR") return b.slope_min != null && Number(b.slope_min) >= 0;
   return false;
 };
+/* 2026-11-26 -- THE NEWS TREE (news_tree.py, DEV\_MD\BUILD_NEWS_BUCKETS.md). A fifth tree beside BULL / BEAR: NEWS
+   800 "Scheduled High" and NEWS 2400 "Shock" (in full "News High" / "News Shock"), the children of NEWS 1600, each
+   trading BOTH ways. Named by news_tree.LEAVES -- the snapshot sends each leaf's name / short; this table stands in for
+   a publisher that does not -- never by the High / Mid / Low tiers, so they rename nobody. Their cells are a news
+   class, not a D1 slope: no slope text and no slope colour (bktEl gives them the tree's own hue). Listed after BULL and
+   BEAR wherever buckets go by tree (bktOrder, bktFlow, bktTrees). No NEWS bucket in the snapshot: nothing changes. */
+const BKT_NEWS = "NEWS";
+const BKT_NEWS_LEAVES = {800: ["Scheduled High", "News High"], 2400: ["Shock", "News Shock"]};
+function bktIsNews(r){ return String(r || "").toUpperCase() === "NEWS"; }
+/* A list of trees ("BULL", "BEAR", "RANGING") with NEWS after BEAR while the snapshot holds a NEWS leaf. */
+function bktTrees(list){
+  const out = (list || []).slice();
+  if(out.indexOf(BKT_NEWS) >= 0 || !(BUCKETS || []).some(b => b && b.leaf !== false && bktIsNews(b.regime))) return out;
+  const at = out.indexOf("BEAR");
+  out.splice(at < 0 ? out.length : at + 1, 0, BKT_NEWS);
+  return out;
+}
 function bktNamesFrom(list){
-  const by = {}, out = {}, ctr = [];
+  const by = {}, out = {}, ctr = [], news = [];
   (list || []).forEach(b => {
     const r = String(b.regime || "").toUpperCase(), id = Number(b.bucket_id);
+    // 2026-11-26 -- a NEWS leaf: its own name (news_tree.LEAVES), apart from the tiers
+    if(r === BKT_NEWS && b.leaf !== false && b.bucket_id != null && isFinite(id)){
+      const nm = BKT_NEWS_LEAVES[id] || [], tier = b.name || nm[0];
+      if(tier) news.push([id, String(tier), String(b.short || nm[1] || "News " + tier)]);
+      return;
+    }
     if(b.leaf === false || (r !== "BULL" && r !== "BEAR") || b.bucket_id == null || !isFinite(id)) return;
     const kind = bktKindOf(b);
     if(kind !== "trend"){ ctr.push([r, id, BKT_KIND_LABEL[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1)), kind]); return; }
@@ -2768,6 +2804,8 @@ function bktNamesFrom(list){
     out[r + "|" + id] = {tier: label, rank: (by[r] || []).length,                                          // after Low
                          shown: kind === "counter" ? (r === "BULL" ? "BEAR" : "BULL") : null};
   });
+  // 2026-11-26 -- the NEWS leaves in news_tree's order (Scheduled High, then Shock); `full` is the name on its own
+  news.sort((a, b) => a[0] - b[0]).forEach(([id, tier, full], i) => { out[BKT_NEWS + "|" + id] = {tier, rank: i, full}; });
   BKT_NAMES = out;
 }
 const bktKey = (regime, id) => String(regime || "").toUpperCase() + "|" + id;
@@ -2782,13 +2820,14 @@ const bktTier = (regime, id) => (BKT_NAMES[bktKey(regime, Number(id))] || {}).ti
 /* "Bull High" -- "Bear Low (V3.3)" for a retired leaf -- or "BULL 1600" where the bucket has no name. */
 function bktName(regime, id){
   const nm = BKT_NAMES[bktKey(regime, Number(id))];
+  if(nm && nm.full) return nm.full;                    // 2026-11-26 -- a NEWS leaf: "News High" / "News Shock"
   const t = bktTier(regime, id), r = String((nm && nm.shown) || regime || ""), old = bktRetired(regime, id);
   if(t) return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() + " " + t + (old ? ` (${old[1]})` : "");
   return (r ? r.toUpperCase() + " " : "") + (id == null ? "" : String(id));
 }
 /* Strongest first within a regime, BULL before BEAR -- the order Trevor listed them in. */
 function bktOrder(ra, ia, rb, ib){
-  const reg = r => ({BULL: 0, BEAR: 1}[String(r || "").toUpperCase()] ?? 2);
+  const reg = r => ({BULL: 0, BEAR: 1, NEWS: 2}[String(r || "").toUpperCase()] ?? 3);   // 11-26: NEWS after BEAR
   if(reg(ra) !== reg(rb)) return reg(ra) - reg(rb);
   const na = BKT_NAMES[bktKey(ra, Number(ia))], nb = BKT_NAMES[bktKey(rb, Number(ib))];
   if(na && nb) return na.rank - nb.rank;
@@ -2798,12 +2837,13 @@ function bktOrder(ra, ia, rb, ib){
    way the trades flow."* The D1 slope from its steepest rise down through 0 to its steepest fall. Ids run in slope
    order inside a regime, so within BULL and within BEAR that is the highest id first -- named or not. */
 function bktFlow(ra, ia, rb, ib){
-  const reg = r => ({BULL: 0, BEAR: 1}[String(r || "").toUpperCase()] ?? 2);
+  const reg = r => ({BULL: 0, BEAR: 1, NEWS: 2}[String(r || "").toUpperCase()] ?? 3);   // 11-26: NEWS after BEAR
   if(reg(ra) !== reg(rb)) return reg(ra) - reg(rb);
+  if(bktIsNews(ra)) return (Number(ia) || 0) - (Number(ib) || 0);   // 2026-11-26 -- NEWS: Scheduled High, then Shock
   return (Number(ib) || 0) - (Number(ia) || 0);
 }
 /* A sentence from the machines ("... BULL/800: PF ...") with its bucket named. Display only. */
-const bktText = s => String(s == null ? "" : s).replace(/\b(BULL|BEAR)([\/ ])(\d{3,4})\b/g,
+const bktText = s => String(s == null ? "" : s).replace(/\b(BULL|BEAR|NEWS)([\/ ])(\d{3,4})\b/g,
   (m, r, sep, id) => bktTier(r, id) ? bktName(r, id) : m);
 
 const stale = f => f.age_seconds != null && f.age_seconds > 900;
@@ -5380,6 +5420,20 @@ function curChangedSince(c){
    baseline (shaded, a gold edge: testRow's base) right above where it stands now, the change since the baseline under
    the current PF. A kind no round has moved yet (its newest test IS its baseline) shows one row; a baseline whose
    bucket no longer trades (a split parent, a range re-cut away) shows none. Each row opens its own balance line. */
+/* 2026-11-26 -- THE NEWS LEAVES WITH NO TEST YET in this version (the snapshot lists them; `have` holds the kinds that
+   have a row): [{k, regime, bucket, owed}]. [] while the snapshot holds no NEWS leaf. */
+function bktNewsOwed(have){
+  return (BUCKETS || []).filter(b => b && b.leaf !== false && bktIsNews(b.regime) && b.bucket_id != null &&
+      !(have || {})[b.regime + "|" + b.bucket_id])
+    .map(b => ({k: b.regime + "|" + b.bucket_id, regime: b.regime, bucket: String(b.bucket_id), owed: true}));
+}
+/* Its row in the Current box: the name, "No baseline yet", and a dash where each number will be. */
+function testOwedRow(o){
+  return `<div class="optr ro" style="${TEST_GRID};font-size:14px;text-align:right;` +
+    `border-left:3px dashed var(--news);padding-left:6px"><span style="text-align:left">` +
+    `<span style="white-space:nowrap">${esc(bktName(o.regime, o.bucket))}</span>` +
+    `<br><span class="tnote">No baseline yet</span></span>` + "<span>\u2014</span>".repeat(5) + `</div>`;
+}
 function compareSection(){
   const runs = currentRuns(), bases = baselineRuns();
   if(!runs.length && !bases.length) return "";
@@ -5395,6 +5449,11 @@ function compareSection(){
     const c = now[k] || base[k];
     kinds[k] = {k, regime: c.regime, bucket: c.bucket};
   });
+  /* 2026-11-26 -- THE NEWS LEAVES. Trevor: "The news filter buckets I haven't seen them run yet. I need a baseline done
+     and displayed in the current box of the results tab." A NEWS leaf's tests file under NEWS/<id> like any bucket's,
+     so its baseline and current rows come the same way (after BULL and BEAR: bktFlow); until its first test lands,
+     one row says its baseline is still to run. */
+  bktNewsOwed(kinds).forEach(o => { kinds[o.k] = o; });
   const pfOf = c => { const m = c.m || {}; const v = m.pf != null ? m.pf : c.pf; return v == null ? NaN : Number(v); };
   const baseMore = b => ({when: `Baseline \u00b7 ${esc(eqWhen(b).slice(5))}`});
   const more = c => {
@@ -5418,9 +5477,10 @@ function compareSection(){
           .join(", ")}. Its next test reads them.</div>` : "";
     return {when, pf, after};
   };
-  const rows = fullThenBuckets(kinds, bktFlow).map(({k}, i) => {
+  const rows = fullThenBuckets(kinds, bktFlow).map(({k, owed}, i) => {
     const b = base[k], c = now[k];
     const gap = i ? `<div style="height:8px"></div>` : "";
+    if(owed) return gap + testOwedRow(kinds[k]);          // 2026-11-26 -- a NEWS leaf with no test yet
     // 2026-11-18 -- A BUCKET WITH NO ROUND YET GETS BOTH ROWS too (Trevor, the Bear Counter: "the current tab in the
     // results needs its own baseline and current blocks inserted and updated"): its gold baseline, and the current row
     // that moves at its first round. Only a bucket with no baseline at all shows one row.
@@ -9111,7 +9171,8 @@ function stLegend(b){
 
 function stOverview(home){
   const bs = STATUS.buckets || [];
-  const regimes = onRegimes(["BULL", "BEAR", "RANGING"]).filter(r => bs.some(b => b.regime === r));
+  // 2026-11-26 -- + the NEWS tree after BEAR (only when the Status page lists a NEWS leaf)
+  const regimes = onRegimes(["BULL", "BEAR", "NEWS", "RANGING"]).filter(r => bs.some(b => b.regime === r));
   const cards = regimes.map(r => {
     const mine = bs.filter(b => b.regime === r).sort((a, b) => bktOrder(a.regime, a.bucket_id, b.regime, b.bucket_id));
     const left = mine.reduce((a, b) => a + b.left, 0), tot = mine.reduce((a, b) => a + b.total, 0);
@@ -14843,6 +14904,9 @@ const lvRegTag = r => r ? `<span class="chip ${RC[r] || ""}">${esc(r)}</span>` :
    (Trevor: "It still showed bear mid, but it was a long. So it needs to show bear counter"). The regime chip stays
    the market regime it opened in; a feed from before the field has no tree, so its regime. */
 const lvTree = t => String((t && (t.tree || t.regime)) || "");
+/* 2026-11-26 -- A NEWS TRADE (its tree NEWS, news_tree.py): the tree's own chip beside the regime it opened in, and its
+   bucket by name ("Scheduled High" / "Shock", bktEl on lvTree). Nothing for any other trade. */
+const lvNewsTag = t => bktIsNews(lvTree(t)) ? `<span class="chip news">News</span>` : "";
 /* V3.4.0 (11-06) -- THE TRIGGER THAT OPENED THE TRADE (the EA's TRADE_OPEN trigger / turn_lit), and for trigger A
    which of its readers had turned -- "score" is the old score's turn, kept as one reader. A V3.3 trade has none. */
 const LV_TURN = {SCORE: "score", RSI_M5: "M5 RSI", RSI_M15: "M15 RSI", POS_24H: "24 h position", VWAP: "VWAP",
@@ -17368,7 +17432,7 @@ function lvOpenCard(p){
     : "";
   return `<div class="card lv-otrade">
     <div class="lv-orow">${lvDirTag(p.dir)}<span class="lv-dir">${Number(p.volume).toFixed(2)} lot</span>` +
-      `${lvRegTag(p.regime)}${p.bucket != null ? bktEl(p.bucket, false, null, lvTree(p)) : ""}${lvTrigTag(p)}` +
+      `${lvRegTag(p.regime)}${lvNewsTag(p)}${p.bucket != null ? bktEl(p.bucket, false, null, lvTree(p)) : ""}${lvTrigTag(p)}` +
       `<span class="lv-oage" id="lvo-${t}-age"></span></div>
     <div class="lv-opnl"><span class="lv-big" id="lvo-${t}-pnl"></span>` +
       `<span class="lv-sub" id="lvo-${t}-move"></span></div>
@@ -17531,15 +17595,18 @@ function lvPaintHistory(){
     rows.forEach(t => {
       // 2026-11-23 -- by the bucket's TREE (a counter trade's is its side), under the regime it traded in
       const k = lvTree(t) + "|" + (t.bucket != null ? t.bucket : "");
-      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0, regime: t.regime || "", tree: lvTree(t), bucket: t.bucket});
+      // 2026-11-26 -- a NEWS trade groups under the NEWS tree (it trades both ways, in either regime)
+      const g = by[k] || (by[k] = {n: 0, gw: 0, gl: 0, regime: bktIsNews(lvTree(t)) ? BKT_NEWS : (t.regime || ""),
+                                   tree: lvTree(t), bucket: t.bucket});
       const p = Number(t.profit) || 0;
       g.n++; if(p > 0) g.gw += p; else g.gl -= p;
     });
-    const order = ["BULL", "BEAR", "SWING", "RANGING"];
+    const order = ["BULL", "BEAR", "NEWS", "SWING", "RANGING"];          // 2026-11-26: + NEWS after BEAR
     const ctr = g => g.tree && g.regime && g.tree !== g.regime ? 1 : 0;   // a counter bucket after its regime's own
     const keys = Object.keys(by).sort((a, b) => {
       const A = by[a], B = by[b], ia = order.indexOf(A.regime), ib = order.indexOf(B.regime);
-      const hi = A.regime === "BEAR" ? 1 : -1;          // High first: BULL's highest id, BEAR's lowest
+      const hi = A.regime === "BEAR" || A.regime === BKT_NEWS ? 1 : -1;   // High first: BULL's highest id, BEAR's
+                                                        // lowest; NEWS by id (Scheduled High, then Shock)
       return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || A.regime.localeCompare(B.regime) || ctr(A) - ctr(B)
              || hi * ((Number(A.bucket) || 0) - (Number(B.bucket) || 0));
     });
@@ -17556,7 +17623,7 @@ function lvPaintHistory(){
   list.innerHTML = shown.map(t => {
     const id = "t" + t.position;
     return `<button type="button" class="lv-hrow" data-lvfocus="${esc(id)}" aria-current="${lvIsSel(id)}">
-      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${t.bucket != null ? bktEl(t.bucket, false, null, lvTree(t)) : ""}` +
+      <span class="lv-hl1">${lvDirTag(t.dir)}${lvRegTag(t.regime)}${lvNewsTag(t)}${t.bucket != null ? bktEl(t.bucket, false, null, lvTree(t)) : ""}` +
         `<span class="lv-when">${lvWhen(t.entry_time)} · ${lvSpan(Number(t.exit_time) - Number(t.entry_time))}</span></span>
       <span class="lv-hpnl ${lvTone(Number(t.profit))}">${lvMoney(t.profit)}</span>
       <span class="lv-hl2">${lvPx(t.entry_price)} → ${lvPx(t.exit_price)}</span>
@@ -23204,7 +23271,7 @@ document.addEventListener("click", e => {
        does today -- every chip cycles. */
     RESULTS_REGIME = value
       ? (RESULTS_REGIME === value ? null : value)
-      : cycle(onRegimes(["BULL", "BEAR", "RANGING"]), RESULTS_REGIME);
+      : cycle(onRegimes(bktTrees(["BULL", "BEAR", "RANGING"])), RESULTS_REGIME);   // 11-26: NEWS once it exists
     RESULTS_BUCKET = null;            // a bucket belongs to one regime
   } else if(what === "bucket"){
     RESULTS_BUCKET = value
